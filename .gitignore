@@ -24,3 +24,4 @@ Thumbs.db
 seeki.toml
 node_modules/
 frontend/dist/
+.brainstorm/
