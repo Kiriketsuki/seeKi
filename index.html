@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SeeKi Documentation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #F5F0EB;
+      color: #2F4858;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 600px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 0.5rem;
+    }
+    h1 span { color: #00A9A5; }
+    .tagline {
+      font-size: 1.1rem;
+      color: #8a7a6c;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: rgba(255,255,255,0.5);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(47,72,88,0.06);
+      border-radius: 8px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 2px 12px rgba(47,72,88,0.04);
+    }
+    .card h2 {
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8a7a6c;
+      margin-bottom: 1rem;
+    }
+    .links {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .links a {
+      display: block;
+      padding: 0.75rem 1rem;
+      background: rgba(255,255,255,0.5);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(47,72,88,0.05);
+      border-radius: 6px;
+      color: #2F4858;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .links a:hover {
+      background: rgba(0,169,165,0.08);
+    }
+    .links a small {
+      display: block;
+      color: #a0917f;
+      font-weight: 400;
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(0,169,165,0.1);
+      color: #00A9A5;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+    }
+    footer {
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: #b8a898;
+    }
+    footer a { color: #00A9A5; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>See<span>Ki</span></h1>
+    <p class="tagline">A read-only, spreadsheet-like database viewer for people who don't speak SQL.</p>
+
+    <div class="card">
+      <span class="badge">Coming Soon</span>
+      <h2>Documentation</h2>
+      <div class="links">
+        <a href="https://github.com/Kiriketsuki/seeKi">
+          GitHub Repository
+          <small>Source code, README, and issue tracker</small>
+        </a>
+        <a href="https://github.com/Kiriketsuki/seeKi/blob/main/seeki-mvp-spec.md">
+          MVP Specification
+          <small>Feature spec, acceptance scenarios, and task breakdown</small>
+        </a>
+        <a href="https://github.com/Kiriketsuki/seeKi/blob/main/docs/research/01-competitive-analysis.md">
+          Competitive Analysis
+          <small>How SeeKi compares to Datasette, NocoDB, Metabase, and others</small>
+        </a>
+      </div>
+    </div>
+
+    <footer>
+      <em>data-seeKing.</em> &mdash; Powered by <a href="https://github.com/Kiriketsuki/seeKi">SeeKi</a>
+    </footer>
+  </div>
+</body>
+</html>
