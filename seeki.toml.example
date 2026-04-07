@@ -1,0 +1,8 @@
+[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://user:password@localhost:5432/mydb"
+max_connections = 5
