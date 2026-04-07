@@ -22,6 +22,7 @@ pub struct TablesConfig {
     pub exclude: Option<Vec<String>>,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl TablesConfig {
     pub fn allows(&self, table: &str) -> bool {
         let included = match &self.include {
@@ -90,6 +91,7 @@ fn default_max_connections() -> u32 {
     5
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn display_name_table(table: &str, config: &DisplayConfig) -> String {
     config
         .tables
@@ -98,6 +100,7 @@ pub fn display_name_table(table: &str, config: &DisplayConfig) -> String {
         .unwrap_or_else(|| casualify(table, false))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn display_name_column(table: &str, column: &str, config: &DisplayConfig) -> String {
     config
         .columns
@@ -107,6 +110,7 @@ pub fn display_name_column(table: &str, column: &str, config: &DisplayConfig) ->
         .unwrap_or_else(|| casualify(column, true))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn casualify(name: &str, drop_id_suffix: bool) -> String {
     let normalized = if drop_id_suffix {
         name.strip_suffix("_id").unwrap_or(name)
@@ -122,6 +126,7 @@ fn casualify(name: &str, drop_id_suffix: bool) -> String {
         .join(" ")
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn title_case(segment: &str) -> String {
     let mut chars = segment.chars();
     match chars.next() {
@@ -171,5 +176,266 @@ impl AppConfig {
              kind = \"postgres\"\n\
              url = \"postgres://user:pass@localhost:5432/mydb\"\n"
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const MINIMAL_CONFIG: &str = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://user:pass@localhost:5432/mydb"
+"#;
+
+    const FULL_CONFIG: &str = r#"
+[server]
+host = "0.0.0.0"
+port = 4000
+
+[database]
+kind = "sqlite"
+url = "sqlite:seeki.db"
+max_connections = 10
+
+[tables]
+include = ["vehicles_log", "drivers", "audit_log"]
+exclude = ["audit_log"]
+
+[display.tables]
+vehicles_log = "Fleet Log"
+
+[display.columns.vehicles_log]
+posn_lat = "Latitude"
+supervisor_id = "Supervisor"
+
+[branding]
+title = "AutoConnect"
+subtitle = "Fleet Telemetry"
+"#;
+
+    #[test]
+    fn minimal_config_loads_with_defaults() {
+        let config = load_config(MINIMAL_CONFIG);
+
+        assert!(config.tables.include.is_none());
+        assert!(config.tables.exclude.is_none());
+        assert!(config.display.tables.is_empty());
+        assert!(config.display.columns.is_empty());
+        assert!(config.branding.title.is_none());
+        assert!(config.branding.subtitle.is_none());
+    }
+
+    #[test]
+    fn full_config_loads_all_extensions() {
+        let config = load_config(FULL_CONFIG);
+
+        assert_eq!(
+            config
+                .tables
+                .include
+                .as_ref()
+                .expect("include should be set"),
+            &vec![
+                "vehicles_log".to_string(),
+                "drivers".to_string(),
+                "audit_log".to_string(),
+            ]
+        );
+        assert_eq!(
+            config
+                .tables
+                .exclude
+                .as_ref()
+                .expect("exclude should be set"),
+            &vec!["audit_log".to_string()]
+        );
+        assert_eq!(
+            config
+                .display
+                .tables
+                .get("vehicles_log")
+                .map(String::as_str),
+            Some("Fleet Log")
+        );
+        assert_eq!(
+            config
+                .display
+                .columns
+                .get("vehicles_log")
+                .and_then(|columns| columns.get("posn_lat"))
+                .map(String::as_str),
+            Some("Latitude")
+        );
+        assert_eq!(config.branding.title.as_deref(), Some("AutoConnect"));
+        assert_eq!(config.branding.subtitle.as_deref(), Some("Fleet Telemetry"));
+    }
+
+    #[test]
+    fn tables_config_applies_include_then_exclude() {
+        let config = TablesConfig {
+            include: Some(vec!["a".into(), "b".into(), "c".into()]),
+            exclude: Some(vec!["c".into()]),
+        };
+
+        assert_eq!(
+            effective_tables(&config, &["a", "b", "c", "d"]),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn tables_config_applies_include_only() {
+        let config = TablesConfig {
+            include: Some(vec!["a".into(), "b".into()]),
+            exclude: None,
+        };
+
+        assert_eq!(
+            effective_tables(&config, &["a", "b", "c", "d"]),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn tables_config_applies_exclude_only() {
+        let config = TablesConfig {
+            include: None,
+            exclude: Some(vec!["c".into()]),
+        };
+
+        assert_eq!(
+            effective_tables(&config, &["a", "b", "c", "d"]),
+            vec!["a", "b", "d"]
+        );
+    }
+
+    #[test]
+    fn tables_config_allows_all_tables_when_unset() {
+        let config = TablesConfig::default();
+
+        assert_eq!(
+            effective_tables(&config, &["a", "b", "c"]),
+            vec!["a", "b", "c"]
+        );
+    }
+
+    #[test]
+    fn column_display_name_uses_title_case_heuristic() {
+        assert_eq!(
+            display_name_column("my_table", "some_column", &DisplayConfig::default()),
+            "Some Column"
+        );
+    }
+
+    #[test]
+    fn column_display_name_drops_id_suffix() {
+        assert_eq!(
+            display_name_column("vehicles_log", "supervisor_id", &DisplayConfig::default()),
+            "Supervisor"
+        );
+    }
+
+    #[test]
+    fn column_display_name_prefers_override() {
+        let config = AppConfig::parse(FULL_CONFIG).expect("full config should parse");
+
+        assert_eq!(
+            display_name_column("vehicles_log", "posn_lat", &config.display),
+            "Latitude"
+        );
+    }
+
+    #[test]
+    fn table_display_name_uses_title_case_heuristic() {
+        assert_eq!(
+            display_name_table("vehicles_log", &DisplayConfig::default()),
+            "Vehicles Log"
+        );
+    }
+
+    #[test]
+    fn table_display_name_prefers_override() {
+        let config = AppConfig::parse(FULL_CONFIG).expect("full config should parse");
+
+        assert_eq!(
+            display_name_table("vehicles_log", &config.display),
+            "Fleet Log"
+        );
+    }
+
+    #[test]
+    fn example_config_parses() {
+        let config =
+            AppConfig::parse(include_str!("../seeki.toml.example")).expect("example config parses");
+
+        assert!(config.tables.include.is_some());
+        assert!(!config.display.tables.is_empty());
+        assert!(!config.display.columns.is_empty());
+        assert_eq!(config.branding.title.as_deref(), Some("AutoConnect"));
+    }
+
+    fn effective_tables<'a>(config: &TablesConfig, tables: &'a [&'a str]) -> Vec<&'a str> {
+        tables
+            .iter()
+            .copied()
+            .filter(|table| config.allows(table))
+            .collect()
+    }
+
+    fn load_config(content: &str) -> AppConfig {
+        let _guard = cwd_lock().lock().expect("cwd lock should not be poisoned");
+        let _temp_dir = TempConfigDir::new(content);
+
+        AppConfig::load().expect("config should load")
+    }
+
+    fn cwd_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct TempConfigDir {
+        original_dir: PathBuf,
+        temp_dir: PathBuf,
+    }
+
+    impl TempConfigDir {
+        fn new(content: &str) -> Self {
+            let original_dir = std::env::current_dir().expect("current dir should exist");
+            let temp_dir = std::env::temp_dir().join(format!(
+                "seeki-config-test-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("system time should be after epoch")
+                    .as_nanos()
+            ));
+
+            fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+            fs::write(temp_dir.join("seeki.toml"), content).expect("temp config should be written");
+            std::env::set_current_dir(&temp_dir).expect("cwd should switch to temp dir");
+
+            Self {
+                original_dir,
+                temp_dir,
+            }
+        }
+    }
+
+    impl Drop for TempConfigDir {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.original_dir).expect("cwd should be restored");
+            fs::remove_dir_all(&self.temp_dir).expect("temp dir should be removed");
+        }
     }
 }

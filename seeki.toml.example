@@ -6,3 +6,23 @@ port = 3141
 kind = "postgres"
 url = "postgres://user:password@localhost:5432/mydb"
 max_connections = 5
+
+# Optional table exposure controls. If `include` is set, only those tables are
+# shown. `exclude` is applied after `include`, so you can start broad and trim.
+[tables]
+include = ["vehicles_log", "drivers", "audit_log"]
+exclude = ["audit_log"]
+
+# Optional sidebar display name overrides for tables.
+[display.tables]
+vehicles_log = "Fleet Log"
+
+# Optional per-table column display name overrides.
+[display.columns.example_table]
+some_column = "Some Column"
+supervisor_id = "Supervisor"
+
+# Optional app branding shown in the UI shell.
+[branding]
+title = "AutoConnect"
+subtitle = "Fleet Telemetry"

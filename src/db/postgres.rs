@@ -191,7 +191,7 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .unwrap_or(Value::Null),
         "real" | "double precision" | "numeric" => row
             .try_get::<f64, _>(col)
-            .map(|v| Value::from(v))
+            .map(Value::from)
             .unwrap_or(Value::Null),
         "boolean" => row
             .try_get::<bool, _>(col)
