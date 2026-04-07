@@ -1,0 +1,43 @@
+[package]
+name = "seeki"
+version = "0.1.0"
+edition = "2024"
+description = "A read-only, spreadsheet-like database viewer for casual users. data-seeKing."
+license = "MIT"
+authors = ["Jovian Lim <kiriketsuki@gmail.com>"]
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+
+# Database drivers
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Config
+toml = "0.8"
+
+# Auth
+argon2 = "0.5"
+rand = "0.8"
+tower-sessions = "0.14"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Embed frontend assets
+rust-embed = { version = "8", features = ["axum"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Utilities
+anyhow = "1"
+dirs-next = "2"

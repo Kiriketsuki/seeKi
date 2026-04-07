@@ -18,3 +18,9 @@ Thumbs.db
 /dist/
 /build/
 /out/
+/target
+
+# Project-specific
+seeki.toml
+node_modules/
+frontend/dist/
