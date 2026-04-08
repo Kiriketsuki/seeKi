@@ -1,37 +1,37 @@
-# Fix Manifest -- PR #27: epic: Backend API & Config
+# Fix Manifest -- epic/1-backend-api-config merge into main
 
 Council verdict: CONDITIONAL | 2026-04-08 | 2 findings (2 verified)
 
-Previous council (pre-hardening) had 6 findings -- all 6 were fixed in commit 6e26117.
-This council reviews the post-hardening state.
+Third adversarial council (pre-merge review). Prior councils found 8 issues total -- all fixed.
+This council reviews the fully-hardened state before merging into main.
 
 ## Fixes Required
 
-### 1. save_config must verify connection before writing
-- **File**: `src/api/setup.rs`
-- **Lines**: 107-172
+### 1. u32 overflow in OFFSET computation
+- **File**: `src/db/postgres.rs`
+- **Line**: 287
 - **Type**: bug
-- **Severity**: medium
-- **Verification**: verified by Critic rebuttal, Questioner Q1+Q11
-- **Fix**: Call `postgres::test_connection(&req.database.url)` before writing seeki.toml. If the connection fails, return `{ success: false, error: "..." }` without writing the file. This reuses the existing `test_connection` function already in `src/db/postgres.rs:11-28`.
-- **Citations**: `src/api/setup.rs:107-172`, `src/main.rs:93`, `src/db/postgres.rs:11-28`
+- **Severity**: high
+- **Verification**: verified by Critic 2, conceded by Advocate
+- **Fix**: Cast `page` and `page_size` to `u64` before multiplication to prevent silent wrapping in release mode. e.g. `let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);` and interpolate as u64 into SQL.
+- **Citations**: `src/db/postgres.rs:287`, `src/db/mod.rs:48-49`
 
-### 2. row_count_estimate exposes -1 for unanalyzed tables
-- **File**: `src/db/postgres.rs`, `src/db/mod.rs`
-- **Lines**: postgres.rs:50-53, mod.rs:24
+### 2. CSV error sentinel is not valid CSV
+- **File**: `src/api/mod.rs`
+- **Lines**: 271-276, 322-327
 - **Type**: bug
 - **Severity**: medium
-- **Verification**: verified by Questioner Q9, Critic rebuttal
-- **Fix**: Change `TableInfo.row_count_estimate` from `i64` to `Option<i64>`. In `list_tables`, clamp negative values to `None`. Update `api/mod.rs` serialization to emit `null` instead of `-1`.
-- **Citations**: `src/db/postgres.rs:50-53`, `src/db/mod.rs:24`, `src/api/mod.rs:107-109`
+- **Verification**: verified by Critic 1 + Critic 2, conceded by Advocate
+- **Fix**: Either (a) remove the raw error text sentinels entirely and just close the stream (log the error server-side, which already happens), or (b) emit the error as a properly quoted CSV row. Option (a) is simpler and safer -- a truncated CSV is less harmful than a corrupted one.
+- **Citations**: `src/api/mod.rs:271-276`, `src/api/mod.rs:322-327`
 
 ## Informational Notes (not blocking)
-- SSRF via test_connection URL (mitigated by localhost bind)
-- Divergent pg_value_to_json / pg_value_to_csv_string implementations
-- ILIKE full-table scan at scale (acceptable for v0.1)
-- display_config queries DB on every request (cache for v0.2)
-- get_columns PK subquery missing table_schema filter
-- CSV error sentinel not RFC 4180 compliant (acceptable for v0.1)
+- CORS prefix match could be tightened to exact match (main.rs:47) -- low severity for localhost tool
+- No integration tests for DB layer (pre-existing gap, not introduced by this branch)
+- save_config accepts non-localhost hosts (low risk, setup mode is one-time)
+- Identifier validation rejects `$` in table/column names (compatibility edge case)
+- display_config / get_columns not cached (acceptable for v0.1, cache for v0.2)
+- Divergent pg_value_to_json / pg_value_to_csv_string boolean rendering (intentional: true/false vs Yes/No)
 
 ## Test Command
 ```

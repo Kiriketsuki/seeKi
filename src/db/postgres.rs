@@ -284,7 +284,7 @@ pub async fn query_rows(
     }
     let total_rows: i64 = count_query.fetch_one(pool).await?.get("cnt");
 
-    let offset = (params.page.saturating_sub(1)) * params.page_size;
+    let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);
     let query_sql = format!(
         "SELECT * FROM \"{table}\" {} {} LIMIT {} OFFSET {offset}",
         qb.where_clause, qb.order_clause, params.page_size

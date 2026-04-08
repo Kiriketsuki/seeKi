@@ -267,11 +267,6 @@ async fn export_csv(
             Ok(v) => v,
             Err(e) => {
                 tracing::error!(error = %e, "CSV export: failed to open row stream");
-                let _ = tx
-                    .send(Ok(bytes::Bytes::from(
-                        "\n# ERROR: Export failed before streaming rows. The data above is incomplete.\n",
-                    )))
-                    .await;
                 return;
             }
         };
@@ -317,13 +312,8 @@ async fn export_csv(
             let _ = tx.send(Ok(bytes::Bytes::from(std::mem::take(&mut batch_buf)))).await;
         }
 
-        // Append an error sentinel so clients can detect truncation
         if stream_error {
-            let _ = tx
-                .send(Ok(bytes::Bytes::from(
-                    "\n# ERROR: Export was interrupted. The data above is incomplete.\n",
-                )))
-                .await;
+            tracing::warn!("CSV export: stream ended with error, output may be truncated");
         }
     });
 
