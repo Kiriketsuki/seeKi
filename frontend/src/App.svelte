@@ -15,6 +15,7 @@
   let sidebarCollapsed: boolean = $state(false);
   let isSetup: boolean = $state(false);
   let error: string | null = $state(null);
+  let tableError: string | null = $state(null);
 
   onMount(async () => {
     try {
@@ -38,16 +39,17 @@
   });
 
   async function selectTable(tableName: string) {
+    tableError = null;
     try {
-      selectedTable = tableName;
       const [cols, result] = await Promise.all([
         fetchColumns(tableName),
         fetchRows(tableName)
       ]);
+      selectedTable = tableName;
       columns = cols;
       queryResult = result;
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load table';
+      tableError = e instanceof Error ? e.message : 'Failed to load table';
     }
   }
 </script>
@@ -120,6 +122,12 @@
         tableName={selectedTable}
         rowCount={queryResult?.total_rows ?? 0}
       />
+      {#if tableError}
+        <div class="table-error-banner">
+          <span>{tableError}</span>
+          <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
+        </div>
+      {/if}
       <div class="grid-area">
         <DataGrid {columns} rows={queryResult?.rows ?? []} />
       </div>
@@ -194,6 +202,27 @@
   }
   .table-item.active .table-item-count {
     color: rgba(255, 255, 255, 0.7);
+  }
+  .table-error-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sk-space-md);
+    padding: var(--sk-space-sm) var(--sk-space-2xl);
+    background: rgba(220, 38, 38, 0.1);
+    border-bottom: 1px solid rgba(220, 38, 38, 0.3);
+    color: var(--sk-text);
+    font-size: var(--sk-font-size-body);
+  }
+  .dismiss-btn {
+    background: none;
+    border: 1px solid rgba(220, 38, 38, 0.4);
+    border-radius: var(--sk-radius-sm);
+    padding: 2px var(--sk-space-sm);
+    font-family: var(--sk-font-ui);
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-text);
+    cursor: pointer;
   }
   .error-state {
     flex: 1;
