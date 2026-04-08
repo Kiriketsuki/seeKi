@@ -314,6 +314,12 @@ async fn export_csv(
 
         if stream_error {
             tracing::warn!("CSV export: stream ended with error, output may be truncated");
+            // Signal truncation to the client as a valid CSV comment row
+            let _ = tx
+                .send(Ok(bytes::Bytes::from_static(
+                    b"# ERROR: Export incomplete - not all rows were exported. Please retry.\n",
+                )))
+                .await;
         }
     });
 

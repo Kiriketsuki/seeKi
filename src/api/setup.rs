@@ -137,51 +137,15 @@ async fn save_config(Json(req): Json<SaveConfigRequest>) -> Json<SaveConfigRespo
         }
     }
 
-    // Build a typed struct and serialize via toml to prevent injection
-    let config_to_write = toml::value::Table::from_iter([
-        (
-            "server".to_string(),
-            toml::Value::Table(toml::value::Table::from_iter([
-                ("host".to_string(), toml::Value::String(req.server.host)),
-                (
-                    "port".to_string(),
-                    toml::Value::Integer(req.server.port as i64),
-                ),
-            ])),
-        ),
-        (
-            "database".to_string(),
-            toml::Value::Table(toml::value::Table::from_iter([
-                (
-                    "kind".to_string(),
-                    toml::Value::String(req.database.kind),
-                ),
-                ("url".to_string(), toml::Value::String(req.database.url)),
-                (
-                    "max_connections".to_string(),
-                    toml::Value::Integer(req.database.max_connections as i64),
-                ),
-            ])),
-        ),
-    ]);
-
-    let toml_content = match toml::to_string_pretty(&config_to_write) {
+    let toml_content = match build_config_toml(&req) {
         Ok(s) => s,
         Err(e) => {
             return Json(SaveConfigResponse {
                 success: false,
-                error: Some(format!("Failed to serialize config: {e}")),
+                error: Some(e),
             });
         }
     };
-
-    // Validate the generated TOML parses as a valid AppConfig
-    if let Err(e) = AppConfig::parse(&toml_content) {
-        return Json(SaveConfigResponse {
-            success: false,
-            error: Some(format!("Generated config is invalid: {e}")),
-        });
-    }
 
     match std::fs::write("seeki.toml", &toml_content) {
         Ok(()) => Json(SaveConfigResponse {
@@ -193,6 +157,46 @@ async fn save_config(Json(req): Json<SaveConfigRequest>) -> Json<SaveConfigRespo
             error: Some(format!("Failed to write seeki.toml: {e}")),
         }),
     }
+}
+
+/// Build a typed TOML config from the save request, serialize it, and validate
+/// it round-trips through `AppConfig::parse`. Returns the TOML string on success.
+fn build_config_toml(req: &SaveConfigRequest) -> Result<String, String> {
+    let config_to_write = toml::value::Table::from_iter([
+        (
+            "server".to_string(),
+            toml::Value::Table(toml::value::Table::from_iter([
+                ("host".to_string(), toml::Value::String(req.server.host.clone())),
+                (
+                    "port".to_string(),
+                    toml::Value::Integer(req.server.port as i64),
+                ),
+            ])),
+        ),
+        (
+            "database".to_string(),
+            toml::Value::Table(toml::value::Table::from_iter([
+                (
+                    "kind".to_string(),
+                    toml::Value::String(req.database.kind.clone()),
+                ),
+                ("url".to_string(), toml::Value::String(req.database.url.clone())),
+                (
+                    "max_connections".to_string(),
+                    toml::Value::Integer(req.database.max_connections as i64),
+                ),
+            ])),
+        ),
+    ]);
+
+    let toml_content = toml::to_string_pretty(&config_to_write)
+        .map_err(|e| format!("Failed to serialize config: {e}"))?;
+
+    // Validate the generated TOML parses as a valid AppConfig
+    AppConfig::parse(&toml_content)
+        .map_err(|e| format!("Generated config is invalid: {e}"))?;
+
+    Ok(toml_content)
 }
 
 fn parse_db_kind(kind: &str) -> Result<DatabaseKind, String> {
@@ -317,6 +321,67 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["success"], false);
         assert!(json["error"].as_str().unwrap().contains("Cannot connect"));
+    }
+
+    #[test]
+    fn build_config_toml_success_roundtrips() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://user:pass@localhost:5432/mydb".to_string(),
+                max_connections: 10,
+            },
+        };
+
+        let toml_content = build_config_toml(&req).expect("should produce valid TOML");
+
+        // Verify the TOML contains the expected values
+        let parsed: toml::Value = toml::from_str(&toml_content).unwrap();
+        assert_eq!(parsed["server"]["host"].as_str().unwrap(), "0.0.0.0");
+        assert_eq!(parsed["server"]["port"].as_integer().unwrap(), 8080);
+        assert_eq!(parsed["database"]["kind"].as_str().unwrap(), "postgres");
+        assert_eq!(
+            parsed["database"]["url"].as_str().unwrap(),
+            "postgres://user:pass@localhost:5432/mydb"
+        );
+        assert_eq!(parsed["database"]["max_connections"].as_integer().unwrap(), 10);
+
+        // Verify it round-trips through AppConfig::parse (already done inside
+        // build_config_toml, but confirm the output is also re-parseable)
+        AppConfig::parse(&toml_content).expect("generated TOML should parse as AppConfig");
+    }
+
+    #[test]
+    fn build_config_toml_writes_to_disk() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3141,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+            },
+        };
+
+        let toml_content = build_config_toml(&req).expect("should produce valid TOML");
+
+        let dir = std::env::temp_dir().join("seeki-test-save-config");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("seeki.toml");
+        std::fs::write(&path, &toml_content).expect("should write to temp file");
+
+        let read_back = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(read_back, toml_content);
+        AppConfig::parse(&read_back).expect("written file should parse as AppConfig");
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
