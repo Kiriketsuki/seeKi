@@ -1,43 +1,35 @@
 # Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Round 2)
 
-Council verdict: CONDITIONAL | 2026-04-08 | 7 findings (7 verified) | 1v1 no-questioner
+Council verdict: **FOR** | 2026-04-08 | 8 findings (8 verified) | 1v1 no-questioner
 
-## Fixes Required (merge conditions)
+## Blockers (all fixed)
 
-### 1. selectTable error destroys working UI (BLOCKER)
-- **File**: `frontend/src/App.svelte`
-- **Line**: 40-52
-- **Type**: bug
-- **Severity**: high (blocker)
-- **Verification**: verified
-- **Fix**: Scope selectTable errors to a table-specific error variable (e.g., `tableError`) instead of the global `error` that flips the entire UI to error state. Preserve previously-loaded table data on failure. Only set global `error` for unrecoverable failures (onMount).
-- **Citations**: `App.svelte:42` (sets selectedTable before fetch), `App.svelte:49-50` (sets global error on table load failure), `App.svelte:58` (error branch hides all data)
+### 1. selectTable error destroys working UI — FIXED
+- **File**: `frontend/src/App.svelte:40-52`
+- **Fix applied**: Scoped to `tableError` variable; global `error` only set by `onMount`. Inline dismissible banner for table-level failures.
+- **Commit**: 8a75543
 
-## Follow-Up Issues (do not block merge)
+### 2. Error state permanent after transient failure — FIXED
+- **File**: `frontend/src/App.svelte:40-52`
+- **Fix applied**: `tableError` cleared at start of `selectTable`. Global `error` never set by `selectTable`.
+- **Commit**: 8a75543
 
-### 2. Empty table list in error state sidebar
-- **File**: `frontend/src/App.svelte:66-81`
-- **Severity**: low
+## Reclassified (blocker → follow-up)
 
-### 3. Duplicate table-list nav markup
-- **File**: `frontend/src/App.svelte:66-81,101-116`
-- **Severity**: low
+### 3. Pagination permanently disabled (HIGH follow-up)
+- **File**: `frontend/src/components/StatusBar.svelte:25,29`
+- **Arbiter ruling**: Scaffold PR scope — all interactive buttons are intentionally disabled placeholders. Backend pagination fully implemented. Wiring is Epic 3.
 
-### 4. Mock generates only 50 rows
-- **File**: `frontend/src/lib/mock.ts:437`
-- **Severity**: low
+### 4. Export button wired to nothing
+- **File**: `frontend/src/components/Toolbar.svelte:35`
+- **Same scaffold pattern as pagination**
 
-### 5. fetchStatus serial in critical path
-- **File**: `frontend/src/App.svelte:21`
-- **Severity**: low
+## Other Follow-ups
 
-### 6. No loading state indicator
-- **File**: `frontend/src/App.svelte`
-- **Severity**: medium
-
-### 7. Sidebar localStorage flash
-- **File**: `frontend/src/components/Sidebar.svelte:21-29`
-- **Severity**: low
+### 5. Duplicate table-list nav markup — `App.svelte:66-81,101-116`
+### 6. Mock generates only 50 rows — `mock.ts:437`
+### 7. No loading state indicator — `App.svelte`
+### 8. Sidebar localStorage flash — `Sidebar.svelte:21-29`
 
 ## Test Command
 ```bash

@@ -1,6 +1,6 @@
 {
   "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged into main?",
-  "verdict": "CONDITIONAL",
+  "verdict": "FOR",
   "date": "2026-04-08",
   "council": {
     "advocates": 1,
@@ -21,21 +21,48 @@
       "verified": true,
       "conceded_by": ["advocate-1"],
       "classification": "blocker",
-      "fix_description": "Scope selectTable errors to a table-specific error variable instead of the global error that flips the entire UI to error state. Preserve previously-loaded table data on failure."
+      "status": "FIXED",
+      "fix_applied": "Scoped to tableError variable; global error only set by onMount. Inline banner for table-level failures."
     },
     {
       "id": 2,
-      "description": "Empty table list rendered in error state sidebar when tables array is empty",
+      "description": "Error state permanent after transient failure — error never cleared on recovery",
       "file": "frontend/src/App.svelte",
-      "line": 66,
-      "type": "ux",
-      "severity": "low",
+      "line": 40,
+      "type": "bug",
+      "severity": "high",
       "verified": true,
-      "classification": "follow-up",
-      "rationale": "Error card with retry button provides adequate UX for scaffold scope"
+      "conceded_by": ["advocate-1"],
+      "classification": "blocker",
+      "status": "FIXED",
+      "fix_applied": "tableError is cleared at start of selectTable (line 42). Global error is never set by selectTable."
     },
     {
       "id": 3,
+      "description": "Pagination permanently disabled — only page 1 ever loads for multi-page datasets",
+      "file": "frontend/src/components/StatusBar.svelte",
+      "lines": [25, 29],
+      "type": "missing-feature",
+      "severity": "high",
+      "verified": true,
+      "conceded_by": [],
+      "classification": "follow-up",
+      "rationale": "Scaffold PR scope — all interactive buttons (search, columns, export, pagination) are intentionally disabled placeholders. Backend pagination is fully implemented. Wiring is Epic 3.",
+      "arbiter_ruling": "Reclassified from blocker to HIGH follow-up. Disabled placeholders are consistent with scaffold scope."
+    },
+    {
+      "id": 4,
+      "description": "Export button wired to nothing despite fully implemented backend",
+      "file": "frontend/src/components/Toolbar.svelte",
+      "line": 35,
+      "type": "missing-feature",
+      "severity": "medium",
+      "verified": true,
+      "classification": "follow-up",
+      "rationale": "Same scaffold pattern as pagination — placeholder button"
+    },
+    {
+      "id": 5,
       "description": "Duplicate table-list nav markup across error and normal branches",
       "file": "frontend/src/App.svelte",
       "lines": [66, 101],
@@ -43,33 +70,20 @@
       "severity": "low",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "follow-up",
-      "rationale": "Extract TableList.svelte component when table list gains features"
+      "classification": "follow-up"
     },
     {
-      "id": 4,
-      "description": "Mock generates only 50 rows regardless of table row_count_estimate",
+      "id": 6,
+      "description": "Mock generates only 50 rows, masking pagination gap during mock development",
       "file": "frontend/src/lib/mock.ts",
       "line": 437,
       "type": "improvement",
       "severity": "low",
       "verified": true,
-      "classification": "follow-up",
-      "rationale": "Mock serves UI dev purposes; 50 rows sufficient for testing"
+      "classification": "follow-up"
     },
     {
-      "id": 5,
-      "description": "fetchStatus adds serial request to critical load path",
-      "file": "frontend/src/App.svelte",
-      "line": 21,
-      "type": "improvement",
-      "severity": "low",
-      "verified": true,
-      "classification": "follow-up",
-      "rationale": "Status endpoint is lightweight; cleaner than inferring from API errors"
-    },
-    {
-      "id": 6,
+      "id": 7,
       "description": "No loading state indicator during initial data fetch",
       "file": "frontend/src/App.svelte",
       "line": 19,
@@ -77,28 +91,30 @@
       "severity": "medium",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "follow-up",
-      "rationale": "Acceptable for scaffold; loading states are Epic 3 polish"
+      "classification": "follow-up"
     },
     {
-      "id": 7,
+      "id": 8,
       "description": "Sidebar localStorage restore causes flash of expanded-to-collapsed on mount",
       "file": "frontend/src/components/Sidebar.svelte",
       "line": 21,
       "type": "ux",
       "severity": "low",
       "verified": true,
-      "classification": "follow-up",
-      "rationale": "Cosmetic; could be fixed by reading localStorage before first render"
+      "classification": "follow-up"
     }
   ],
-  "merge_conditions": [
-    "Fix selectTable error handling to not destroy working UI on single table load failure (finding 1)"
+  "merge_conditions": [],
+  "conditions_met": true,
+  "fixes_applied": [
+    "Finding 1+2: selectTable error handling scoped to tableError variable (commit 8a75543)"
   ],
   "follow_up_issues": [
-    "Extract TableList.svelte to deduplicate nav markup (finding 3)",
-    "Add loading state indicator (finding 6)",
-    "Fix sidebar localStorage flash (finding 7)"
+    "Wire pagination in StatusBar (finding 3 — HIGH priority, Epic 3)",
+    "Wire export button to /export/{table}/csv (finding 4)",
+    "Extract TableList.svelte to deduplicate nav markup (finding 5)",
+    "Add loading state indicator (finding 7)",
+    "Fix sidebar localStorage flash (finding 8)"
   ],
   "critical_discoveries": []
 }
