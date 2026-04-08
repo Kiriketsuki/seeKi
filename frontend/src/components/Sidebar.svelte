@@ -29,8 +29,9 @@
   });
 
   function handleToggle() {
+    const nextCollapsed = !collapsed;
     onToggle();
-    localStorage.setItem(STORAGE_KEY, String(!collapsed));
+    localStorage.setItem(STORAGE_KEY, String(nextCollapsed));
   }
 </script>
 

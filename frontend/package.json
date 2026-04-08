@@ -19,6 +19,8 @@
     "vite": "^8.0.4"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@revolist/svelte-datagrid": "^4.21.4",
     "lucide-svelte": "^1.0.1"
   }

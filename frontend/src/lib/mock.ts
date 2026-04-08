@@ -6,19 +6,19 @@ import type {
 } from './types';
 
 const TABLES: TableInfo[] = [
-  { name: 'vehicles', display_name: 'Vehicles', row_count_estimate: 42 },
+  { name: 'users', display_name: 'Users', row_count_estimate: 42 },
   {
-    name: 'vehicles_log',
-    display_name: 'Vehicles Log',
+    name: 'activity_log',
+    display_name: 'Activity Log',
     row_count_estimate: 427229,
   },
   { name: 'events', display_name: 'Events', row_count_estimate: 18000 },
-  { name: 'faults', display_name: 'Faults', row_count_estimate: 3200 },
-  { name: 'flights', display_name: 'Flights', row_count_estimate: 890 },
+  { name: 'tickets', display_name: 'Tickets', row_count_estimate: 3200 },
+  { name: 'orders', display_name: 'Orders', row_count_estimate: 890 },
 ];
 
 const COLUMNS: Record<string, ColumnInfo[]> = {
-  vehicles: [
+  users: [
     {
       name: 'id',
       display_name: 'ID',
@@ -36,8 +36,16 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: false,
     },
     {
-      name: 'type',
-      display_name: 'Type',
+      name: 'email',
+      display_name: 'Email',
+      data_type: 'varchar',
+      display_type: 'text',
+      is_nullable: false,
+      is_primary_key: false,
+    },
+    {
+      name: 'role',
+      display_name: 'Role',
       data_type: 'varchar',
       display_type: 'text',
       is_nullable: false,
@@ -52,23 +60,15 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: false,
     },
     {
-      name: 'firmware_version',
-      display_name: 'Firmware Version',
-      data_type: 'varchar',
-      display_type: 'text',
-      is_nullable: true,
-      is_primary_key: false,
-    },
-    {
-      name: 'last_seen',
-      display_name: 'Last Seen',
+      name: 'last_login',
+      display_name: 'Last Login',
       data_type: 'timestamp',
       display_type: 'datetime',
       is_nullable: true,
       is_primary_key: false,
     },
   ],
-  vehicles_log: [
+  activity_log: [
     {
       name: 'id',
       display_name: 'ID',
@@ -78,8 +78,8 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: true,
     },
     {
-      name: 'vehicle_id',
-      display_name: 'Vehicle ID',
+      name: 'user_id',
+      display_name: 'User ID',
       data_type: 'integer',
       display_type: 'number',
       is_nullable: false,
@@ -94,26 +94,26 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: false,
     },
     {
-      name: 'supervisor',
-      display_name: 'Supervisor',
+      name: 'action',
+      display_name: 'Action',
+      data_type: 'varchar',
+      display_type: 'text',
+      is_nullable: false,
+      is_primary_key: false,
+    },
+    {
+      name: 'ip_address',
+      display_name: 'IP Address',
       data_type: 'varchar',
       display_type: 'text',
       is_nullable: true,
       is_primary_key: false,
     },
     {
-      name: 'posn_lat',
-      display_name: 'Latitude',
-      data_type: 'double precision',
-      display_type: 'number',
-      is_nullable: true,
-      is_primary_key: false,
-    },
-    {
-      name: 'posn_lon',
-      display_name: 'Longitude',
-      data_type: 'double precision',
-      display_type: 'number',
+      name: 'details',
+      display_name: 'Details',
+      data_type: 'text',
+      display_type: 'text',
       is_nullable: true,
       is_primary_key: false,
     },
@@ -128,10 +128,10 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: true,
     },
     {
-      name: 'vehicle_id',
-      display_name: 'Vehicle ID',
-      data_type: 'integer',
-      display_type: 'number',
+      name: 'title',
+      display_name: 'Title',
+      data_type: 'varchar',
+      display_type: 'text',
       is_nullable: false,
       is_primary_key: false,
     },
@@ -168,7 +168,7 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: false,
     },
   ],
-  faults: [
+  tickets: [
     {
       name: 'id',
       display_name: 'ID',
@@ -178,27 +178,27 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: true,
     },
     {
-      name: 'vehicle_id',
-      display_name: 'Vehicle ID',
+      name: 'user_id',
+      display_name: 'User ID',
       data_type: 'integer',
       display_type: 'number',
       is_nullable: false,
       is_primary_key: false,
     },
     {
-      name: 'fault_code',
-      display_name: 'Fault Code',
+      name: 'priority',
+      display_name: 'Priority',
       data_type: 'varchar',
       display_type: 'text',
       is_nullable: false,
       is_primary_key: false,
     },
     {
-      name: 'description',
-      display_name: 'Description',
-      data_type: 'text',
+      name: 'subject',
+      display_name: 'Subject',
+      data_type: 'varchar',
       display_type: 'text',
-      is_nullable: true,
+      is_nullable: false,
       is_primary_key: false,
     },
     {
@@ -210,15 +210,15 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: false,
     },
     {
-      name: 'reported_at',
-      display_name: 'Reported At',
+      name: 'created_at',
+      display_name: 'Created At',
       data_type: 'timestamp',
       display_type: 'datetime',
       is_nullable: false,
       is_primary_key: false,
     },
   ],
-  flights: [
+  orders: [
     {
       name: 'id',
       display_name: 'ID',
@@ -228,95 +228,98 @@ const COLUMNS: Record<string, ColumnInfo[]> = {
       is_primary_key: true,
     },
     {
-      name: 'vehicle_id',
-      display_name: 'Vehicle ID',
+      name: 'user_id',
+      display_name: 'User ID',
       data_type: 'integer',
       display_type: 'number',
       is_nullable: false,
       is_primary_key: false,
     },
     {
-      name: 'route_name',
-      display_name: 'Route Name',
+      name: 'product',
+      display_name: 'Product',
       data_type: 'varchar',
       display_type: 'text',
       is_nullable: false,
       is_primary_key: false,
     },
     {
-      name: 'departure_time',
-      display_name: 'Departure Time',
+      name: 'amount',
+      display_name: 'Amount',
+      data_type: 'numeric',
+      display_type: 'number',
+      is_nullable: false,
+      is_primary_key: false,
+    },
+    {
+      name: 'status',
+      display_name: 'Status',
+      data_type: 'varchar',
+      display_type: 'text',
+      is_nullable: false,
+      is_primary_key: false,
+    },
+    {
+      name: 'created_at',
+      display_name: 'Created At',
       data_type: 'timestamp',
       display_type: 'datetime',
       is_nullable: false,
       is_primary_key: false,
     },
-    {
-      name: 'arrival_time',
-      display_name: 'Arrival Time',
-      data_type: 'timestamp',
-      display_type: 'datetime',
-      is_nullable: true,
-      is_primary_key: false,
-    },
-    {
-      name: 'passenger_count',
-      display_name: 'Passengers',
-      data_type: 'integer',
-      display_type: 'number',
-      is_nullable: true,
-      is_primary_key: false,
-    },
   ],
 };
 
-const VEHICLE_NAMES = [
-  'AV-001',
-  'AV-002',
-  'AV-003',
-  'AV-004',
-  'AV-005',
-  'AV-006',
-  'AV-007',
-  'AV-008',
-  'AV-009',
-  'AV-010',
-];
-const VEHICLE_TYPES = ['shuttle', 'pod', 'cargo'];
-const STATUSES = ['active', 'idle', 'maintenance', 'offline'];
-const SUPERVISORS = [
+const USER_NAMES = [
   'Alice Chen',
   'Bob Wright',
   'Carol Davis',
   'Dave Patel',
   'Eve Thompson',
+  'Frank Miller',
+  'Grace Lee',
+  'Hank Johnson',
+  'Iris Wang',
+  'Jack Brown',
+];
+const ROLES = ['admin', 'editor', 'viewer', 'manager'];
+const STATUSES = ['active', 'inactive', 'suspended', 'pending'];
+const ACTIONS = [
+  'login',
+  'logout',
+  'update_profile',
+  'create_record',
+  'delete_record',
+  'export_data',
 ];
 const EVENT_TYPES = [
-  'start',
-  'stop',
-  'obstacle_detected',
-  'route_change',
-  'emergency_stop',
-  'passenger_boarding',
+  'system_start',
+  'system_stop',
+  'alert',
+  'maintenance',
+  'deployment',
+  'backup',
 ];
 const SEVERITIES = ['info', 'warning', 'error', 'critical'];
-const FAULT_CODES = [
-  'LIDAR-001',
-  'GPS-002',
-  'MOTOR-003',
-  'BATT-004',
-  'COMM-005',
-  'BRAKE-006',
-  'STEER-007',
-  'CAM-008',
+const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const TICKET_SUBJECTS = [
+  'Login issue',
+  'Data export failed',
+  'Permission denied',
+  'Slow query',
+  'Missing records',
+  'UI rendering bug',
+  'API timeout',
+  'Incorrect totals',
 ];
-const ROUTES = [
-  'Campus Loop A',
-  'Campus Loop B',
-  'Terminal Shuttle',
-  'Parking Transfer',
-  'Perimeter Route',
+const PRODUCTS = [
+  'Widget Pro',
+  'Gadget Plus',
+  'Service Basic',
+  'Service Premium',
+  'Toolkit Starter',
 ];
+const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -328,75 +331,74 @@ function randomTimestamp(daysBack: number): string {
   return new Date(now - offset).toISOString();
 }
 
-function generateVehicleRows(count: number): Record<string, unknown>[] {
+function randomIp(): string {
+  return `${10 + Math.floor(Math.random() * 240)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`;
+}
+
+function generateUserRows(count: number): Record<string, unknown>[] {
   return Array.from({ length: count }, (_, i) => ({
     id: i + 1,
-    name: VEHICLE_NAMES[i % VEHICLE_NAMES.length],
-    type: pick(VEHICLE_TYPES),
+    name: USER_NAMES[i % USER_NAMES.length],
+    email: `${USER_NAMES[i % USER_NAMES.length].toLowerCase().replace(' ', '.')}@example.com`,
+    role: pick(ROLES),
     status: pick(STATUSES),
-    firmware_version: `${1 + Math.floor(Math.random() * 3)}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`,
-    last_seen: randomTimestamp(7),
+    last_login: randomTimestamp(7),
   }));
 }
 
-function generateVehiclesLogRows(count: number): Record<string, unknown>[] {
+function generateActivityLogRows(count: number): Record<string, unknown>[] {
   return Array.from({ length: count }, (_, i) => ({
     id: i + 1,
-    vehicle_id: 1 + Math.floor(Math.random() * 10),
+    user_id: 1 + Math.floor(Math.random() * 10),
     timestamp: randomTimestamp(30),
-    supervisor: pick(SUPERVISORS),
-    posn_lat: 52.04 + Math.random() * 0.02,
-    posn_lon: -1.015 + Math.random() * 0.02,
+    action: pick(ACTIONS),
+    ip_address: randomIp(),
+    details: `User performed ${pick(ACTIONS)} action`,
   }));
 }
 
 function generateEventRows(count: number): Record<string, unknown>[] {
   return Array.from({ length: count }, (_, i) => ({
     id: i + 1,
-    vehicle_id: 1 + Math.floor(Math.random() * 10),
+    title: `Event ${i + 1}`,
     event_type: pick(EVENT_TYPES),
     severity: pick(SEVERITIES),
-    message: `Event ${i + 1}: ${pick(EVENT_TYPES)} on vehicle ${1 + Math.floor(Math.random() * 10)}`,
+    message: `${pick(EVENT_TYPES)} event triggered at ${randomTimestamp(1)}`,
     created_at: randomTimestamp(60),
   }));
 }
 
-function generateFaultRows(count: number): Record<string, unknown>[] {
+function generateTicketRows(count: number): Record<string, unknown>[] {
   return Array.from({ length: count }, (_, i) => ({
     id: i + 1,
-    vehicle_id: 1 + Math.floor(Math.random() * 10),
-    fault_code: pick(FAULT_CODES),
-    description: `Fault detected in subsystem: ${pick(FAULT_CODES).split('-')[0].toLowerCase()}`,
+    user_id: 1 + Math.floor(Math.random() * 10),
+    priority: pick(PRIORITIES),
+    subject: pick(TICKET_SUBJECTS),
     resolved: Math.random() > 0.3,
-    reported_at: randomTimestamp(90),
+    created_at: randomTimestamp(90),
   }));
 }
 
-function generateFlightRows(count: number): Record<string, unknown>[] {
-  return Array.from({ length: count }, (_, i) => {
-    const dep = randomTimestamp(30);
-    const depMs = new Date(dep).getTime();
-    const arrivalMs = depMs + (5 + Math.floor(Math.random() * 25)) * 60000;
-    return {
-      id: i + 1,
-      vehicle_id: 1 + Math.floor(Math.random() * 10),
-      route_name: pick(ROUTES),
-      departure_time: dep,
-      arrival_time: Math.random() > 0.1 ? new Date(arrivalMs).toISOString() : null,
-      passenger_count: Math.floor(Math.random() * 12),
-    };
-  });
+function generateOrderRows(count: number): Record<string, unknown>[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: i + 1,
+    user_id: 1 + Math.floor(Math.random() * 10),
+    product: pick(PRODUCTS),
+    amount: Math.round((5 + Math.random() * 495) * 100) / 100,
+    status: pick(ORDER_STATUSES),
+    created_at: randomTimestamp(30),
+  }));
 }
 
 const ROW_GENERATORS: Record<
   string,
   (count: number) => Record<string, unknown>[]
 > = {
-  vehicles: generateVehicleRows,
-  vehicles_log: generateVehiclesLogRows,
+  users: generateUserRows,
+  activity_log: generateActivityLogRows,
   events: generateEventRows,
-  faults: generateFaultRows,
-  flights: generateFlightRows,
+  tickets: generateTicketRows,
+  orders: generateOrderRows,
 };
 
 const ROW_CACHE: Record<string, Record<string, unknown>[]> = {};

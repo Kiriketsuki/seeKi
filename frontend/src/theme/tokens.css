@@ -44,8 +44,8 @@
   --sk-shadow-accent: 0 2px 8px rgba(0, 169, 165, 0.2);
 
   /* Typography */
-  --sk-font-ui: 'Inter', system-ui, -apple-system, sans-serif;
-  --sk-font-mono: 'JetBrains Mono', monospace;
+  --sk-font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --sk-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', monospace;
   --sk-font-size-xs: 9px;
   --sk-font-size-sm: 10px;
   --sk-font-size-body: 12px;
