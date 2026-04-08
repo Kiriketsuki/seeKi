@@ -461,13 +461,14 @@ export function mockFetchRows(
     });
   }
 
+  const filteredTotal = rows.length;
   const start = (page - 1) * pageSize;
   const paged = rows.slice(start, start + pageSize);
 
   return {
     columns: COLUMNS[table] ?? [],
     rows: paged,
-    total_rows: totalRows,
+    total_rows: filteredTotal,
     page,
     page_size: pageSize,
   };

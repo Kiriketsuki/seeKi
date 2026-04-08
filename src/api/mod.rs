@@ -24,6 +24,11 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/tables/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
         .route("/export/{table}/csv", get(export_csv))
+        .route("/status", get(status_normal))
+}
+
+async fn status_normal() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "mode": "normal" }))
 }
 
 #[derive(Serialize)]

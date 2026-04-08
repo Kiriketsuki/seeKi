@@ -1,39 +1,90 @@
-# Fix Manifest -- epic/1-backend-api-config merge into main
+# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration
 
-Council verdict: CONDITIONAL | 2026-04-08 | 2 findings (2 verified)
+Council verdict: CONDITIONAL | 2026-04-08 | 10 findings (9 verified, 1 dismissed) | TeamCreate council
 
-Third adversarial council (pre-merge review). Prior councils found 8 issues total -- all fixed.
-This council reviews the fully-hardened state before merging into main.
+## Fixes Required (merge conditions)
 
-## Fixes Required
-
-### 1. u32 overflow in OFFSET computation
-- **File**: `src/db/postgres.rs`
-- **Line**: 287
-- **Type**: bug
-- **Severity**: high
-- **Verification**: verified by Critic 2, conceded by Advocate
-- **Fix**: Cast `page` and `page_size` to `u64` before multiplication to prevent silent wrapping in release mode. e.g. `let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);` and interpolate as u64 into SQL.
-- **Citations**: `src/db/postgres.rs:287`, `src/db/mod.rs:48-49`
-
-### 2. CSV error sentinel is not valid CSV
-- **File**: `src/api/mod.rs`
-- **Lines**: 271-276, 322-327
+### 1. Mock total_rows misrepresents actual data
+- **File**: `frontend/src/lib/mock.ts`
+- **Lines**: 435, 437, 467-473
 - **Type**: bug
 - **Severity**: medium
-- **Verification**: verified by Critic 1 + Critic 2, conceded by Advocate
-- **Fix**: Either (a) remove the raw error text sentinels entirely and just close the stream (log the error server-side, which already happens), or (b) emit the error as a properly quoted CSV row. Option (a) is simpler and safer -- a truncated CSV is less harmful than a corrupted one.
-- **Citations**: `src/api/mod.rs:271-276`, `src/api/mod.rs:322-327`
+- **Verification**: verified by Questioner — page 2 returns [] while StatusBar shows "51–100 of 427,229"
+- **Fix**: Set `total_rows` in the returned QueryResult to the actual length of the filtered/generated rows array, not `row_count_estimate`
+- **Citations**: `mock.ts:435` (totalRows = row_count_estimate), `mock.ts:437` (getRows hardcoded to 50), `mock.ts:464-465` (slice returns [] for page 2)
 
-## Informational Notes (not blocking)
-- CORS prefix match could be tightened to exact match (main.rs:47) -- low severity for localhost tool
-- No integration tests for DB layer (pre-existing gap, not introduced by this branch)
-- save_config accepts non-localhost hosts (low risk, setup mode is one-time)
-- Identifier validation rejects `$` in table/column names (compatibility edge case)
-- display_config / get_columns not cached (acceptable for v0.1, cache for v0.2)
-- Divergent pg_value_to_json / pg_value_to_csv_string boolean rendering (intentional: true/false vs Yes/No)
+### 2. Justfile build recipe doesn't pin VITE_MOCK=false
+- **File**: `Justfile`
+- **Line**: 20
+- **Type**: hardening
+- **Severity**: medium
+- **Verification**: verified — risk downgraded (requires explicit `export VITE_MOCK=true` in shell)
+- **Fix**: Change `cd frontend && npm run build` to `cd frontend && VITE_MOCK=false npm run build`
+- **Citations**: `Justfile:20`, `api.ts:16` (strict equality gate)
+
+## Follow-Up Issues (track separately, do not block merge)
+
+### 3. No table navigation UI (HIGH priority)
+- **File**: `frontend/src/App.svelte`
+- **Line**: 73
+- **Type**: bug (missing feature)
+- **Severity**: high
+- **Fix**: Add a table list component as Sidebar children; wire onclick to selectTable
+- **Conceded by**: both advocates
+
+### 4. Setup mode disconnected (HIGH priority)
+- **File**: `frontend/src/App.svelte`
+- **Line**: 16
+- **Type**: bug (missing feature)
+- **Severity**: high
+- **Fix**: Wire isSetup to backend API detection; render setup wizard when backend is in setup mode
+- **Conceded by**: both advocates
+
+### 5. CORS allows Any methods/headers
+- **File**: `src/main.rs`
+- **Line**: 58
+- **Type**: hardening
+- **Severity**: low
+- **Fix**: Restrict to `allow_methods([GET])` and `allow_headers([CONTENT_TYPE])`
+
+### 6. content.data.to_vec() clones embedded bytes
+- **File**: `src/embed.rs`
+- **Lines**: 26, 41
+- **Type**: performance
+- **Severity**: low
+- **Fix**: Use `Cow`/`Bytes` conversion instead of `.to_vec()` allocation
+
+### 7. API error handling discards response body
+- **File**: `frontend/src/lib/api.ts`
+- **Line**: 21
+- **Type**: improvement
+- **Severity**: low
+- **Fix**: Read `res.text()` or `res.json()` for error body instead of relying on `statusText`
+
+### 8. No runtime validation of API response shapes
+- **File**: `frontend/src/lib/api.ts`
+- **Line**: 23
+- **Type**: improvement
+- **Severity**: low
+- **Fix**: Add field-presence checks or zod schema validation at the API boundary
+
+### 9. Setup mode hardcodes bind address
+- **File**: `src/main.rs`
+- **Line**: 88
+- **Type**: improvement
+- **Severity**: low
+- **Fix**: Read from env var or partial config file
+
+## Dismissed Findings
+
+### ~~CDN font dependency~~ (DISMISSED)
+- **Reason**: Factually wrong — fonts are npm-bundled via `@fontsource-variable` imports in `main.ts:1-2`
+- **Conceded by**: critic-2
 
 ## Test Command
+```bash
+cd frontend && npm run build && cargo check
 ```
-cargo test
-```
+
+## Raw Data
+council-result.json: .council/council-result.json

@@ -1,0 +1,159 @@
+{
+  "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged as-is into main?",
+  "verdict": "CONDITIONAL",
+  "date": "2026-04-08",
+  "council": {
+    "advocates": 2,
+    "critics": 2,
+    "questioner": 1,
+    "rounds": 2,
+    "mode": "skeptic",
+    "tool": "TeamCreate"
+  },
+  "findings": [
+    {
+      "id": 1,
+      "description": "No table navigation UI — selectTable unreachable after mount, users stuck on first table",
+      "file": "frontend/src/App.svelte",
+      "line": 73,
+      "type": "bug",
+      "severity": "high",
+      "verified": true,
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "classification": "follow-up",
+      "rationale": "Scaffold PR scope — Sidebar children slot is ready, selectTable is wired, table list component is a T-next task"
+    },
+    {
+      "id": 2,
+      "description": "Setup mode disconnected — isSetup hardcoded false, frontend never renders setup wizard",
+      "file": "frontend/src/App.svelte",
+      "line": 16,
+      "type": "bug",
+      "severity": "high",
+      "verified": true,
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "classification": "follow-up",
+      "rationale": "Setup wizard is Epic 5 scope per App.svelte:51 comment"
+    },
+    {
+      "id": 3,
+      "description": "Mock total_rows misrepresents actual data — page 2 returns empty rows with inflated total_rows count",
+      "file": "frontend/src/lib/mock.ts",
+      "lines": [435, 437],
+      "type": "bug",
+      "severity": "medium",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "rebutted_by": ["advocate-2"],
+      "rebuttal_rejected": true,
+      "rebuttal_rejection_reason": "Questioner verified page 2 returns [] while StatusBar shows 51-100 of 427,229",
+      "classification": "fix-in-pr",
+      "fix": "Set total_rows to the actual generated/filtered row count instead of row_count_estimate"
+    },
+    {
+      "id": 4,
+      "description": "Justfile build recipe doesn't pin VITE_MOCK=false — environment contamination possible",
+      "file": "Justfile",
+      "line": 19,
+      "type": "hardening",
+      "severity": "medium",
+      "verified": true,
+      "risk_downgraded": true,
+      "risk_note": "Requires explicit export VITE_MOCK=true in shell; strict equality gate prevents undefined from matching",
+      "classification": "fix-in-pr",
+      "fix": "Pin VITE_MOCK=false in build recipe"
+    },
+    {
+      "id": 5,
+      "description": "CDN font dependency contradicts single-binary deployment",
+      "file": "frontend/src/theme/tokens.css",
+      "type": "architecture",
+      "severity": "dismissed",
+      "verified": false,
+      "dismissed_reason": "Factually wrong — fonts are npm-bundled via @fontsource-variable imports in main.ts:1-2",
+      "conceded_by": ["critic-2"],
+      "classification": "dismissed"
+    },
+    {
+      "id": 6,
+      "description": "CORS allows Any methods and Any headers",
+      "file": "src/main.rs",
+      "line": 58,
+      "type": "hardening",
+      "severity": "low",
+      "verified": true,
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "classification": "follow-up",
+      "rationale": "Origin predicate restricts to localhost; limited blast radius for local-only tool"
+    },
+    {
+      "id": 7,
+      "description": "content.data.to_vec() clones embedded bytes on every static asset request",
+      "file": "src/embed.rs",
+      "lines": [26, 41],
+      "type": "performance",
+      "severity": "low",
+      "verified": true,
+      "classification": "follow-up"
+    },
+    {
+      "id": 8,
+      "description": "API error handling discards server error body — statusText empty in HTTP/2",
+      "file": "frontend/src/lib/api.ts",
+      "line": 21,
+      "type": "improvement",
+      "severity": "low",
+      "verified": true,
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "classification": "follow-up"
+    },
+    {
+      "id": 9,
+      "description": "No runtime validation of API response shapes — res.json() as Promise<T>",
+      "file": "frontend/src/lib/api.ts",
+      "line": 23,
+      "type": "improvement",
+      "severity": "low",
+      "verified": true,
+      "classification": "follow-up"
+    },
+    {
+      "id": 10,
+      "description": "Setup mode hardcodes bind address, ignores config",
+      "file": "src/main.rs",
+      "line": 88,
+      "type": "improvement",
+      "severity": "low",
+      "verified": true,
+      "classification": "follow-up"
+    }
+  ],
+  "merge_conditions": [
+    "Fix mock total_rows to match actual generated/filtered row count (finding 3)",
+    "Pin VITE_MOCK=false in Justfile build recipe (finding 4)"
+  ],
+  "follow_up_issues": [
+    "Add table navigation list component in Sidebar (finding 1 — HIGH priority)",
+    "Wire isSetup to backend API detection for setup mode (finding 2 — HIGH priority)",
+    "Restrict CORS to GET method and explicit headers (finding 6)",
+    "Avoid to_vec() clone in embed.rs — use Cow/Bytes directly (finding 7)",
+    "Read response body in apiFetch error path (finding 8)",
+    "Add runtime validation for API responses (finding 9)",
+    "Setup mode: read bind addr from env or partial config (finding 10)"
+  ],
+  "questioner_overrides": [
+    {
+      "claim": "CDN font dependency contradicts single-binary",
+      "agent": "critic-2",
+      "verdict": "DISMISSED",
+      "reason": "Fonts are npm-bundled via @fontsource-variable imports in main.ts:1-2"
+    },
+    {
+      "claim": "Mock total_rows correctly models real DB pagination",
+      "agent": "advocate-2",
+      "verdict": "REJECTED",
+      "reason": "Page 2 returns [] while showing 51-100 of 427,229 — real DB would have actual rows"
+    }
+  ],
+  "critical_discoveries": []
+}

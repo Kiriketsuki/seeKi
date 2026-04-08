@@ -3,6 +3,7 @@ import type {
   ColumnInfo,
   QueryResult,
   DisplayConfig,
+  StatusResponse,
   TablesResponse,
   ColumnsResponse,
 } from './types';
@@ -15,10 +16,29 @@ import {
 
 const USE_MOCK = import.meta.env.VITE_MOCK === 'true';
 
+function assertShape(data: unknown, fields: string[], context: string): void {
+  if (data == null || typeof data !== 'object') {
+    throw new Error(`${context}: expected object, got ${typeof data}`);
+  }
+  for (const field of fields) {
+    if (!(field in (data as Record<string, unknown>))) {
+      throw new Error(`${context}: missing required field '${field}'`);
+    }
+  }
+}
+
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${res.statusText}`);
+    const text = await res.text().catch(() => '');
+    let message = `API error ${res.status}`;
+    try {
+      const body = JSON.parse(text);
+      if (body?.error) message = body.error;
+    } catch {
+      if (text) message += `: ${text}`;
+    }
+    throw new Error(message);
   }
   return res.json() as Promise<T>;
 }
@@ -26,6 +46,7 @@ async function apiFetch<T>(path: string): Promise<T> {
 export async function fetchTables(): Promise<TableInfo[]> {
   if (USE_MOCK) return mockFetchTables();
   const data = await apiFetch<TablesResponse>('/api/tables');
+  assertShape(data, ['tables'], '/api/tables');
   return data.tables;
 }
 
@@ -34,6 +55,7 @@ export async function fetchColumns(table: string): Promise<ColumnInfo[]> {
   const data = await apiFetch<ColumnsResponse>(
     `/api/tables/${encodeURIComponent(table)}/columns`,
   );
+  assertShape(data, ['columns'], `/api/tables/${table}/columns`);
   return data.columns;
 }
 
@@ -67,10 +89,21 @@ export async function fetchRows(
   }
   const qs = searchParams.toString();
   const path = `/api/tables/${encodeURIComponent(table)}/rows${qs ? `?${qs}` : ''}`;
-  return await apiFetch<QueryResult>(path);
+  const result = await apiFetch<QueryResult>(path);
+  assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], `/api/tables/${table}/rows`);
+  return result;
 }
 
 export async function fetchDisplayConfig(): Promise<DisplayConfig> {
   if (USE_MOCK) return mockFetchDisplayConfig();
-  return await apiFetch<DisplayConfig>('/api/config/display');
+  const data = await apiFetch<DisplayConfig>('/api/config/display');
+  assertShape(data, ['branding', 'tables'], '/api/config/display');
+  return data;
+}
+
+export async function fetchStatus(): Promise<StatusResponse> {
+  if (USE_MOCK) return { mode: 'normal' };
+  const data = await apiFetch<StatusResponse>('/api/status');
+  assertShape(data, ['mode'], '/api/status');
+  return data;
 }

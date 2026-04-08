@@ -1,10 +1,20 @@
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
+use bytes::Bytes;
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
 #[folder = "frontend/dist/"]
 struct Assets;
+
+/// Convert `Cow<'static, [u8]>` to `Bytes` without copying in release builds
+/// (where rust-embed returns `Cow::Borrowed` pointing into the binary's data segment).
+fn cow_to_bytes(data: std::borrow::Cow<'static, [u8]>) -> Bytes {
+    match data {
+        std::borrow::Cow::Borrowed(b) => Bytes::from_static(b),
+        std::borrow::Cow::Owned(v) => Bytes::from(v),
+    }
+}
 
 pub async fn handler(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
@@ -23,7 +33,7 @@ pub async fn handler(uri: Uri) -> Response {
                 (header::CONTENT_TYPE, mime.as_ref().to_string()),
                 (header::CACHE_CONTROL, cache.to_string()),
             ],
-            content.data.to_vec(),
+            cow_to_bytes(content.data),
         )
             .into_response();
     }
@@ -37,7 +47,7 @@ pub async fn handler(uri: Uri) -> Response {
                 (header::CONTENT_TYPE, mime.as_ref().to_string()),
                 (header::CACHE_CONTROL, "no-cache".to_string()),
             ],
-            content.data.to_vec(),
+            cow_to_bytes(content.data),
         )
             .into_response();
     }

@@ -17,5 +17,5 @@ dev-mock:
 
 # Build frontend then release binary
 build:
-    cd frontend && npm run build
+    cd frontend && VITE_MOCK=false npm run build
     cargo build --release

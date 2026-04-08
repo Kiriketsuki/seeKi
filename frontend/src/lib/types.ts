@@ -29,6 +29,10 @@ export interface ColumnsResponse {
   columns: ColumnInfo[];
 }
 
+export interface StatusResponse {
+  mode: 'normal' | 'setup';
+}
+
 export interface DisplayConfig {
   branding: {
     title: string | null;
