@@ -24,6 +24,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = AppConfig::load()?;
+    config.tables.warn_overlaps();
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
 
     tracing::info!("Connecting to database...");
