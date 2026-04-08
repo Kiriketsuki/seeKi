@@ -58,10 +58,15 @@ async fn get_display_config(
         .filter(|t| state.config.tables.allows(&t.name))
         .collect();
 
+    let table_names: Vec<&str> = allowed_tables.iter().map(|t| t.name.as_str()).collect();
+    let all_columns = state.db.get_columns_bulk(&table_names).await?;
+
     let mut tables = HashMap::new();
     for table in &allowed_tables {
-        let columns_info = state.db.get_columns(&table.name).await?;
-        let columns: HashMap<String, ColumnDisplayConfig> = columns_info
+        let columns: HashMap<String, ColumnDisplayConfig> = all_columns
+            .get(&table.name)
+            .cloned()
+            .unwrap_or_default()
             .into_iter()
             .map(|c| {
                 let display = display_name_column(&table.name, &c.name, &state.config.display);
@@ -150,6 +155,8 @@ fn default_page_size() -> u32 {
     50
 }
 
+const MAX_PAGE_SIZE: u32 = 1000;
+
 /// Extract per-column filters from query params with the `filter.` prefix.
 /// e.g. `?filter.vehicle_id=ADT3&filter.supervisor=Local` → {"vehicle_id": "ADT3", "supervisor": "Local"}
 fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String> {
@@ -171,13 +178,15 @@ async fn get_rows(
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
+    let page = params.page.max(1);
+    let page_size = params.page_size.clamp(1, MAX_PAGE_SIZE);
     let filters = parse_filters(&all_params);
     let result = state
         .db
         .query_rows(&RowQueryParams {
             table: &table,
-            page: params.page,
-            page_size: params.page_size,
+            page,
+            page_size,
             sort_column: params.sort_column.as_deref(),
             sort_direction: params.sort_direction.as_deref(),
             search: params.search.as_deref(),
@@ -256,11 +265,20 @@ async fn export_csv(
 
         let (_cols, mut row_stream) = match stream_result {
             Ok(v) => v,
-            Err(_) => return,
+            Err(e) => {
+                tracing::error!(error = %e, "CSV export: failed to open row stream");
+                let _ = tx
+                    .send(Ok(bytes::Bytes::from(
+                        "\n# ERROR: Export failed before streaming rows. The data above is incomplete.\n",
+                    )))
+                    .await;
+                return;
+            }
         };
 
         let mut batch_buf = Vec::with_capacity(8192);
         let mut batch_count = 0u32;
+        let mut stream_error = false;
 
         while let Some(row_result) = row_stream.next().await {
             match row_result {
@@ -272,6 +290,7 @@ async fn export_csv(
 
                     let mut wtr = csv::Writer::from_writer(&mut batch_buf);
                     if wtr.write_record(&fields).is_err() {
+                        stream_error = true;
                         break;
                     }
                     drop(wtr);
@@ -280,18 +299,31 @@ async fn export_csv(
                     if batch_count >= 100 {
                         let chunk = std::mem::take(&mut batch_buf);
                         if tx.send(Ok(bytes::Bytes::from(chunk))).await.is_err() {
-                            return;
+                            return; // Client disconnected — no error to signal
                         }
                         batch_count = 0;
                     }
                 }
-                Err(_) => break,
+                Err(e) => {
+                    tracing::error!(error = %e, "CSV export: row stream error mid-export");
+                    stream_error = true;
+                    break;
+                }
             }
         }
 
-        // Flush remaining
+        // Flush remaining data rows
         if !batch_buf.is_empty() {
-            let _ = tx.send(Ok(bytes::Bytes::from(batch_buf))).await;
+            let _ = tx.send(Ok(bytes::Bytes::from(std::mem::take(&mut batch_buf)))).await;
+        }
+
+        // Append an error sentinel so clients can detect truncation
+        if stream_error {
+            let _ = tx
+                .send(Ok(bytes::Bytes::from(
+                    "\n# ERROR: Export was interrupted. The data above is incomplete.\n",
+                )))
+                .await;
         }
     });
 
@@ -317,13 +349,24 @@ fn pg_value_to_csv_string(
 ) -> String {
     use sqlx::Row;
     match data_type {
-        "integer" | "smallint" | "bigint" => row
+        "smallint" => row
+            .try_get::<i16, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "integer" => row
+            .try_get::<i32, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "bigint" => row
             .try_get::<i64, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
-        "real" | "double precision" | "numeric" => row
+        "real" | "double precision" => row
             .try_get::<f64, _>(col)
             .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "numeric" => row
+            .try_get::<String, _>(col)
             .unwrap_or_default(),
         "boolean" => row
             .try_get::<bool, _>(col)
@@ -367,9 +410,11 @@ impl From<anyhow::Error> for AppError {
         if let Some(ve) = err.downcast_ref::<ValidationError>() {
             return Self::bad_request(ve.0.clone());
         }
+        // Log the real error for debugging; return a generic message to the client
+        tracing::error!(error = %err, "Internal server error");
         Self {
             status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            message: err.to_string(),
+            message: "Internal server error".to_string(),
         }
     }
 }

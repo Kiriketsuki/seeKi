@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+use std::pin::Pin;
+
 use futures::Stream;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
-use std::pin::Pin;
 
 use super::{ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError};
 
@@ -100,6 +102,62 @@ pub async fn get_columns(pool: &PgPool, table: &str) -> anyhow::Result<Vec<Colum
     Ok(columns)
 }
 
+/// Get column metadata for multiple tables in a single query.
+/// Returns a map from table name to its columns.
+pub async fn get_columns_bulk(
+    pool: &PgPool,
+    tables: &[&str],
+) -> anyhow::Result<HashMap<String, Vec<ColumnInfo>>> {
+    if tables.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Build a parameterized ANY($1) query using a text array
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            c.table_name,
+            c.column_name,
+            c.data_type,
+            c.udt_name,
+            c.is_nullable,
+            CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_pk
+        FROM information_schema.columns c
+        LEFT JOIN (
+            SELECT tc.table_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+            WHERE tc.table_name = ANY($1)
+              AND tc.constraint_type = 'PRIMARY KEY'
+        ) pk ON pk.table_name = c.table_name AND pk.column_name = c.column_name
+        WHERE c.table_schema = 'public'
+          AND c.table_name = ANY($1)
+        ORDER BY c.table_name, c.ordinal_position
+        "#,
+    )
+    .bind(tables)
+    .fetch_all(pool)
+    .await?;
+
+    let mut result: HashMap<String, Vec<ColumnInfo>> = HashMap::new();
+    for r in &rows {
+        let table_name: String = r.get("table_name");
+        let udt: String = r.get("udt_name");
+        let data_type: String = r.get("data_type");
+        let col = ColumnInfo {
+            name: r.get("column_name"),
+            display_type: humanize_type(&data_type, &udt),
+            data_type,
+            is_nullable: r.get::<String, _>("is_nullable") == "YES",
+            is_primary_key: r.get("is_pk"),
+        };
+        result.entry(table_name).or_default().push(col);
+    }
+
+    Ok(result)
+}
+
 /// Validate that a name contains only alphanumeric characters and underscores.
 fn is_valid_identifier(name: &str) -> bool {
     !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
@@ -170,7 +228,10 @@ fn build_query_clauses(
 
     let order_clause = if let Some(col) = sort_column {
         if !is_valid_identifier(col) {
-            anyhow::bail!("Invalid sort column name");
+            return Err(ValidationError(format!("Invalid sort column name: {col}")).into());
+        }
+        if !valid_column_names.contains(col) {
+            return Err(ValidationError(format!("Unknown sort column: {col}")).into());
         }
         let dir = match sort_direction {
             Some("desc" | "DESC") => "DESC",
@@ -301,14 +362,25 @@ pub async fn export_rows_stream<'a>(
 fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> serde_json::Value {
     use serde_json::Value;
 
-    // Try to extract based on type, falling back to string representation
     match data_type {
-        "integer" | "smallint" | "bigint" => row
+        "smallint" => row
+            .try_get::<i16, _>(col)
+            .map(|v| Value::from(v as i64))
+            .unwrap_or(Value::Null),
+        "integer" => row
+            .try_get::<i32, _>(col)
+            .map(|v| Value::from(v as i64))
+            .unwrap_or(Value::Null),
+        "bigint" => row
             .try_get::<i64, _>(col)
             .map(Value::from)
             .unwrap_or(Value::Null),
-        "real" | "double precision" | "numeric" => row
+        "real" | "double precision" => row
             .try_get::<f64, _>(col)
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        "numeric" => row
+            .try_get::<String, _>(col)
             .map(Value::from)
             .unwrap_or(Value::Null),
         "boolean" => row

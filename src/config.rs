@@ -156,11 +156,41 @@ fn title_case(segment: &str) -> String {
     }
 }
 
+/// Error type distinguishing "no config file" from "config file exists but is invalid".
+#[derive(Debug)]
+pub enum ConfigLoadError {
+    /// No config file found at any candidate path — safe to enter setup mode.
+    NotFound,
+    /// Config file exists but failed to read or parse — should NOT enter setup mode.
+    Invalid { path: PathBuf, source: anyhow::Error },
+}
+
+impl std::fmt::Display for ConfigLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => write!(f, "No config file found"),
+            Self::Invalid { path, source } => {
+                write!(f, "Invalid config at {}: {source}", path.display())
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigLoadError {}
+
 impl AppConfig {
-    pub fn load() -> anyhow::Result<Self> {
+    pub fn load() -> Result<Self, ConfigLoadError> {
         let config_path = Self::find_config_file()?;
-        let content = std::fs::read_to_string(&config_path)?;
-        let config = Self::parse(&content)?;
+        let content = std::fs::read_to_string(&config_path).map_err(|e| {
+            ConfigLoadError::Invalid {
+                path: config_path.clone(),
+                source: e.into(),
+            }
+        })?;
+        let config = Self::parse(&content).map_err(|e| ConfigLoadError::Invalid {
+            path: config_path.clone(),
+            source: e,
+        })?;
         tracing::info!("Loaded config from {}", config_path.display());
         Ok(config)
     }
@@ -169,7 +199,7 @@ impl AppConfig {
         Ok(toml::from_str(content)?)
     }
 
-    fn find_config_file() -> anyhow::Result<PathBuf> {
+    fn find_config_file() -> Result<PathBuf, ConfigLoadError> {
         let candidates = [
             PathBuf::from("seeki.toml"),
             dirs_next::config_dir()
@@ -183,16 +213,7 @@ impl AppConfig {
             }
         }
 
-        anyhow::bail!(
-            "No config file found. Create seeki.toml in the current directory.\n\
-             Example:\n\n\
-             [server]\n\
-             host = \"127.0.0.1\"\n\
-             port = 3141\n\n\
-             [database]\n\
-             kind = \"postgres\"\n\
-             url = \"postgres://user:pass@localhost:5432/mydb\"\n"
-        )
+        Err(ConfigLoadError::NotFound)
     }
 }
 
@@ -201,7 +222,6 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     const MINIMAL_CONFIG: &str = r#"
@@ -469,15 +489,15 @@ subtitle = "Fleet Telemetry"
     }
 
     fn load_config(content: &str) -> AppConfig {
-        let _guard = cwd_lock().lock().expect("cwd lock should not be poisoned");
+        let _guard = crate::testutil::cwd_lock()
+            .lock()
+            .expect("cwd lock should not be poisoned");
         let _temp_dir = TempConfigDir::new(content);
 
-        AppConfig::load().expect("config should load")
-    }
-
-    fn cwd_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        match AppConfig::load() {
+            Ok(config) => config,
+            Err(e) => panic!("config should load: {e}"),
+        }
     }
 
     struct TempConfigDir {

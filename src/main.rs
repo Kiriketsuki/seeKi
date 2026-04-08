@@ -2,14 +2,16 @@ mod api;
 mod auth;
 mod config;
 mod db;
+#[cfg(test)]
+mod testutil;
 
 use std::sync::Arc;
 
 use axum::Router;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ConfigLoadError};
 use crate::db::DatabasePool;
 
 pub struct AppState {
@@ -25,8 +27,32 @@ async fn main() -> anyhow::Result<()> {
 
     match AppConfig::load() {
         Ok(config) => start_normal(config).await,
-        Err(_) => start_setup_mode().await,
+        Err(ConfigLoadError::NotFound) => start_setup_mode().await,
+        Err(ConfigLoadError::Invalid { path, source }) => {
+            tracing::error!(
+                "Config file at {} is invalid: {source}",
+                path.display()
+            );
+            tracing::error!("Fix the config file or delete it to enter setup mode");
+            anyhow::bail!("Invalid config at {}: {source}", path.display())
+        }
     }
+}
+
+/// Build a CORS layer that only allows localhost origins.
+fn localhost_cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(|origin, _| {
+            if let Ok(s) = origin.to_str() {
+                s.starts_with("http://localhost")
+                    || s.starts_with("http://127.0.0.1")
+                    || s.starts_with("http://[::1]")
+            } else {
+                false
+            }
+        }))
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any)
 }
 
 /// Normal mode: config exists, connect to DB and serve full API.
@@ -42,7 +68,7 @@ async fn start_normal(config: AppConfig) -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/api", api::router())
-        .layer(CorsLayer::permissive())
+        .layer(localhost_cors())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
@@ -60,7 +86,7 @@ async fn start_setup_mode() -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/api", api::setup::router())
-        .layer(CorsLayer::permissive());
+        .layer(localhost_cors());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     tracing::info!("SeeKi setup wizard listening on http://{bind_addr}");

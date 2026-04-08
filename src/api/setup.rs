@@ -46,11 +46,14 @@ async fn test_connection(
                 tables: Some(tables),
                 error: None,
             }),
-            Err(e) => Json(TestConnectionResponse {
-                success: false,
-                tables: None,
-                error: Some(e.to_string()),
-            }),
+            Err(e) => {
+                tracing::error!(error = %e, "test_connection failed");
+                Json(TestConnectionResponse {
+                    success: false,
+                    tables: None,
+                    error: Some("Failed to connect to database. Check your connection URL and ensure the database is running.".to_string()),
+                })
+            }
         },
         DatabaseKind::Sqlite => Json(TestConnectionResponse {
             success: false,
@@ -110,22 +113,43 @@ async fn save_config(Json(req): Json<SaveConfigRequest>) -> Json<SaveConfigRespo
         });
     }
 
-    let toml_content = format!(
-        r#"[server]
-host = "{host}"
-port = {port}
+    // Build a typed struct and serialize via toml to prevent injection
+    let config_to_write = toml::value::Table::from_iter([
+        (
+            "server".to_string(),
+            toml::Value::Table(toml::value::Table::from_iter([
+                ("host".to_string(), toml::Value::String(req.server.host)),
+                (
+                    "port".to_string(),
+                    toml::Value::Integer(req.server.port as i64),
+                ),
+            ])),
+        ),
+        (
+            "database".to_string(),
+            toml::Value::Table(toml::value::Table::from_iter([
+                (
+                    "kind".to_string(),
+                    toml::Value::String(req.database.kind),
+                ),
+                ("url".to_string(), toml::Value::String(req.database.url)),
+                (
+                    "max_connections".to_string(),
+                    toml::Value::Integer(req.database.max_connections as i64),
+                ),
+            ])),
+        ),
+    ]);
 
-[database]
-kind = "{kind}"
-url = "{url}"
-max_connections = {max_connections}
-"#,
-        host = req.server.host,
-        port = req.server.port,
-        kind = req.database.kind,
-        url = req.database.url,
-        max_connections = req.database.max_connections,
-    );
+    let toml_content = match toml::to_string_pretty(&config_to_write) {
+        Ok(s) => s,
+        Err(e) => {
+            return Json(SaveConfigResponse {
+                success: false,
+                error: Some(format!("Failed to serialize config: {e}")),
+            });
+        }
+    };
 
     // Validate the generated TOML parses as a valid AppConfig
     if let Err(e) = AppConfig::parse(&toml_content) {
@@ -245,15 +269,11 @@ mod tests {
         assert!(json["error"].is_string());
     }
 
-    /// Global lock to prevent CWD races between tests that change the working directory.
-    fn cwd_lock() -> &'static std::sync::Mutex<()> {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-        LOCK.get_or_init(|| std::sync::Mutex::new(()))
-    }
-
     #[tokio::test]
     async fn save_config_writes_valid_toml() {
-        let _guard = cwd_lock().lock().expect("cwd lock should not be poisoned");
+        let _guard = crate::testutil::cwd_lock()
+            .lock()
+            .expect("cwd lock should not be poisoned");
 
         let temp_dir = std::env::temp_dir().join(format!(
             "seeki-setup-test-{}",

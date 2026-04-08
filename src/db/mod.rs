@@ -24,7 +24,7 @@ pub struct TableInfo {
     pub row_count_estimate: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,
@@ -91,6 +91,15 @@ impl DatabasePool {
     pub async fn get_columns(&self, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
         match self {
             Self::Postgres(pool) => postgres::get_columns(pool, table).await,
+        }
+    }
+
+    pub async fn get_columns_bulk(
+        &self,
+        tables: &[&str],
+    ) -> anyhow::Result<std::collections::HashMap<String, Vec<ColumnInfo>>> {
+        match self {
+            Self::Postgres(pool) => postgres::get_columns_bulk(pool, tables).await,
         }
     }
 
