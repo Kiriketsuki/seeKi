@@ -18,8 +18,8 @@ exclude = ["audit_log"]
 vehicles_log = "Fleet Log"
 
 # Optional per-table column display name overrides.
-[display.columns.example_table]
-some_column = "Some Column"
+[display.columns.vehicles_log]
+posn_lat = "Latitude"
 supervisor_id = "Supervisor"
 
 # Optional app branding shown in the UI shell.

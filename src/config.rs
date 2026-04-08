@@ -22,7 +22,6 @@ pub struct TablesConfig {
     pub exclude: Option<Vec<String>>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl TablesConfig {
     pub fn allows(&self, table: &str) -> bool {
         let included = match &self.include {
@@ -35,6 +34,19 @@ impl TablesConfig {
         };
 
         included && !excluded
+    }
+
+    pub fn warn_overlaps(&self) {
+        if let (Some(include), Some(exclude)) = (&self.include, &self.exclude) {
+            for table in include {
+                if exclude.contains(table) {
+                    tracing::warn!(
+                        table = %table,
+                        "table appears in both [tables] include and exclude — it will be excluded"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -91,7 +103,6 @@ fn default_max_connections() -> u32 {
     5
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn display_name_table(table: &str, config: &DisplayConfig) -> String {
     config
         .tables
@@ -100,7 +111,6 @@ pub fn display_name_table(table: &str, config: &DisplayConfig) -> String {
         .unwrap_or_else(|| casualify(table, false))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn display_name_column(table: &str, column: &str, config: &DisplayConfig) -> String {
     config
         .columns
@@ -110,7 +120,6 @@ pub fn display_name_column(table: &str, column: &str, config: &DisplayConfig) ->
         .unwrap_or_else(|| casualify(column, true))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn casualify(name: &str, drop_id_suffix: bool) -> String {
     let normalized = if drop_id_suffix {
         name.strip_suffix("_id").unwrap_or(name)
@@ -118,16 +127,24 @@ fn casualify(name: &str, drop_id_suffix: bool) -> String {
         name
     };
 
-    normalized
+    let result: String = normalized
         .split('_')
         .filter(|segment| !segment.is_empty())
         .map(title_case)
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+
+    if result.is_empty() {
+        name.to_string()
+    } else {
+        result
+    }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn title_case(segment: &str) -> String {
+    if segment.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) && segment.len() > 1 {
+        return segment.to_string();
+    }
     let mut chars = segment.chars();
     match chars.next() {
         Some(first) => format!(
@@ -382,6 +399,65 @@ subtitle = "Fleet Telemetry"
         assert!(!config.display.tables.is_empty());
         assert!(!config.display.columns.is_empty());
         assert_eq!(config.branding.title.as_deref(), Some("AutoConnect"));
+        assert_eq!(config.branding.subtitle.as_deref(), Some("Fleet Telemetry"));
+        assert_eq!(
+            config
+                .display
+                .columns
+                .get("vehicles_log")
+                .and_then(|c| c.get("posn_lat"))
+                .map(String::as_str),
+            Some("Latitude")
+        );
+    }
+
+    #[test]
+    fn casualify_preserves_all_caps_segments() {
+        assert_eq!(
+            display_name_column("t", "GPS_LATITUDE", &DisplayConfig::default()),
+            "GPS LATITUDE"
+        );
+    }
+
+    #[test]
+    fn casualify_preserves_mixed_caps_segments() {
+        assert_eq!(
+            display_name_table("HTTP_STATUS", &DisplayConfig::default()),
+            "HTTP STATUS"
+        );
+    }
+
+    #[test]
+    fn casualify_handles_id_only_column() {
+        // "_id" with drop_id_suffix strips to "" — fallback returns raw name
+        assert_eq!(
+            display_name_column("t", "_id", &DisplayConfig::default()),
+            "_id"
+        );
+    }
+
+    #[test]
+    fn casualify_handles_bare_id_column() {
+        assert_eq!(
+            display_name_column("t", "id", &DisplayConfig::default()),
+            "Id"
+        );
+    }
+
+    #[test]
+    fn casualify_handles_empty_string() {
+        assert_eq!(
+            display_name_column("t", "", &DisplayConfig::default()),
+            ""
+        );
+    }
+
+    #[test]
+    fn casualify_handles_numbers_in_name() {
+        assert_eq!(
+            display_name_table("vehicle_v2_data", &DisplayConfig::default()),
+            "Vehicle V2 Data"
+        );
     }
 
     fn effective_tables<'a>(config: &TablesConfig, tables: &'a [&'a str]) -> Vec<&'a str> {

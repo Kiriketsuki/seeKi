@@ -8,6 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::AppState;
+use crate::config::{display_name_column, display_name_table};
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -19,7 +20,19 @@ pub fn router() -> Router<Arc<AppState>> {
 async fn list_tables(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let tables = state.db.list_tables().await?;
+    let all_tables = state.db.list_tables().await?;
+    let tables: Vec<serde_json::Value> = all_tables
+        .into_iter()
+        .filter(|t| state.config.tables.allows(&t.name))
+        .map(|t| {
+            let display = display_name_table(&t.name, &state.config.display);
+            serde_json::json!({
+                "name": t.name,
+                "display_name": display,
+                "row_count_estimate": t.row_count_estimate,
+            })
+        })
+        .collect();
     Ok(Json(serde_json::json!({ "tables": tables })))
 }
 
@@ -27,7 +40,21 @@ async fn get_columns(
     State(state): State<Arc<AppState>>,
     Path(table): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let columns = state.db.get_columns(&table).await?;
+    let raw_columns = state.db.get_columns(&table).await?;
+    let columns: Vec<serde_json::Value> = raw_columns
+        .into_iter()
+        .map(|c| {
+            let display = display_name_column(&table, &c.name, &state.config.display);
+            serde_json::json!({
+                "name": c.name,
+                "display_name": display,
+                "data_type": c.data_type,
+                "display_type": c.display_type,
+                "is_nullable": c.is_nullable,
+                "is_primary_key": c.is_primary_key,
+            })
+        })
+        .collect();
     Ok(Json(serde_json::json!({ "columns": columns })))
 }
 
