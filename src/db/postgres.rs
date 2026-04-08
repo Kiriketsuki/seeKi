@@ -1,6 +1,32 @@
-use sqlx::{PgPool, Row};
+use std::collections::HashMap;
+use std::pin::Pin;
 
-use super::{ColumnInfo, QueryResult, TableInfo};
+use futures::Stream;
+use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+
+use super::{ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError};
+
+/// Test a PostgreSQL connection and return the list of public table names.
+/// Opens a temporary pool, queries table names, then closes it.
+pub async fn test_connection(url: &str) -> anyhow::Result<Vec<String>> {
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(10))
+        .connect(url)
+        .await?;
+
+    let rows = sqlx::query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    let tables: Vec<String> = rows.iter().map(|r| r.get("table_name")).collect();
+
+    pool.close().await;
+
+    Ok(tables)
+}
 
 /// List all user tables in the public schema with estimated row counts.
 pub async fn list_tables(pool: &PgPool) -> anyhow::Result<Vec<TableInfo>> {
@@ -21,9 +47,16 @@ pub async fn list_tables(pool: &PgPool) -> anyhow::Result<Vec<TableInfo>> {
 
     let tables = rows
         .iter()
-        .map(|r| TableInfo {
-            name: r.get("table_name"),
-            row_count_estimate: r.get("row_estimate"),
+        .map(|r| {
+            let raw_estimate: i64 = r.get("row_estimate");
+            TableInfo {
+                name: r.get("table_name"),
+                row_count_estimate: if raw_estimate < 0 {
+                    None
+                } else {
+                    Some(raw_estimate)
+                },
+            }
         })
         .collect();
 
@@ -76,63 +109,136 @@ pub async fn get_columns(pool: &PgPool, table: &str) -> anyhow::Result<Vec<Colum
     Ok(columns)
 }
 
-/// Query paginated rows from a table with optional sort and search.
-pub async fn query_rows(
+/// Get column metadata for multiple tables in a single query.
+/// Returns a map from table name to its columns.
+pub async fn get_columns_bulk(
     pool: &PgPool,
-    table: &str,
-    page: u32,
-    page_size: u32,
-    sort_column: Option<&str>,
-    sort_direction: Option<&str>,
-    search: Option<&str>,
-) -> anyhow::Result<QueryResult> {
-    // Validate table name (prevent SQL injection — only allow alphanumeric + underscore)
-    if !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        anyhow::bail!("Invalid table name");
+    tables: &[&str],
+) -> anyhow::Result<HashMap<String, Vec<ColumnInfo>>> {
+    if tables.is_empty() {
+        return Ok(HashMap::new());
     }
 
-    let columns = get_columns(pool, table).await?;
+    // Build a parameterized ANY($1) query using a text array
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            c.table_name,
+            c.column_name,
+            c.data_type,
+            c.udt_name,
+            c.is_nullable,
+            CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_pk
+        FROM information_schema.columns c
+        LEFT JOIN (
+            SELECT tc.table_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+            WHERE tc.table_name = ANY($1)
+              AND tc.constraint_type = 'PRIMARY KEY'
+        ) pk ON pk.table_name = c.table_name AND pk.column_name = c.column_name
+        WHERE c.table_schema = 'public'
+          AND c.table_name = ANY($1)
+        ORDER BY c.table_name, c.ordinal_position
+        "#,
+    )
+    .bind(tables)
+    .fetch_all(pool)
+    .await?;
 
-    // Build WHERE clause for search
-    let where_clause = if let Some(term) = search {
-        if term.is_empty() {
-            String::new()
-        } else {
-            let text_cols: Vec<String> = columns
-                .iter()
-                .filter(|c| is_text_type(&c.data_type))
-                .map(|c| format!("\"{}\"::text ILIKE '%' || $1 || '%'", c.name))
-                .collect();
+    let mut result: HashMap<String, Vec<ColumnInfo>> = HashMap::new();
+    for r in &rows {
+        let table_name: String = r.get("table_name");
+        let udt: String = r.get("udt_name");
+        let data_type: String = r.get("data_type");
+        let col = ColumnInfo {
+            name: r.get("column_name"),
+            display_type: humanize_type(&data_type, &udt),
+            data_type,
+            is_nullable: r.get::<String, _>("is_nullable") == "YES",
+            is_primary_key: r.get("is_pk"),
+        };
+        result.entry(table_name).or_default().push(col);
+    }
 
-            if text_cols.is_empty() {
-                String::new()
-            } else {
-                format!("WHERE {}", text_cols.join(" OR "))
-            }
+    Ok(result)
+}
+
+/// Validate that a name contains only alphanumeric characters and underscores.
+fn is_valid_identifier(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// Shared WHERE clause and bind values builder for query_rows and export.
+struct QueryBuilder {
+    where_clause: String,
+    order_clause: String,
+    bind_values: Vec<String>,
+}
+
+fn build_query_clauses(
+    columns: &[ColumnInfo],
+    search: Option<&str>,
+    filters: &std::collections::HashMap<String, String>,
+    sort_column: Option<&str>,
+    sort_direction: Option<&str>,
+) -> anyhow::Result<QueryBuilder> {
+    // Validate filter column names against the actual schema
+    let valid_column_names: std::collections::HashSet<&str> =
+        columns.iter().map(|c| c.name.as_str()).collect();
+
+    for col_name in filters.keys() {
+        if !is_valid_identifier(col_name) {
+            return Err(ValidationError(format!("Invalid filter column name: {col_name}")).into());
         }
-    } else {
+        if !valid_column_names.contains(col_name.as_str()) {
+            return Err(ValidationError(format!("Unknown filter column: {col_name}")).into());
+        }
+    }
+
+    let mut conditions: Vec<String> = Vec::new();
+    let mut bind_values: Vec<String> = Vec::new();
+    let mut param_idx: u32 = 1;
+
+    // Search condition (searches across all text columns)
+    let has_search = search.is_some_and(|s| !s.is_empty());
+    if has_search {
+        let text_cols: Vec<String> = columns
+            .iter()
+            .filter(|c| is_text_type(&c.data_type))
+            .map(|c| format!("\"{}\"::text ILIKE '%' || ${param_idx} || '%'", c.name))
+            .collect();
+
+        if !text_cols.is_empty() {
+            conditions.push(format!("({})", text_cols.join(" OR ")));
+            bind_values.push(search.unwrap().to_string());
+            param_idx += 1;
+        }
+    }
+
+    // Per-column filter conditions (AND-ed, ILIKE with %value%)
+    let mut filter_entries: Vec<_> = filters.iter().collect();
+    filter_entries.sort_by_key(|(k, _)| k.as_str());
+
+    for (col_name, value) in &filter_entries {
+        conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
+        bind_values.push(format!("%{value}%"));
+        param_idx += 1;
+    }
+
+    let where_clause = if conditions.is_empty() {
         String::new()
-    };
-
-    // Count total matching rows
-    let count_sql = format!("SELECT COUNT(*) as cnt FROM \"{table}\" {where_clause}");
-    let total_rows: i64 = if search.is_some_and(|s| !s.is_empty()) {
-        sqlx::query(&count_sql)
-            .bind(search.unwrap_or_default())
-            .fetch_one(pool)
-            .await?
-            .get("cnt")
     } else {
-        sqlx::query(&format!("SELECT COUNT(*) as cnt FROM \"{table}\""))
-            .fetch_one(pool)
-            .await?
-            .get("cnt")
+        format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // Build ORDER BY
     let order_clause = if let Some(col) = sort_column {
-        if !col.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            anyhow::bail!("Invalid sort column name");
+        if !is_valid_identifier(col) {
+            return Err(ValidationError(format!("Invalid sort column name: {col}")).into());
+        }
+        if !valid_column_names.contains(col) {
+            return Err(ValidationError(format!("Unknown sort column: {col}")).into());
         }
         let dir = match sort_direction {
             Some("desc" | "DESC") => "DESC",
@@ -143,21 +249,53 @@ pub async fn query_rows(
         String::new()
     };
 
-    let offset = (page.saturating_sub(1)) * page_size;
+    Ok(QueryBuilder {
+        where_clause,
+        order_clause,
+        bind_values,
+    })
+}
+
+/// Query paginated rows from a table with optional sort, search, and per-column filters.
+pub async fn query_rows(
+    pool: &PgPool,
+    params: &RowQueryParams<'_>,
+) -> anyhow::Result<QueryResult> {
+    let table = params.table;
+
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name");
+    }
+
+    let columns = get_columns(pool, table).await?;
+    let qb = build_query_clauses(
+        &columns,
+        params.search,
+        params.filters,
+        params.sort_column,
+        params.sort_direction,
+    )?;
+
+    // Count total matching rows
+    let count_sql = format!("SELECT COUNT(*) as cnt FROM \"{table}\" {}", qb.where_clause);
+    let mut count_query = sqlx::query(&count_sql);
+    for val in &qb.bind_values {
+        count_query = count_query.bind(val);
+    }
+    let total_rows: i64 = count_query.fetch_one(pool).await?.get("cnt");
+
+    let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);
     let query_sql = format!(
-        "SELECT * FROM \"{table}\" {where_clause} {order_clause} LIMIT {page_size} OFFSET {offset}"
+        "SELECT * FROM \"{table}\" {} {} LIMIT {} OFFSET {offset}",
+        qb.where_clause, qb.order_clause, params.page_size
     );
 
-    let rows = if search.is_some_and(|s| !s.is_empty()) {
-        sqlx::query(&query_sql)
-            .bind(search.unwrap_or_default())
-            .fetch_all(pool)
-            .await?
-    } else {
-        sqlx::query(&query_sql).fetch_all(pool).await?
-    };
+    let mut data_query = sqlx::query(&query_sql);
+    for val in &qb.bind_values {
+        data_query = data_query.bind(val);
+    }
+    let rows = data_query.fetch_all(pool).await?;
 
-    // Convert rows to JSON values
     let json_rows: Vec<serde_json::Value> = rows
         .iter()
         .map(|row| {
@@ -174,24 +312,83 @@ pub async fn query_rows(
         columns,
         rows: json_rows,
         total_rows,
-        page,
-        page_size,
+        page: params.page,
+        page_size: params.page_size,
     })
+}
+
+/// Build a streaming query for CSV export — returns all matching rows without pagination.
+/// The returned stream yields `Result<PgRow>` items for incremental processing.
+pub async fn export_rows_stream<'a>(
+    pool: &'a PgPool,
+    params: &'a ExportQueryParams<'a>,
+) -> anyhow::Result<(
+    Vec<ColumnInfo>,
+    Pin<Box<dyn Stream<Item = Result<sqlx::postgres::PgRow, sqlx::Error>> + Send + 'a>>,
+)> {
+    let table = params.table;
+
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name");
+    }
+
+    let columns = get_columns(pool, table).await?;
+    let qb = build_query_clauses(
+        &columns,
+        params.search,
+        params.filters,
+        params.sort_column,
+        params.sort_direction,
+    )?;
+
+    let query_sql = format!(
+        "SELECT * FROM \"{table}\" {} {}",
+        qb.where_clause, qb.order_clause
+    );
+
+    // We need to own the bind values so the stream can reference them.
+    // Use a channel-based approach: build the query with owned values.
+    let bind_values = qb.bind_values;
+
+    let stream = async_stream::stream! {
+        let mut query = sqlx::query(&query_sql);
+        for val in &bind_values {
+            query = query.bind(val);
+        }
+        use futures::StreamExt;
+        let mut row_stream = query.fetch(pool);
+        while let Some(row) = row_stream.next().await {
+            yield row;
+        }
+    };
+
+    Ok((columns, Box::pin(stream)))
 }
 
 /// Convert a PostgreSQL column value to a serde_json::Value.
 fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> serde_json::Value {
     use serde_json::Value;
 
-    // Try to extract based on type, falling back to string representation
     match data_type {
-        "integer" | "smallint" | "bigint" => row
+        "smallint" => row
+            .try_get::<i16, _>(col)
+            .map(|v| Value::from(v as i64))
+            .unwrap_or(Value::Null),
+        "integer" => row
+            .try_get::<i32, _>(col)
+            .map(|v| Value::from(v as i64))
+            .unwrap_or(Value::Null),
+        "bigint" => row
             .try_get::<i64, _>(col)
             .map(Value::from)
             .unwrap_or(Value::Null),
-        "real" | "double precision" | "numeric" => row
+        "real" | "double precision" => row
             .try_get::<f64, _>(col)
-            .map(|v| Value::from(v))
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        "numeric" => row
+            .try_get::<String, _>(col)
+            .map(Value::from)
             .unwrap_or(Value::Null),
         "boolean" => row
             .try_get::<bool, _>(col)
@@ -217,7 +414,11 @@ fn humanize_type(data_type: &str, _udt: &str) -> String {
         "date" => "Date".to_string(),
         "timestamp without time zone" | "timestamp with time zone" => "Date & Time".to_string(),
         "json" | "jsonb" => "JSON".to_string(),
+        "time without time zone" | "time with time zone" => "Time".to_string(),
+        "interval" => "Duration".to_string(),
         "uuid" => "UUID".to_string(),
+        "inet" | "cidr" => "Network".to_string(),
+        "money" => "Currency".to_string(),
         "bytea" => "Binary".to_string(),
         "ARRAY" => "List".to_string(),
         other => other.to_string(),
@@ -229,4 +430,43 @@ fn is_text_type(data_type: &str) -> bool {
         data_type,
         "character varying" | "character" | "text" | "uuid"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_identifier_accepts_alphanumeric_underscore() {
+        assert!(is_valid_identifier("vehicle_id"));
+        assert!(is_valid_identifier("col1"));
+        assert!(is_valid_identifier("_private"));
+        assert!(is_valid_identifier("CamelCase"));
+    }
+
+    #[test]
+    fn valid_identifier_rejects_special_chars() {
+        assert!(!is_valid_identifier("col-name"));
+        assert!(!is_valid_identifier("col.name"));
+        assert!(!is_valid_identifier("col name"));
+        assert!(!is_valid_identifier("col;DROP TABLE"));
+        assert!(!is_valid_identifier(""));
+    }
+
+    #[test]
+    fn humanize_type_maps_common_types() {
+        assert_eq!(humanize_type("character varying", "varchar"), "Text");
+        assert_eq!(humanize_type("integer", "int4"), "Number");
+        assert_eq!(humanize_type("boolean", "bool"), "Yes/No");
+        assert_eq!(humanize_type("timestamp with time zone", "timestamptz"), "Date & Time");
+    }
+
+    #[test]
+    fn is_text_type_identifies_text_columns() {
+        assert!(is_text_type("character varying"));
+        assert!(is_text_type("text"));
+        assert!(is_text_type("uuid"));
+        assert!(!is_text_type("integer"));
+        assert!(!is_text_type("boolean"));
+    }
 }
