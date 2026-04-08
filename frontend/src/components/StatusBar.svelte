@@ -7,13 +7,18 @@
     end = 0,
     page = 1,
     totalPages = 1,
+    onPageChange,
   }: {
     total: number;
     start: number;
     end: number;
     page: number;
     totalPages: number;
+    onPageChange?: (page: number) => void;
   } = $props();
+
+  let canPrev = $derived(page > 1);
+  let canNext = $derived(page < totalPages);
 </script>
 
 <div class="statusbar">
@@ -22,11 +27,21 @@
   </span>
 
   <div class="pagination">
-    <button class="page-btn" disabled aria-label="Previous page">
+    <button
+      class="page-btn"
+      disabled={!canPrev}
+      aria-label="Previous page"
+      onclick={() => onPageChange?.(page - 1)}
+    >
       <ChevronLeft size={14} />
     </button>
     <span class="page-info">{page} of {totalPages}</span>
-    <button class="page-btn" disabled aria-label="Next page">
+    <button
+      class="page-btn"
+      disabled={!canNext}
+      aria-label="Next page"
+      onclick={() => onPageChange?.(page + 1)}
+    >
       <ChevronRight size={14} />
     </button>
   </div>

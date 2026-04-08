@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte';
+  import { type Snippet } from 'svelte';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   const STORAGE_KEY = 'sk-sidebar-collapsed';
@@ -18,15 +18,7 @@
     children?: Snippet;
   } = $props();
 
-  onMount(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) {
-      const wasCollapsed = stored === 'true';
-      if (wasCollapsed !== collapsed) {
-        onToggle();
-      }
-    }
-  });
+  // localStorage restore is handled by the parent initializing collapsed from getInitialCollapsed()
 
   function handleToggle() {
     const nextCollapsed = !collapsed;

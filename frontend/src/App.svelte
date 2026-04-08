@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import TableList from './components/TableList.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
@@ -12,10 +13,16 @@
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
-  let sidebarCollapsed: boolean = $state(false);
+  const SIDEBAR_KEY = 'sk-sidebar-collapsed';
+  let sidebarCollapsed: boolean = $state(
+    typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_KEY) === 'true'
+  );
   let isSetup: boolean = $state(false);
+  let loading: boolean = $state(true);
+  let tableLoading: boolean = $state(false);
   let error: string | null = $state(null);
   let tableError: string | null = $state(null);
+  let currentPage: number = $state(1);
 
   onMount(async () => {
     try {
@@ -35,11 +42,15 @@
       }
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to connect to database';
+    } finally {
+      loading = false;
     }
   });
 
   async function selectTable(tableName: string) {
     tableError = null;
+    tableLoading = true;
+    currentPage = 1;
     try {
       const [cols, result] = await Promise.all([
         fetchColumns(tableName),
@@ -50,13 +61,42 @@
       queryResult = result;
     } catch (e) {
       tableError = e instanceof Error ? e.message : 'Failed to load table';
+    } finally {
+      tableLoading = false;
     }
+  }
+
+  async function goToPage(page: number) {
+    if (!selectedTable) return;
+    tableError = null;
+    tableLoading = true;
+    currentPage = page;
+    try {
+      const result = await fetchRows(selectedTable, { page });
+      queryResult = result;
+    } catch (e) {
+      tableError = e instanceof Error ? e.message : 'Failed to load page';
+    } finally {
+      tableLoading = false;
+    }
+  }
+
+  function exportCsv() {
+    if (!selectedTable) return;
+    window.open(`/api/export/${encodeURIComponent(selectedTable)}/csv`, '_blank');
   }
 </script>
 
 {#if isSetup}
   <!-- Setup wizard placeholder — Epic 5 -->
   <div>Setup wizard will go here</div>
+{:else if loading}
+  <div class="layout">
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <p>Connecting to database...</p>
+    </div>
+  </div>
 {:else if error}
   <div class="layout">
     <Sidebar
@@ -66,20 +106,7 @@
       subtitle=""
     >
       {#if !sidebarCollapsed}
-        <nav class="table-list">
-          {#each tables as table}
-            <button
-              class="table-item"
-              class:active={selectedTable === table.name}
-              onclick={() => selectTable(table.name)}
-            >
-              <span class="table-item-name">{table.display_name}</span>
-              {#if table.row_count_estimate != null}
-                <span class="table-item-count">{table.row_count_estimate.toLocaleString()}</span>
-              {/if}
-            </button>
-          {/each}
-        </nav>
+        <TableList {tables} {selectedTable} onSelect={selectTable} />
       {/if}
     </Sidebar>
     <main class="main">
@@ -101,26 +128,14 @@
       subtitle={displayConfig?.branding?.subtitle ?? ''}
     >
       {#if !sidebarCollapsed}
-        <nav class="table-list">
-          {#each tables as table}
-            <button
-              class="table-item"
-              class:active={selectedTable === table.name}
-              onclick={() => selectTable(table.name)}
-            >
-              <span class="table-item-name">{table.display_name}</span>
-              {#if table.row_count_estimate != null}
-                <span class="table-item-count">{table.row_count_estimate.toLocaleString()}</span>
-              {/if}
-            </button>
-          {/each}
-        </nav>
+        <TableList {tables} {selectedTable} onSelect={selectTable} />
       {/if}
     </Sidebar>
     <main class="main">
       <Toolbar
         tableName={selectedTable}
         rowCount={queryResult?.total_rows ?? 0}
+        onExport={exportCsv}
       />
       {#if tableError}
         <div class="table-error-banner">
@@ -128,8 +143,13 @@
           <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
         </div>
       {/if}
-      <div class="grid-area">
+      <div class="grid-area" class:loading-overlay={tableLoading}>
         <DataGrid {columns} rows={queryResult?.rows ?? []} />
+        {#if tableLoading}
+          <div class="grid-loading">
+            <div class="loading-spinner"></div>
+          </div>
+        {/if}
       </div>
       <StatusBar
         total={queryResult?.total_rows ?? 0}
@@ -137,6 +157,7 @@
         end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
         page={queryResult?.page ?? 1}
         totalPages={queryResult ? Math.ceil(queryResult.total_rows / queryResult.page_size) : 1}
+        onPageChange={goToPage}
       />
     </main>
   </div>
@@ -159,49 +180,40 @@
     flex: 1;
     padding: var(--sk-space-lg) var(--sk-space-2xl);
     overflow: auto;
+    position: relative;
   }
-  .table-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: var(--sk-space-xs) 0;
+  .loading-overlay {
+    opacity: 0.5;
+    pointer-events: none;
   }
-  .table-item {
+  .grid-loading {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--sk-space-sm);
-    width: 100%;
-    padding: var(--sk-space-xs) var(--sk-space-md);
-    border: none;
-    background: none;
-    border-radius: var(--sk-radius-sm);
+    justify-content: center;
+  }
+  .loading-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sk-space-md);
+    color: var(--sk-muted);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
-    color: var(--sk-text);
-    cursor: pointer;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
   }
-  .table-item:hover {
-    background: var(--sk-border);
+  .loading-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--sk-border);
+    border-top-color: var(--sk-accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
   }
-  .table-item.active {
-    background: var(--sk-accent);
-    color: white;
-  }
-  .table-item-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .table-item-count {
-    font-size: var(--sk-font-size-xs);
-    color: var(--sk-muted);
-    flex-shrink: 0;
-  }
-  .table-item.active .table-item-count {
-    color: rgba(255, 255, 255, 0.7);
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
   .table-error-banner {
     display: flex;

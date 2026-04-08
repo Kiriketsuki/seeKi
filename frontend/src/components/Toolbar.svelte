@@ -4,9 +4,11 @@
   let {
     tableName = '',
     rowCount = 0,
+    onExport,
   }: {
     tableName: string;
     rowCount: number;
+    onExport?: () => void;
   } = $props();
 </script>
 
@@ -32,7 +34,11 @@
       <span>Columns</span>
     </button>
 
-    <button class="btn btn-accent" disabled>
+    <button
+      class="btn btn-accent"
+      disabled={!onExport || !tableName}
+      onclick={() => onExport?.()}
+    >
       <Download size={14} />
       <span>Export</span>
     </button>
