@@ -2,6 +2,7 @@ mod api;
 mod auth;
 mod config;
 mod db;
+mod embed;
 #[cfg(test)]
 mod testutil;
 
@@ -72,7 +73,8 @@ async fn start_normal(config: AppConfig) -> anyhow::Result<()> {
     let app = Router::new()
         .nest("/api", api::router())
         .layer(localhost_cors())
-        .with_state(state);
+        .with_state(state)
+        .fallback(embed::handler);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("SeeKi listening on http://{bind_addr}");
@@ -89,7 +91,8 @@ async fn start_setup_mode() -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/api", api::setup::router())
-        .layer(localhost_cors());
+        .layer(localhost_cors())
+        .fallback(embed::handler);
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     tracing::info!("SeeKi setup wizard listening on http://{bind_addr}");
