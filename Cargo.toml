@@ -38,6 +38,15 @@ rust-embed = { version = "8", features = ["axum"] }
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# CSV export
+csv = "1"
+
+# Async streaming
+futures = "0.3"
+async-stream = "0.3"
+tokio-stream = "0.1"
+bytes = "1"
+
 # Utilities
 anyhow = "1"
 dirs-next = "2"

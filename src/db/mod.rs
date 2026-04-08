@@ -53,6 +53,15 @@ pub struct RowQueryParams<'a> {
     pub filters: &'a HashMap<String, String>,
 }
 
+/// Parameters for CSV export (no pagination).
+pub struct ExportQueryParams<'a> {
+    pub table: &'a str,
+    pub sort_column: Option<&'a str>,
+    pub sort_direction: Option<&'a str>,
+    pub search: Option<&'a str>,
+    pub filters: &'a HashMap<String, String>,
+}
+
 pub enum DatabasePool {
     Postgres(sqlx::PgPool),
 }
@@ -88,6 +97,14 @@ impl DatabasePool {
     pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
         match self {
             Self::Postgres(pool) => postgres::query_rows(pool, params).await,
+        }
+    }
+
+    /// Get a reference to the underlying PostgreSQL pool for streaming operations.
+    /// Returns None if the pool is not PostgreSQL.
+    pub fn pg_pool(&self) -> Option<&sqlx::PgPool> {
+        match self {
+            Self::Postgres(pool) => Some(pool),
         }
     }
 }

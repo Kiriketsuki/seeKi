@@ -1,6 +1,8 @@
+use futures::Stream;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use std::pin::Pin;
 
-use super::{ColumnInfo, QueryResult, RowQueryParams, TableInfo, ValidationError};
+use super::{ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError};
 
 /// Test a PostgreSQL connection and return the list of public table names.
 /// Opens a temporary pool, queries table names, then closes it.
@@ -103,26 +105,20 @@ fn is_valid_identifier(name: &str) -> bool {
     !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
-/// Query paginated rows from a table with optional sort, search, and per-column filters.
-pub async fn query_rows(
-    pool: &PgPool,
-    params: &RowQueryParams<'_>,
-) -> anyhow::Result<QueryResult> {
-    let table = params.table;
-    let page = params.page;
-    let page_size = params.page_size;
-    let sort_column = params.sort_column;
-    let sort_direction = params.sort_direction;
-    let search = params.search;
-    let filters = params.filters;
+/// Shared WHERE clause and bind values builder for query_rows and export.
+struct QueryBuilder {
+    where_clause: String,
+    order_clause: String,
+    bind_values: Vec<String>,
+}
 
-    // Validate table name (prevent SQL injection — only allow alphanumeric + underscore)
-    if !is_valid_identifier(table) {
-        anyhow::bail!("Invalid table name");
-    }
-
-    let columns = get_columns(pool, table).await?;
-
+fn build_query_clauses(
+    columns: &[ColumnInfo],
+    search: Option<&str>,
+    filters: &std::collections::HashMap<String, String>,
+    sort_column: Option<&str>,
+    sort_direction: Option<&str>,
+) -> anyhow::Result<QueryBuilder> {
     // Validate filter column names against the actual schema
     let valid_column_names: std::collections::HashSet<&str> =
         columns.iter().map(|c| c.name.as_str()).collect();
@@ -136,7 +132,6 @@ pub async fn query_rows(
         }
     }
 
-    // Build WHERE conditions with tracked bind parameters
     let mut conditions: Vec<String> = Vec::new();
     let mut bind_values: Vec<String> = Vec::new();
     let mut param_idx: u32 = 1;
@@ -158,7 +153,6 @@ pub async fn query_rows(
     }
 
     // Per-column filter conditions (AND-ed, ILIKE with %value%)
-    // Sort by key for deterministic parameter ordering
     let mut filter_entries: Vec<_> = filters.iter().collect();
     filter_entries.sort_by_key(|(k, _)| k.as_str());
 
@@ -174,15 +168,6 @@ pub async fn query_rows(
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // Count total matching rows
-    let count_sql = format!("SELECT COUNT(*) as cnt FROM \"{table}\" {where_clause}");
-    let mut count_query = sqlx::query(&count_sql);
-    for val in &bind_values {
-        count_query = count_query.bind(val);
-    }
-    let total_rows: i64 = count_query.fetch_one(pool).await?.get("cnt");
-
-    // Build ORDER BY
     let order_clause = if let Some(col) = sort_column {
         if !is_valid_identifier(col) {
             anyhow::bail!("Invalid sort column name");
@@ -196,18 +181,53 @@ pub async fn query_rows(
         String::new()
     };
 
-    let offset = (page.saturating_sub(1)) * page_size;
+    Ok(QueryBuilder {
+        where_clause,
+        order_clause,
+        bind_values,
+    })
+}
+
+/// Query paginated rows from a table with optional sort, search, and per-column filters.
+pub async fn query_rows(
+    pool: &PgPool,
+    params: &RowQueryParams<'_>,
+) -> anyhow::Result<QueryResult> {
+    let table = params.table;
+
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name");
+    }
+
+    let columns = get_columns(pool, table).await?;
+    let qb = build_query_clauses(
+        &columns,
+        params.search,
+        params.filters,
+        params.sort_column,
+        params.sort_direction,
+    )?;
+
+    // Count total matching rows
+    let count_sql = format!("SELECT COUNT(*) as cnt FROM \"{table}\" {}", qb.where_clause);
+    let mut count_query = sqlx::query(&count_sql);
+    for val in &qb.bind_values {
+        count_query = count_query.bind(val);
+    }
+    let total_rows: i64 = count_query.fetch_one(pool).await?.get("cnt");
+
+    let offset = (params.page.saturating_sub(1)) * params.page_size;
     let query_sql = format!(
-        "SELECT * FROM \"{table}\" {where_clause} {order_clause} LIMIT {page_size} OFFSET {offset}"
+        "SELECT * FROM \"{table}\" {} {} LIMIT {} OFFSET {offset}",
+        qb.where_clause, qb.order_clause, params.page_size
     );
 
     let mut data_query = sqlx::query(&query_sql);
-    for val in &bind_values {
+    for val in &qb.bind_values {
         data_query = data_query.bind(val);
     }
     let rows = data_query.fetch_all(pool).await?;
 
-    // Convert rows to JSON values
     let json_rows: Vec<serde_json::Value> = rows
         .iter()
         .map(|row| {
@@ -224,9 +244,57 @@ pub async fn query_rows(
         columns,
         rows: json_rows,
         total_rows,
-        page,
-        page_size,
+        page: params.page,
+        page_size: params.page_size,
     })
+}
+
+/// Build a streaming query for CSV export — returns all matching rows without pagination.
+/// The returned stream yields `Result<PgRow>` items for incremental processing.
+pub async fn export_rows_stream<'a>(
+    pool: &'a PgPool,
+    params: &'a ExportQueryParams<'a>,
+) -> anyhow::Result<(
+    Vec<ColumnInfo>,
+    Pin<Box<dyn Stream<Item = Result<sqlx::postgres::PgRow, sqlx::Error>> + Send + 'a>>,
+)> {
+    let table = params.table;
+
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name");
+    }
+
+    let columns = get_columns(pool, table).await?;
+    let qb = build_query_clauses(
+        &columns,
+        params.search,
+        params.filters,
+        params.sort_column,
+        params.sort_direction,
+    )?;
+
+    let query_sql = format!(
+        "SELECT * FROM \"{table}\" {} {}",
+        qb.where_clause, qb.order_clause
+    );
+
+    // We need to own the bind values so the stream can reference them.
+    // Use a channel-based approach: build the query with owned values.
+    let bind_values = qb.bind_values;
+
+    let stream = async_stream::stream! {
+        let mut query = sqlx::query(&query_sql);
+        for val in &bind_values {
+            query = query.bind(val);
+        }
+        use futures::StreamExt;
+        let mut row_stream = query.fetch(pool);
+        while let Some(row) = row_stream.next().await {
+            yield row;
+        }
+    };
+
+    Ok((columns, Box::pin(stream)))
 }
 
 /// Convert a PostgreSQL column value to a serde_json::Value.
