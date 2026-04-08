@@ -23,7 +23,14 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env().add_directive("seeki=info".parse()?))
         .init();
 
-    let config = AppConfig::load()?;
+    match AppConfig::load() {
+        Ok(config) => start_normal(config).await,
+        Err(_) => start_setup_mode().await,
+    }
+}
+
+/// Normal mode: config exists, connect to DB and serve full API.
+async fn start_normal(config: AppConfig) -> anyhow::Result<()> {
     config.tables.warn_overlaps();
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
 
@@ -40,6 +47,24 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("SeeKi listening on http://{bind_addr}");
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+/// Setup mode: no config found, serve only setup wizard endpoints.
+async fn start_setup_mode() -> anyhow::Result<()> {
+    let bind_addr = "127.0.0.1:3141";
+
+    tracing::info!("No config file found — starting in setup mode");
+
+    let app = Router::new()
+        .nest("/api", api::setup::router())
+        .layer(CorsLayer::permissive());
+
+    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
+    tracing::info!("SeeKi setup wizard listening on http://{bind_addr}");
+    tracing::info!("Configure your database connection, then restart the app");
     axum::serve(listener, app).await?;
 
     Ok(())

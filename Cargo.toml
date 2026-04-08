@@ -41,3 +41,6 @@ clap = { version = "4", features = ["derive"] }
 # Utilities
 anyhow = "1"
 dirs-next = "2"
+
+[dev-dependencies]
+http-body-util = "0.1.3"

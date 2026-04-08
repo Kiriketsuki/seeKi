@@ -1,7 +1,22 @@
-mod postgres;
+pub mod postgres;
+
+use std::collections::HashMap;
 
 use crate::config::{DatabaseConfig, DatabaseKind};
 use serde::Serialize;
+
+/// Client-facing validation error (e.g. invalid column name in filter).
+/// The API layer maps this to HTTP 400.
+#[derive(Debug)]
+pub struct ValidationError(pub String);
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ValidationError {}
 
 #[derive(Debug, Serialize)]
 pub struct TableInfo {
@@ -25,6 +40,17 @@ pub struct QueryResult {
     pub total_rows: i64,
     pub page: u32,
     pub page_size: u32,
+}
+
+/// Bundled parameters for querying rows from a table.
+pub struct RowQueryParams<'a> {
+    pub table: &'a str,
+    pub page: u32,
+    pub page_size: u32,
+    pub sort_column: Option<&'a str>,
+    pub sort_direction: Option<&'a str>,
+    pub search: Option<&'a str>,
+    pub filters: &'a HashMap<String, String>,
 }
 
 pub enum DatabasePool {
@@ -59,19 +85,9 @@ impl DatabasePool {
         }
     }
 
-    pub async fn query_rows(
-        &self,
-        table: &str,
-        page: u32,
-        page_size: u32,
-        sort_column: Option<&str>,
-        sort_direction: Option<&str>,
-        search: Option<&str>,
-    ) -> anyhow::Result<QueryResult> {
+    pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
         match self {
-            Self::Postgres(pool) => {
-                postgres::query_rows(pool, table, page, page_size, sort_column, sort_direction, search).await
-            }
+            Self::Postgres(pool) => postgres::query_rows(pool, params).await,
         }
     }
 }

@@ -165,7 +165,7 @@ impl AppConfig {
         Ok(config)
     }
 
-    fn parse(content: &str) -> anyhow::Result<Self> {
+    pub fn parse(content: &str) -> anyhow::Result<Self> {
         Ok(toml::from_str(content)?)
     }
 

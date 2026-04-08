@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::config::{display_name_column, display_name_table};
+use crate::db::{RowQueryParams, ValidationError};
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -145,24 +146,39 @@ fn default_page_size() -> u32 {
     50
 }
 
+/// Extract per-column filters from query params with the `filter.` prefix.
+/// e.g. `?filter.vehicle_id=ADT3&filter.supervisor=Local` → {"vehicle_id": "ADT3", "supervisor": "Local"}
+fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String> {
+    all_params
+        .iter()
+        .filter_map(|(k, v)| {
+            k.strip_prefix("filter.")
+                .map(|col| (col.to_string(), v.clone()))
+        })
+        .collect()
+}
+
 async fn get_rows(
     State(state): State<Arc<AppState>>,
     Path(table): Path<String>,
     Query(params): Query<RowsQuery>,
+    Query(all_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
+    let filters = parse_filters(&all_params);
     let result = state
         .db
-        .query_rows(
-            &table,
-            params.page,
-            params.page_size,
-            params.sort_column.as_deref(),
-            params.sort_direction.as_deref(),
-            params.search.as_deref(),
-        )
+        .query_rows(&RowQueryParams {
+            table: &table,
+            page: params.page,
+            page_size: params.page_size,
+            sort_column: params.sort_column.as_deref(),
+            sort_direction: params.sort_direction.as_deref(),
+            search: params.search.as_deref(),
+            filters: &filters,
+        })
         .await?;
     Ok(Json(serde_json::json!(result)))
 }
@@ -180,10 +196,21 @@ impl AppError {
             message: message.into(),
         }
     }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: axum::http::StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
 }
 
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
+        // Map ValidationError from the DB layer to HTTP 400
+        if let Some(ve) = err.downcast_ref::<ValidationError>() {
+            return Self::bad_request(ve.0.clone());
+        }
         Self {
             status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             message: err.to_string(),
@@ -273,5 +300,60 @@ mod tests {
         assert_eq!(vl["display_name"], "Fleet Log");
         assert_eq!(vl["columns"]["posn_lat"]["display_name"], "Latitude");
         assert_eq!(vl["columns"]["supervisor_id"]["display_name"], "Supervisor");
+    }
+
+    #[test]
+    fn parse_filters_extracts_filter_prefixed_params() {
+        let mut params = HashMap::new();
+        params.insert("filter.vehicle_id".into(), "ADT3".into());
+        params.insert("filter.supervisor".into(), "Local".into());
+        params.insert("page".into(), "1".into());
+        params.insert("search".into(), "test".into());
+
+        let filters = parse_filters(&params);
+        assert_eq!(filters.len(), 2);
+        assert_eq!(filters["vehicle_id"], "ADT3");
+        assert_eq!(filters["supervisor"], "Local");
+    }
+
+    #[test]
+    fn parse_filters_returns_empty_when_no_filters() {
+        let mut params = HashMap::new();
+        params.insert("page".into(), "1".into());
+        params.insert("page_size".into(), "50".into());
+
+        let filters = parse_filters(&params);
+        assert!(filters.is_empty());
+    }
+
+    #[test]
+    fn parse_filters_handles_empty_params() {
+        let params = HashMap::new();
+        let filters = parse_filters(&params);
+        assert!(filters.is_empty());
+    }
+
+    #[test]
+    fn parse_filters_preserves_filter_value_exactly() {
+        let mut params = HashMap::new();
+        params.insert("filter.name".into(), "Hello World".into());
+
+        let filters = parse_filters(&params);
+        assert_eq!(filters["name"], "Hello World");
+    }
+
+    #[test]
+    fn validation_error_maps_to_bad_request() {
+        let err = anyhow::Error::from(ValidationError("bad column".into()));
+        let app_err = AppError::from(err);
+        assert_eq!(app_err.status, axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(app_err.message, "bad column");
+    }
+
+    #[test]
+    fn generic_error_maps_to_internal_server_error() {
+        let err = anyhow::anyhow!("something broke");
+        let app_err = AppError::from(err);
+        assert_eq!(app_err.status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
     }
 }
