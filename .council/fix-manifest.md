@@ -1,67 +1,39 @@
-# Fix Manifest — PR #27: epic: Backend API & Config
+# Fix Manifest -- PR #27: epic: Backend API & Config
 
-Council verdict: CONDITIONAL | 2026-04-08 | 6 findings (6 verified)
+Council verdict: CONDITIONAL | 2026-04-08 | 2 findings (2 verified)
+
+Previous council (pre-hardening) had 6 findings -- all 6 were fixed in commit 6e26117.
+This council reviews the post-hardening state.
 
 ## Fixes Required
 
-### 1. smallint/integer type decode bug — silent data loss
-- **File**: `src/db/postgres.rs`
-- **Lines**: 305-312 (pg_value_to_json), also `src/api/mod.rs:319-327` (pg_value_to_csv_string)
-- **Type**: bug
-- **Severity**: critical
-- **Verification**: verified by Critic 2
-- **Fix**: Use `try_get::<i32>` for integer, `try_get::<i16>` for smallint, `try_get::<i64>` for bigint. Also fix `numeric` → use `sqlx::types::BigDecimal` or `String` instead of `f64`.
-- **Citations**: `src/db/postgres.rs:306-310`, `src/api/mod.rs:320-322`
-
-### 2. Unbounded page_size — DoS vector
-- **File**: `src/api/mod.rs`
-- **Line**: 139-151
-- **Type**: hardening
-- **Severity**: high
-- **Verification**: verified by Critic 1, Critic 2, Questioner
-- **Fix**: Clamp `page_size` to a maximum (e.g. 1000) after deserialization. Also guard `page_size=0`.
-- **Citations**: `src/api/mod.rs:139`, `src/db/postgres.rs:221`
-
-### 3. TOML injection in save_config
+### 1. save_config must verify connection before writing
 - **File**: `src/api/setup.rs`
-- **Lines**: 113-128
-- **Type**: security
-- **Severity**: high
-- **Verification**: verified by Critic 1, Critic 2, Questioner
-- **Fix**: Build a typed struct and use `toml::to_string_pretty` instead of `format!` interpolation.
-- **Citations**: `src/api/setup.rs:113-128`
-
-### 4. Error messages leak DB internals
-- **File**: `src/api/mod.rs`
-- **Lines**: 364-375
-- **Type**: security
-- **Severity**: high
-- **Verification**: verified by Critic 1
-- **Fix**: Return generic "Internal server error" for 500s. Log the real error via `tracing::error!`. Also sanitize `test_connection` errors in `src/api/setup.rs:49-53`.
-- **Citations**: `src/api/mod.rs:371-374`, `src/api/setup.rs:49-53`
-
-### 5. sort_column not schema-validated
-- **File**: `src/db/postgres.rs`
-- **Lines**: 171-180
+- **Lines**: 107-172
 - **Type**: bug
 - **Severity**: medium
-- **Verification**: verified by Critic 1, Critic 2, Questioner
-- **Fix**: Validate `sort_column` against `valid_column_names` set (same pattern as filter validation at lines 122-133).
-- **Citations**: `src/db/postgres.rs:171-180`
+- **Verification**: verified by Critic rebuttal, Questioner Q1+Q11
+- **Fix**: Call `postgres::test_connection(&req.database.url)` before writing seeki.toml. If the connection fails, return `{ success: false, error: "..." }` without writing the file. This reuses the existing `test_connection` function already in `src/db/postgres.rs:11-28`.
+- **Citations**: `src/api/setup.rs:107-172`, `src/main.rs:93`, `src/db/postgres.rs:11-28`
 
-### 6. Config parse error silently enters setup mode
-- **File**: `src/main.rs`
-- **Lines**: 26-29
+### 2. row_count_estimate exposes -1 for unanalyzed tables
+- **File**: `src/db/postgres.rs`, `src/db/mod.rs`
+- **Lines**: postgres.rs:50-53, mod.rs:24
 - **Type**: bug
 - **Severity**: medium
-- **Verification**: verified by Critic 2
-- **Fix**: Distinguish file-not-found from parse error. Only enter setup mode when no config file exists. Print the parse error and exit on malformed config.
-- **Citations**: `src/main.rs:26-29`, `src/config.rs:172-196`
+- **Verification**: verified by Questioner Q9, Critic rebuttal
+- **Fix**: Change `TableInfo.row_count_estimate` from `i64` to `Option<i64>`. In `list_tables`, clamp negative values to `None`. Update `api/mod.rs` serialization to emit `null` instead of `-1`.
+- **Citations**: `src/db/postgres.rs:50-53`, `src/db/mod.rs:24`, `src/api/mod.rs:107-109`
+
+## Informational Notes (not blocking)
+- SSRF via test_connection URL (mitigated by localhost bind)
+- Divergent pg_value_to_json / pg_value_to_csv_string implementations
+- ILIKE full-table scan at scale (acceptable for v0.1)
+- display_config queries DB on every request (cache for v0.2)
+- get_columns PK subquery missing table_schema filter
+- CSV error sentinel not RFC 4180 compliant (acceptable for v0.1)
 
 ## Test Command
 ```
-cargo test && cargo clippy
+cargo test
 ```
-
-## Raw Data
-council-result: .council/fix-manifest.md

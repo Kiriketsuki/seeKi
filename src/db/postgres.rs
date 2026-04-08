@@ -47,9 +47,16 @@ pub async fn list_tables(pool: &PgPool) -> anyhow::Result<Vec<TableInfo>> {
 
     let tables = rows
         .iter()
-        .map(|r| TableInfo {
-            name: r.get("table_name"),
-            row_count_estimate: r.get("row_estimate"),
+        .map(|r| {
+            let raw_estimate: i64 = r.get("row_estimate");
+            TableInfo {
+                name: r.get("table_name"),
+                row_count_estimate: if raw_estimate < 0 {
+                    None
+                } else {
+                    Some(raw_estimate)
+                },
+            }
         })
         .collect();
 

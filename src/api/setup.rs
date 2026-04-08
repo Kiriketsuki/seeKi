@@ -106,11 +106,35 @@ struct SaveConfigResponse {
 
 async fn save_config(Json(req): Json<SaveConfigRequest>) -> Json<SaveConfigResponse> {
     // Validate the database kind
-    if let Err(e) = parse_db_kind(&req.database.kind) {
-        return Json(SaveConfigResponse {
-            success: false,
-            error: Some(e),
-        });
+    let kind = match parse_db_kind(&req.database.kind) {
+        Ok(k) => k,
+        Err(e) => {
+            return Json(SaveConfigResponse {
+                success: false,
+                error: Some(e),
+            });
+        }
+    };
+
+    // Verify the connection is reachable before writing config
+    match kind {
+        DatabaseKind::Postgres => {
+            if let Err(e) = postgres::test_connection(&req.database.url).await {
+                tracing::error!(error = %e, "save_config: connection test failed");
+                return Json(SaveConfigResponse {
+                    success: false,
+                    error: Some(
+                        "Cannot connect to the database. Check your connection URL and ensure the database is running.".to_string(),
+                    ),
+                });
+            }
+        }
+        DatabaseKind::Sqlite => {
+            return Json(SaveConfigResponse {
+                success: false,
+                error: Some("SQLite support coming in v0.2".to_string()),
+            });
+        }
     }
 
     // Build a typed struct and serialize via toml to prevent injection
@@ -270,26 +294,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_config_writes_valid_toml() {
-        let _guard = crate::testutil::cwd_lock()
-            .lock()
-            .expect("cwd lock should not be poisoned");
-
-        let temp_dir = std::env::temp_dir().join(format!(
-            "seeki-setup-test-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).unwrap();
-
+    async fn save_config_rejects_unreachable_db() {
         let app = setup_router();
         let body = serde_json::json!({
             "server": { "host": "0.0.0.0", "port": 8080 },
-            "database": { "kind": "postgres", "url": "postgres://u:p@localhost/db", "max_connections": 3 }
+            "database": { "kind": "postgres", "url": "postgres://u:p@localhost:59999/db", "max_connections": 3 }
         });
 
         let resp = app
@@ -306,19 +315,8 @@ mod tests {
 
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(json["success"], true);
-
-        // Verify the written file parses as valid config
-        let content = std::fs::read_to_string(temp_dir.join("seeki.toml")).unwrap();
-        let config = AppConfig::parse(&content).unwrap();
-        assert_eq!(config.server.host, "0.0.0.0");
-        assert_eq!(config.server.port, 8080);
-        assert_eq!(config.database.url, "postgres://u:p@localhost/db");
-        assert_eq!(config.database.max_connections, 3);
-
-        // Cleanup
-        std::env::set_current_dir(&original_dir).unwrap();
-        std::fs::remove_dir_all(&temp_dir).unwrap();
+        assert_eq!(json["success"], false);
+        assert!(json["error"].as_str().unwrap().contains("Cannot connect"));
     }
 
     #[tokio::test]

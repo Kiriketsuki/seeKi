@@ -21,7 +21,7 @@ impl std::error::Error for ValidationError {}
 #[derive(Debug, Serialize)]
 pub struct TableInfo {
     pub name: String,
-    pub row_count_estimate: i64,
+    pub row_count_estimate: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
