@@ -5,14 +5,17 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
+    body::Body,
     extract::{Path, Query, State},
+    http::header,
+    response::IntoResponse,
     routing::get,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::config::{display_name_column, display_name_table};
-use crate::db::{RowQueryParams, ValidationError};
+use crate::db::{ExportQueryParams, RowQueryParams, ValidationError};
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -20,6 +23,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/tables/{table}/columns", get(get_columns))
         .route("/tables/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
+        .route("/export/{table}/csv", get(export_csv))
 }
 
 #[derive(Serialize)]
@@ -181,6 +185,158 @@ async fn get_rows(
         })
         .await?;
     Ok(Json(serde_json::json!(result)))
+}
+
+async fn export_csv(
+    State(state): State<Arc<AppState>>,
+    Path(table): Path<String>,
+    Query(params): Query<RowsQuery>,
+    Query(all_params): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.tables.allows(&table) {
+        return Err(AppError::not_found(format!("Table '{table}' not found")));
+    }
+
+    let pg_pool = state
+        .db
+        .pg_pool()
+        .ok_or_else(|| AppError::bad_request("CSV export not supported for this database type"))?
+        .clone();
+
+    let filters = parse_filters(&all_params);
+
+    // Fetch columns eagerly so we can build headers before spawning
+    let columns = state.db.get_columns(&table).await?;
+    let display_headers: Vec<String> = columns
+        .iter()
+        .map(|c| display_name_column(&table, &c.name, &state.config.display))
+        .collect();
+
+    let display_table = display_name_table(&table, &state.config.display)
+        .replace(' ', "_")
+        .to_lowercase();
+    let filename = format!("{display_table}.csv");
+
+    // Owned values for the spawned task
+    let sort_column = params.sort_column.clone();
+    let sort_direction = params.sort_direction.clone();
+    let search = params.search.clone();
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(32);
+
+    tokio::spawn(async move {
+        use futures::StreamExt;
+
+        // Write CSV header
+        let mut header_buf = Vec::new();
+        {
+            let mut wtr = csv::Writer::from_writer(&mut header_buf);
+            if wtr.write_record(&display_headers).is_err() {
+                return;
+            }
+            if wtr.flush().is_err() {
+                return;
+            }
+        }
+        if tx.send(Ok(bytes::Bytes::from(header_buf))).await.is_err() {
+            return;
+        }
+
+        // Build export params with owned data
+        let export_params = ExportQueryParams {
+            table: &table,
+            sort_column: sort_column.as_deref(),
+            sort_direction: sort_direction.as_deref(),
+            search: search.as_deref(),
+            filters: &filters,
+        };
+
+        let stream_result =
+            crate::db::postgres::export_rows_stream(&pg_pool, &export_params).await;
+
+        let (_cols, mut row_stream) = match stream_result {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        let mut batch_buf = Vec::with_capacity(8192);
+        let mut batch_count = 0u32;
+
+        while let Some(row_result) = row_stream.next().await {
+            match row_result {
+                Ok(row) => {
+                    let fields: Vec<String> = columns
+                        .iter()
+                        .map(|col| pg_value_to_csv_string(&row, &col.name, &col.data_type))
+                        .collect();
+
+                    let mut wtr = csv::Writer::from_writer(&mut batch_buf);
+                    if wtr.write_record(&fields).is_err() {
+                        break;
+                    }
+                    drop(wtr);
+                    batch_count += 1;
+
+                    if batch_count >= 100 {
+                        let chunk = std::mem::take(&mut batch_buf);
+                        if tx.send(Ok(bytes::Bytes::from(chunk))).await.is_err() {
+                            return;
+                        }
+                        batch_count = 0;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        // Flush remaining
+        if !batch_buf.is_empty() {
+            let _ = tx.send(Ok(bytes::Bytes::from(batch_buf))).await;
+        }
+    });
+
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let body = Body::from_stream(stream);
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
+        ],
+        body,
+    ))
+}
+
+fn pg_value_to_csv_string(
+    row: &sqlx::postgres::PgRow,
+    col: &str,
+    data_type: &str,
+) -> String {
+    use sqlx::Row;
+    match data_type {
+        "integer" | "smallint" | "bigint" => row
+            .try_get::<i64, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "real" | "double precision" | "numeric" => row
+            .try_get::<f64, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "boolean" => row
+            .try_get::<bool, _>(col)
+            .map(|v| if v { "Yes" } else { "No" }.to_string())
+            .unwrap_or_default(),
+        "json" | "jsonb" => row
+            .try_get::<serde_json::Value, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        _ => row
+            .try_get::<String, _>(col)
+            .unwrap_or_default(),
+    }
 }
 
 // Simple error type for API responses
@@ -355,5 +511,87 @@ mod tests {
         let err = anyhow::anyhow!("something broke");
         let app_err = AppError::from(err);
         assert_eq!(app_err.status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn csv_header_uses_display_names() {
+        use crate::config::DisplayConfig;
+        use crate::db::ColumnInfo;
+
+        let columns = vec![
+            ColumnInfo {
+                name: "supervisor_id".into(),
+                data_type: "integer".into(),
+                display_type: "Number".into(),
+                is_nullable: false,
+                is_primary_key: false,
+            },
+            ColumnInfo {
+                name: "posn_lat".into(),
+                data_type: "double precision".into(),
+                display_type: "Decimal".into(),
+                is_nullable: true,
+                is_primary_key: false,
+            },
+        ];
+
+        let mut col_overrides = HashMap::new();
+        col_overrides.insert("posn_lat".to_string(), "Latitude".to_string());
+        let mut columns_map = HashMap::new();
+        columns_map.insert("vehicles_log".to_string(), col_overrides);
+
+        let config = DisplayConfig {
+            tables: HashMap::new(),
+            columns: columns_map,
+        };
+
+        let headers: Vec<String> = columns
+            .iter()
+            .map(|c| display_name_column("vehicles_log", &c.name, &config))
+            .collect();
+
+        assert_eq!(headers, vec!["Supervisor", "Latitude"]);
+    }
+
+    #[test]
+    fn csv_writes_valid_output() {
+        let headers = vec!["Name", "Age", "Active"];
+        let rows = vec![
+            vec!["Alice", "30", "Yes"],
+            vec!["Bob", "25", "No"],
+        ];
+
+        let mut buf = Vec::new();
+        {
+            let mut wtr = csv::Writer::from_writer(&mut buf);
+            wtr.write_record(&headers).unwrap();
+            for row in &rows {
+                wtr.write_record(row).unwrap();
+            }
+            wtr.flush().unwrap();
+        }
+
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.starts_with("Name,Age,Active"));
+        assert!(output.contains("Alice,30,Yes"));
+        assert!(output.contains("Bob,25,No"));
+    }
+
+    #[test]
+    fn csv_export_filename_uses_display_name() {
+        use crate::config::DisplayConfig;
+
+        let mut tables = HashMap::new();
+        tables.insert("vehicles_log".to_string(), "Fleet Log".to_string());
+        let config = DisplayConfig {
+            tables,
+            columns: HashMap::new(),
+        };
+
+        let display = display_name_table("vehicles_log", &config)
+            .replace(' ', "_")
+            .to_lowercase();
+        assert_eq!(display, "fleet_log");
+        assert_eq!(format!("{display}.csv"), "fleet_log.csv");
     }
 }
