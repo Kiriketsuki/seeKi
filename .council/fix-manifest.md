@@ -1,51 +1,65 @@
-# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Round 4 — Final)
+# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Session 2)
 
-Council verdict: **FOR** | 2026-04-09 | 8 findings (8 verified, 1 dismissed) | 1v1 no-questioner | 4 rounds total
+Council verdict: **CONDITIONAL** | 2026-04-09 | 9 findings (9 verified, 0 dismissed) | 1v1 no-questioner | 2 rounds
 
-## All findings fixed
+Prior session: 8 findings, all 8 fixed (commits 5933501, 7f92f80, eb95851).
 
-### 1. selectTable race condition — FIXED (commit 5933501)
-- **File**: `frontend/src/App.svelte:50-67`
-- **Fix**: Monotonic `selectRequestId` counter guards all state writes.
+## Fixes Required (pre-merge)
 
-### 2. CSV error row corrupts output — FIXED (commit 5933501)
-- **File**: `src/api/mod.rs:322-328`
-- **Fix**: Error comment row removed. `tracing::warn` logs the event.
+### 1. sqlx missing chrono feature — timestamp/UUID columns silently null (CRITICAL)
+- **File**: `Cargo.toml:17`
+- **Related**: `src/db/postgres.rs:400-404`, `src/api/mod.rs:390-396`
+- **Type**: bug
+- **Severity**: critical
+- **Verification**: verified — `humanize_type` at `postgres.rs:415` maps timestamp types to display names, confirming the app expects them, but sqlx features lack `chrono` so `try_get::<String>` fails for those OIDs
+- **Fix**: Add `chrono` feature to sqlx in `Cargo.toml`. Add explicit match arms for `"timestamp without time zone"`, `"timestamp with time zone"`, `"date"`, `"time without time zone"`, `"time with time zone"`, `"uuid"` in both `pg_value_to_json` (`postgres.rs`) and `pg_value_to_csv_string` (`api/mod.rs`).
+- **Citations**: `Cargo.toml:17`, `src/db/postgres.rs:400-404`, `src/db/postgres.rs:408-426`, `src/api/mod.rs:390-396`
 
-### 3. csv::Writer per-row allocation — FIXED (commit 5933501)
-- **File**: `src/api/mod.rs:283-313`
-- **Fix**: Single `csv::Writer` hoisted outside loop, flush at batch boundaries.
+### 2. Toolbar displays raw table name instead of display name (SHOULD-FIX)
+- **File**: `frontend/src/App.svelte:146`
+- **Related**: `frontend/src/components/Toolbar.svelte:16`
+- **Type**: bug
+- **Severity**: should-fix
+- **Verification**: verified — `selectedTable` stores raw DB identifier; TableList correctly uses `display_name`; Toolbar does not
+- **Fix**: Change `App.svelte:146` to: `tableName={displayConfig?.tables[selectedTable]?.display_name ?? selectedTable}`
+- **Citations**: `App.svelte:62-64`, `App.svelte:146`, `Toolbar.svelte:16`, `TableList.svelte:21`
 
-### 4. CSV export silent truncation — FIXED (commit 7f92f80)
-- **File**: `src/api/mod.rs:333-341`
-- **Fix**: `Err(UnexpectedEof)` sent to `tx` on `stream_error`.
+## Tracked (post-merge, not blocking)
 
-### 5. goToPage optimistic currentPage — FIXED (commit 7f92f80)
-- **File**: `frontend/src/App.svelte:82`
-- **Fix**: `currentPage = page` moved to after successful fetch.
+### 3. Duplicate localStorage key constant
+- **File**: `frontend/src/App.svelte:16`, `frontend/src/components/Sidebar.svelte:5`
+- **Severity**: should-fix
+- **Fix**: Extract to shared `lib/constants.ts`
 
-### 6. Content-Disposition filename unsanitized — FIXED (commit 7f92f80)
-- **File**: `src/api/mod.rs:232-236`
-- **Fix**: Strip `"`, `;`, `\r`, `\n` from filename.
+### 4. Stale comment referencing getInitialCollapsed()
+- **File**: `frontend/src/components/Sidebar.svelte:21`
+- **Severity**: nit
+- **Fix**: Update comment to match actual inline initialization at `App.svelte:17-19`
 
-### 7. goToPage/selectTable cross-type race — FIXED (round 4)
-- **File**: `frontend/src/App.svelte:161`, `frontend/src/components/StatusBar.svelte`
-- **Issue**: Pagination buttons remained clickable during table switch (StatusBar outside loading overlay). goToPage could silently cancel in-flight selectTable.
-- **Fix**: Pass `loading={tableLoading}` to StatusBar; pagination buttons disabled when `loading=true`.
+### 5. Zero frontend test coverage
+- **File**: `frontend/`
+- **Severity**: tracked obligation
+- **Fix**: Set up Vitest with at least `assertShape` unit tests before Epic 3
 
-### 8. "1 of 0" pagination on empty tables — FIXED (round 4)
-- **File**: `frontend/src/App.svelte:166`
-- **Issue**: `Math.ceil(0/N) = 0` but `page=1`, showing "1 of 0".
-- **Fix**: `Math.max(1, Math.ceil(...))` ensures totalPages >= 1.
+### 6. Justfile dev recipe doesn't detect backend failure
+- **File**: `Justfile:9`
+- **Severity**: nit
+- **Fix**: Add health check or wait after backgrounding `cargo run`
 
-## Dismissed
+### 7. Mock total_rows inconsistent with row_count_estimate
+- **File**: `frontend/src/lib/mock.ts:437` vs `mock.ts:8-18`
+- **Severity**: nit
+- **Fix**: Align mock generation count with declared estimates
 
-### into_inner().unwrap_or_default() silent batch drop
-- **File**: `src/api/mod.rs:307`
-- **Reason**: Unsubstantiated. `csv::Writer` wraps `Vec<u8>`; `flush()` on Vec is infallible; `into_inner()` after successful flush cannot fail. Dead-code defense only.
+### 8. DataGrid column width hardcoded at 150px
+- **File**: `frontend/src/components/DataGrid.svelte:16`
+- **Severity**: nit
+- **Fix**: Use data-type-aware column sizing in DataGrid epic
 
-## Follow-ups (not blocking)
-- Frontend test infrastructure (zero frontend tests — scaffold establishes patterns, tests are a natural follow-up)
+### 9. No fetch timeout in api.ts
+- **File**: `frontend/src/lib/api.ts:31`
+- **Severity**: nit
+- **Fix**: Add AbortController with reasonable timeout
 
 ## Test Command
 ```bash

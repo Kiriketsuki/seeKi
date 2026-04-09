@@ -390,6 +390,26 @@ fn pg_value_to_csv_string(
             .try_get::<serde_json::Value, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
+        "timestamp without time zone" => row
+            .try_get::<chrono::NaiveDateTime, _>(col)
+            .map(|v| v.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default(),
+        "timestamp with time zone" => row
+            .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
+            .map(|v| v.to_rfc3339())
+            .unwrap_or_default(),
+        "date" => row
+            .try_get::<chrono::NaiveDate, _>(col)
+            .map(|v| v.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
+        "time without time zone" | "time with time zone" => row
+            .try_get::<chrono::NaiveTime, _>(col)
+            .map(|v| v.format("%H:%M:%S").to_string())
+            .unwrap_or_default(),
+        "uuid" => row
+            .try_get::<uuid::Uuid, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
         _ => row
             .try_get::<String, _>(col)
             .unwrap_or_default(),

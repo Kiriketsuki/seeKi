@@ -7,15 +7,15 @@
   import StatusBar from './components/StatusBar.svelte';
   import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
   import type { TableInfo, ColumnInfo, QueryResult, DisplayConfig } from './lib/types';
+  import { SIDEBAR_COLLAPSED_KEY } from './lib/constants';
 
   let tables: TableInfo[] = $state([]);
   let selectedTable: string = $state('');
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
-  const SIDEBAR_KEY = 'sk-sidebar-collapsed';
   let sidebarCollapsed: boolean = $state(
-    typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_KEY) === 'true'
+    typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   );
   let isSetup: boolean = $state(false);
   let loading: boolean = $state(true);
@@ -140,7 +140,7 @@
     </Sidebar>
     <main class="main">
       <Toolbar
-        tableName={selectedTable}
+        tableName={displayConfig?.tables[selectedTable]?.display_name ?? selectedTable}
         rowCount={queryResult?.total_rows ?? 0}
         onExport={exportCsv}
       />

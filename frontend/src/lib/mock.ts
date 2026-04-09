@@ -5,16 +5,18 @@ import type {
   DisplayConfig,
 } from './types';
 
+const MOCK_ROW_COUNT = 200;
+
 const TABLES: TableInfo[] = [
   { name: 'users', display_name: 'Users', row_count_estimate: 42 },
   {
     name: 'activity_log',
     display_name: 'Activity Log',
-    row_count_estimate: 427229,
+    row_count_estimate: MOCK_ROW_COUNT,
   },
-  { name: 'events', display_name: 'Events', row_count_estimate: 18000 },
-  { name: 'tickets', display_name: 'Tickets', row_count_estimate: 3200 },
-  { name: 'orders', display_name: 'Orders', row_count_estimate: 890 },
+  { name: 'events', display_name: 'Events', row_count_estimate: MOCK_ROW_COUNT },
+  { name: 'tickets', display_name: 'Tickets', row_count_estimate: MOCK_ROW_COUNT },
+  { name: 'orders', display_name: 'Orders', row_count_estimate: MOCK_ROW_COUNT },
 ];
 
 const COLUMNS: Record<string, ColumnInfo[]> = {
@@ -434,7 +436,7 @@ export function mockFetchRows(
   const info = TABLES.find((t) => t.name === table);
   const totalRows = info?.row_count_estimate ?? 50;
 
-  const allRows = getRows(table, 50);
+  const allRows = getRows(table, totalRows);
   let rows = [...allRows];
 
   if (params?.search) {

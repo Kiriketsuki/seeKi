@@ -27,8 +27,22 @@ function assertShape(data: unknown, fields: string[], context: string): void {
   }
 }
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 async function apiFetch<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(path, { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Request timed out — the server may be busy. Try again.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let message = `API error ${res.status}`;

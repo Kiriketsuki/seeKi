@@ -1,8 +1,8 @@
 <script lang="ts">
   import { type Snippet } from 'svelte';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+  import { SIDEBAR_COLLAPSED_KEY } from '../lib/constants';
 
-  const STORAGE_KEY = 'sk-sidebar-collapsed';
 
   let {
     collapsed = $bindable(false),
@@ -18,12 +18,12 @@
     children?: Snippet;
   } = $props();
 
-  // localStorage restore is handled by the parent initializing collapsed from getInitialCollapsed()
+  // localStorage restore is handled by the parent (App.svelte) reading SIDEBAR_COLLAPSED_KEY at init
 
   function handleToggle() {
     const nextCollapsed = !collapsed;
     onToggle();
-    localStorage.setItem(STORAGE_KEY, String(nextCollapsed));
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(nextCollapsed));
   }
 </script>
 

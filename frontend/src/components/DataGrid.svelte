@@ -10,10 +10,31 @@
     rows: Record<string, unknown>[];
   } = $props();
 
+  function columnWidth(col: ColumnInfo): number {
+    switch (col.data_type) {
+      case 'boolean': return 80;
+      case 'smallint':
+      case 'integer': return 100;
+      case 'bigint':
+      case 'real':
+      case 'double precision':
+      case 'numeric': return 120;
+      case 'date': return 110;
+      case 'time without time zone':
+      case 'time with time zone': return 100;
+      case 'timestamp without time zone':
+      case 'timestamp with time zone': return 180;
+      case 'uuid': return 280;
+      case 'json':
+      case 'jsonb': return 250;
+      default: return 150;
+    }
+  }
+
   let gridColumns = $derived(columns.map(col => ({
     prop: col.name,
     name: col.display_name || col.name,
-    size: 150,
+    size: columnWidth(col),
   })));
 </script>
 
