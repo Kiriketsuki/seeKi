@@ -7,7 +7,12 @@
     type HyperFunc,
   } from '@revolist/svelte-datagrid';
   import type { VNode } from '@revolist/revogrid';
-  import type { ColumnInfo, SortDirection, SortState } from '../lib/types';
+  import type {
+    ColumnInfo,
+    FilterState,
+    SortDirection,
+    SortState,
+  } from '../lib/types';
   import {
     buildSortableColumn,
     formatCellValue,
@@ -19,12 +24,18 @@
     columns = [],
     rows = [],
     sortState,
+    filters = {},
+    filtersVisible = false,
     onSortChange,
+    onFilterChange,
   }: {
     columns: ColumnInfo[];
     rows: Record<string, unknown>[];
     sortState: SortState;
+    filters?: FilterState;
+    filtersVisible?: boolean;
     onSortChange?: (column: string, direction: SortDirection | null) => void;
+    onFilterChange?: (column: string, value: string) => void;
   } = $props();
 
   type SortEventDetail = {
@@ -44,35 +55,72 @@
   ): VNode {
     const info = columnsByName.get(String(props.prop));
     const label = info ? getColumnDisplayName(info) : String(props.name ?? props.prop);
-    const isSorted = sortState.column === props.prop && sortState.direction != null;
+    const showFilters = Boolean(
+      (props as ColumnTemplateProp & { showFilters?: boolean }).showFilters
+    );
+    const filterValue = String(
+      (props as ColumnTemplateProp & { filterValue?: string }).filterValue ?? ''
+    );
+    const isSorted = props.order != null;
 
     return h(
       'div',
       {
         class: {
           'sk-grid-header': true,
+          'has-filters': showFilters,
           'is-sorted': isSorted,
         },
       },
       [
-        h('span', { class: { 'sk-grid-header__label': true } }, label),
         h(
-          'span',
+          'div',
           {
             class: {
-              'sk-grid-header__sort': true,
-              'is-active': isSorted,
+              'sk-grid-header__top': true,
             },
-            'aria-hidden': 'true',
           },
-          sortState.column === props.prop
-            ? sortState.direction === 'asc'
-              ? '▲'
-              : sortState.direction === 'desc'
-                ? '▼'
-                : ''
-            : ''
+          [
+            h('span', { class: { 'sk-grid-header__label': true } }, label),
+            h(
+              'span',
+              {
+                class: {
+                  'sk-grid-header__sort': true,
+                  'is-active': isSorted,
+              },
+              'aria-hidden': 'true',
+            },
+              props.order === 'asc'
+                ? '▲'
+                : props.order === 'desc'
+                  ? '▼'
+                  : ''
+            ),
+          ]
         ),
+        showFilters
+          ? h('div', { class: { 'sk-grid-filter': true } }, [
+              h('input', {
+                class: {
+                  'sk-grid-filter__input': true,
+                },
+                type: 'text',
+                value: filterValue,
+                placeholder: 'Filter',
+                'aria-label': `Filter ${label}`,
+                onInput: (event: Event) =>
+                  onFilterChange?.(
+                    String(props.prop),
+                    (event.target as HTMLInputElement).value
+                  ),
+                onClick: (event: Event) => event.stopPropagation(),
+                onMouseDown: (event: Event) => event.stopPropagation(),
+                onDblClick: (event: Event) => event.stopPropagation(),
+                onKeyDown: (event: Event) => event.stopPropagation(),
+              }),
+            ])
+          : null,
       ]
     );
   }
@@ -147,6 +195,10 @@
   let gridColumns: ColumnRegular[] = $derived(
     columns.map((column) =>
       buildSortableColumn(column, {
+        order:
+          sortState.column === column.name ? sortState.direction ?? undefined : undefined,
+        filterValue: filters[column.name] ?? '',
+        showFilters: filtersVisible,
         columnTemplate: renderHeader,
         cellTemplate: renderCell,
       })
@@ -154,7 +206,7 @@
   );
 </script>
 
-<div class="grid-card">
+<div class="grid-card" class:filters-visible={filtersVisible}>
   <RevoGrid
     columns={gridColumns}
     source={rows}
@@ -193,11 +245,21 @@
 
   .grid-card :global(.sk-grid-header) {
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    color: inherit;
+  }
+
+  .grid-card :global(.sk-grid-header__top) {
+    display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--sk-space-sm);
     width: 100%;
-    color: inherit;
+    min-height: 18px;
   }
 
   .grid-card :global(.sk-grid-header__label) {
@@ -215,6 +277,32 @@
 
   .grid-card :global(.sk-grid-header__sort.is-active) {
     color: var(--sk-accent);
+  }
+
+  .grid-card :global(.sk-grid-filter) {
+    width: 100%;
+  }
+
+  .grid-card :global(.sk-grid-filter__input) {
+    width: 100%;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-sm);
+    background: rgba(255, 255, 255, 0.8);
+    color: var(--sk-text);
+    font-family: var(--sk-font-ui);
+    font-size: var(--sk-font-size-body);
+    line-height: 1.3;
+    padding: 4px 8px;
+    outline: none;
+  }
+
+  .grid-card :global(.sk-grid-filter__input:focus) {
+    border-color: rgba(0, 169, 165, 0.45);
+    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+  }
+
+  .grid-card :global(.sk-grid-filter__input::placeholder) {
+    color: var(--sk-muted);
   }
 
   .grid-card :global(.sk-grid-cell) {
@@ -269,5 +357,18 @@
   .grid-card :global(.sk-grid-badge.is-false) {
     background: rgba(220, 38, 38, 0.12);
     color: var(--sk-boolean-false);
+  }
+
+  .filters-visible :global(revo-grid[theme='compact'] revogr-header) {
+    line-height: normal;
+  }
+
+  .filters-visible :global(revo-grid[theme='compact'] revogr-header .header-rgRow) {
+    height: 72px;
+  }
+
+  .filters-visible :global(revo-grid[theme='compact'] revogr-header .rgHeaderCell) {
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
 </style>

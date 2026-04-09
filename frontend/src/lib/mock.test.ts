@@ -52,6 +52,36 @@ describe('mockFetchRows', () => {
     expect(filtered.total_rows).toBeLessThanOrEqual(all.total_rows);
   });
 
+  it('filters rows by column filters', () => {
+    const filtered = mockFetchRows('users', {
+      filters: { name: 'Alice' },
+    });
+
+    expect(filtered.total_rows).toBeGreaterThan(0);
+    expect(
+      filtered.rows.every((row) =>
+        String(row.name).toLowerCase().includes('alice'),
+      ),
+    ).toBe(true);
+  });
+
+  it('combines multiple column filters with AND logic', () => {
+    const filtered = mockFetchRows('users', {
+      filters: {
+        name: 'Alice',
+        email: 'alice.chen',
+      },
+    });
+
+    expect(filtered.total_rows).toBeGreaterThan(0);
+    expect(
+      filtered.rows.every((row) =>
+        String(row.name).toLowerCase().includes('alice') &&
+        String(row.email).toLowerCase().includes('alice.chen'),
+      ),
+    ).toBe(true);
+  });
+
   it('defaults page to 1 and page_size to 50', () => {
     const result = mockFetchRows('users');
     expect(result.page).toBe(1);
