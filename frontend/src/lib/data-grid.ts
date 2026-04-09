@@ -11,8 +11,6 @@ const NUMBER_TYPES = new Set([
   ...INTEGER_TYPES,
   'real',
   'double precision',
-  'numeric',
-  'decimal',
 ]);
 
 const DATE_ONLY_TYPES = new Set([

@@ -8,8 +8,8 @@
     "questioner": 0,
     "rounds": 2,
     "mode": "1v1-no-questioner",
-    "session": 2,
-    "note": "Session 2: post-fix review. All pre-merge findings from sessions 1+2 resolved. No new pre-merge blockers."
+    "session": 3,
+    "note": "Session 3: 1v1 no-questioner. Finding 6 (numeric precision) fixed pre-merge. Finding 7 (bigint) tracked as follow-up."
   },
   "findings": [
     {
@@ -83,6 +83,37 @@
       ]
     }
   ],
+    {
+      "id": 6,
+      "description": "numeric/decimal columns lose precision: NUMBER_TYPES includes 'numeric' and 'decimal', causing Number() cast on backend string values — float64 rounds beyond 15 significant digits.",
+      "file": "frontend/src/lib/data-grid.ts",
+      "line": 14,
+      "type": "bug",
+      "severity": "high",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 3,
+      "fix_description": "Removed 'numeric' and 'decimal' from NUMBER_TYPES so they fall through to the text formatter, preserving the backend's full-precision string.",
+      "citations": [
+        "frontend/src/lib/data-grid.ts:14-15",
+        "src/db/postgres.rs:390-393"
+      ]
+    },
+    {
+      "id": 7,
+      "description": "bigint values > 2^53 lose precision in JSON transport: postgres.rs serializes i64 as JSON number, JavaScript JSON.parse converts to float64.",
+      "file": "src/db/postgres.rs",
+      "line": 382,
+      "type": "bug",
+      "severity": "low",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "status": "TRACKED",
+      "session": 3,
+      "note": "Both agents agreed post-merge is defensible — 2^53 threshold rarely hit in practice. Fix requires API-level decision (string-encode large bigints)."
+    }
+  ],
   "dismissed": [
     {
       "claim": "on:beforesorting is wrong Svelte 5 syntax",
@@ -105,7 +136,8 @@
     "Add unit tests for data-grid.ts pure functions",
     "Tighten sortStateToConfig return type to Record<string, 'asc' | 'desc'>",
     "Expand boolean coercion for future SQLite support",
-    "Relax is_valid_identifier to allow hyphens in quoted identifiers (postgres.rs:169-171)",
+    "Serialize bigint as string in postgres.rs for values > Number.MAX_SAFE_INTEGER",
+    "Remove dead currentPage arg from exportCsv buildRowsParams call (App.svelte:209)",
     "Investigate aria-sort on RevoGrid column headers at runtime"
   ],
   "conditions_met": true,
@@ -122,6 +154,13 @@
       "fixed": 2,
       "tracked": 1,
       "dismissed": 1
+    },
+    {
+      "session": 3,
+      "findings": 2,
+      "fixed": 1,
+      "tracked": 1,
+      "dismissed": 0
     }
   ],
   "critical_discoveries": []
