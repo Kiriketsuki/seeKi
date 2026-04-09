@@ -21,6 +21,15 @@ export interface QueryResult {
   page_size: number;
 }
 
+export type SortDirection = 'asc' | 'desc';
+
+export interface SortState {
+  column: string | null;
+  direction: SortDirection | null;
+}
+
+export type FilterState = Record<string, string>;
+
 export interface TablesResponse {
   tables: TableInfo[];
 }

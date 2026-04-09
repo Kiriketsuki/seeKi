@@ -3,10 +3,18 @@
   import Sidebar from './components/Sidebar.svelte';
   import TableList from './components/TableList.svelte';
   import Toolbar from './components/Toolbar.svelte';
+  import ToolStrip from './components/ToolStrip.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
-  import type { TableInfo, ColumnInfo, QueryResult, DisplayConfig } from './lib/types';
+  import type {
+    TableInfo,
+    ColumnInfo,
+    QueryResult,
+    DisplayConfig,
+    SortState,
+    FilterState,
+  } from './lib/types';
   import { SIDEBAR_COLLAPSED_KEY } from './lib/constants';
 
   let tables: TableInfo[] = $state([]);
@@ -23,7 +31,13 @@
   let error: string | null = $state(null);
   let tableError: string | null = $state(null);
   let currentPage: number = $state(1);
+  let sortState: SortState = $state({ column: null, direction: null });
+  let filtersVisible: boolean = $state(false);
+  let filters: FilterState = $state({});
   let selectRequestId = 0;
+  let activeFilterCount = $derived(
+    Object.values(filters).filter((value) => value.trim().length > 0).length
+  );
 
   onMount(async () => {
     try {
@@ -54,6 +68,9 @@
     tableError = null;
     tableLoading = true;
     currentPage = 1;
+    sortState = { column: null, direction: null };
+    filtersVisible = false;
+    filters = {};
     try {
       const [cols, result] = await Promise.all([
         fetchColumns(tableName),
@@ -68,6 +85,10 @@
     } finally {
       if (myRequest === selectRequestId) tableLoading = false;
     }
+  }
+
+  function toggleFilters() {
+    filtersVisible = !filtersVisible;
   }
 
   async function goToPage(page: number) {
@@ -150,13 +171,21 @@
           <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
         </div>
       {/if}
-      <div class="grid-area" class:loading-overlay={tableLoading}>
-        <DataGrid {columns} rows={queryResult?.rows ?? []} />
-        {#if tableLoading}
-          <div class="grid-loading">
-            <div class="loading-spinner"></div>
-          </div>
-        {/if}
+      <div class="grid-area">
+        <ToolStrip
+          {sortState}
+          filtersVisible={filtersVisible}
+          activeFilterCount={activeFilterCount}
+          onToggleFilters={toggleFilters}
+        />
+        <div class="grid-shell" class:loading-overlay={tableLoading}>
+          <DataGrid {columns} rows={queryResult?.rows ?? []} />
+          {#if tableLoading}
+            <div class="grid-loading">
+              <div class="loading-spinner"></div>
+            </div>
+          {/if}
+        </div>
       </div>
       <StatusBar
         total={queryResult?.total_rows ?? 0}
@@ -183,11 +212,21 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
   }
   .grid-area {
     flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: var(--sk-space-md);
     padding: var(--sk-space-lg) var(--sk-space-2xl);
-    overflow: auto;
+    overflow: hidden;
+    align-items: stretch;
+  }
+  .grid-shell {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
     position: relative;
   }
   .loading-overlay {
@@ -200,6 +239,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    background: rgba(245, 240, 235, 0.28);
   }
   .loading-state {
     flex: 1;
