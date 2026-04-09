@@ -36,6 +36,7 @@
   let sortState: SortState = $state({ column: null, direction: null });
   let filtersVisible: boolean = $state(false);
   let filters: FilterState = $state({});
+  let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let selectRequestId = 0;
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
@@ -73,6 +74,23 @@
     }
   });
 
+  onMount(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey) return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      if (event.key.toLowerCase() !== 'f') return;
+
+      event.preventDefault();
+      toggleFilters();
+    }
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+      clearFilterDebounce();
+    };
+  });
+
   async function selectTable(tableName: string) {
     const myRequest = ++selectRequestId;
     const resetSortState: SortState = { column: null, direction: null };
@@ -84,6 +102,7 @@
     sortState = resetSortState;
     filtersVisible = false;
     filters = resetFilters;
+    clearFilterDebounce();
     try {
       const [cols, result] = await Promise.all([
         fetchColumns(tableName),
@@ -102,6 +121,13 @@
 
   function toggleFilters() {
     filtersVisible = !filtersVisible;
+  }
+
+  function clearFilterDebounce() {
+    if (filterDebounceId != null) {
+      clearTimeout(filterDebounceId);
+      filterDebounceId = null;
+    }
   }
 
   function buildRowsParams(
@@ -151,15 +177,31 @@
   }
 
   async function goToPage(page: number) {
+    clearFilterDebounce();
     await loadRows(page);
   }
 
   function handleSortChange(column: string, direction: SortDirection | null) {
+    clearFilterDebounce();
     const nextSortState: SortState = direction
       ? { column, direction }
       : { column: null, direction: null };
     sortState = nextSortState;
     void loadRows(1, nextSortState);
+  }
+
+  function handleFilterChange(column: string, value: string) {
+    const nextFilters: FilterState = {
+      ...filters,
+      [column]: value,
+    };
+    filters = nextFilters;
+
+    clearFilterDebounce();
+    filterDebounceId = setTimeout(() => {
+      void loadRows(1, sortState, nextFilters);
+      filterDebounceId = null;
+    }, 300);
   }
 
   function exportCsv() {
@@ -237,7 +279,10 @@
             {columns}
             rows={queryResult?.rows ?? []}
             {sortState}
+            {filters}
+            {filtersVisible}
             onSortChange={handleSortChange}
+            onFilterChange={handleFilterChange}
           />
           {#if tableLoading}
             <div class="grid-loading">

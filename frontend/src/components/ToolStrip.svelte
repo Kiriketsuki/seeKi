@@ -40,7 +40,7 @@
   <div class="tool-section">
     <button
       class="tool-button"
-      class:active={filtersVisible}
+      class:active={filtersVisible || activeFilterCount > 0}
       aria-label="Toggle filters"
       title="Toggle filters"
       onclick={() => onToggleFilters?.()}
@@ -48,7 +48,7 @@
     >
       <span class="icon-stack">
         <Filter size={16} />
-        {#if activeFilterCount > 0}
+        {#if !filtersVisible && activeFilterCount > 0}
           <span class="badge">{activeFilterCount}</span>
         {/if}
       </span>
