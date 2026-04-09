@@ -7,6 +7,7 @@
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
+  import type { FetchRowsParams } from './lib/api';
   import type {
     TableInfo,
     ColumnInfo,
@@ -14,6 +15,7 @@
     DisplayConfig,
     SortState,
     FilterState,
+    SortDirection,
   } from './lib/types';
   import { SIDEBAR_COLLAPSED_KEY } from './lib/constants';
 
@@ -38,6 +40,15 @@
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
   );
+  let sortLabel = $derived.by(() => {
+    if (!sortState.column || !sortState.direction) {
+      return 'No active sort';
+    }
+
+    const currentColumn = columns.find((column) => column.name === sortState.column);
+    const displayName = currentColumn?.display_name ?? sortState.column;
+    return `${displayName} ${sortState.direction}`;
+  });
 
   onMount(async () => {
     try {
@@ -64,17 +75,19 @@
 
   async function selectTable(tableName: string) {
     const myRequest = ++selectRequestId;
+    const resetSortState: SortState = { column: null, direction: null };
+    const resetFilters: FilterState = {};
     selectedTable = tableName;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
-    sortState = { column: null, direction: null };
+    sortState = resetSortState;
     filtersVisible = false;
-    filters = {};
+    filters = resetFilters;
     try {
       const [cols, result] = await Promise.all([
         fetchColumns(tableName),
-        fetchRows(tableName)
+        fetchRows(tableName, buildRowsParams(1, resetSortState, resetFilters))
       ]);
       if (myRequest !== selectRequestId) return;
       columns = cols;
@@ -91,22 +104,62 @@
     filtersVisible = !filtersVisible;
   }
 
-  async function goToPage(page: number) {
+  function buildRowsParams(
+    page: number,
+    nextSortState: SortState = sortState,
+    nextFilters: FilterState = filters,
+  ): FetchRowsParams {
+    const params: FetchRowsParams = { page };
+    if (nextSortState.column && nextSortState.direction) {
+      params.sort_column = nextSortState.column;
+      params.sort_direction = nextSortState.direction;
+    }
+
+    const activeFilters = Object.fromEntries(
+      Object.entries(nextFilters).filter(([, value]) => value.trim().length > 0)
+    );
+    if (Object.keys(activeFilters).length > 0) {
+      params.filters = activeFilters;
+    }
+
+    return params;
+  }
+
+  async function loadRows(
+    page: number,
+    nextSortState: SortState = sortState,
+    nextFilters: FilterState = filters,
+  ) {
     if (!selectedTable) return;
     const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
     try {
-      const result = await fetchRows(selectedTable, { page });
+      const result = await fetchRows(
+        selectedTable,
+        buildRowsParams(page, nextSortState, nextFilters)
+      );
       if (myRequest !== selectRequestId) return;
       queryResult = result;
       currentPage = page;
     } catch (e) {
       if (myRequest !== selectRequestId) return;
-      tableError = e instanceof Error ? e.message : 'Failed to load page';
+      tableError = e instanceof Error ? e.message : 'Failed to load rows';
     } finally {
       if (myRequest === selectRequestId) tableLoading = false;
     }
+  }
+
+  async function goToPage(page: number) {
+    await loadRows(page);
+  }
+
+  function handleSortChange(column: string, direction: SortDirection | null) {
+    const nextSortState: SortState = direction
+      ? { column, direction }
+      : { column: null, direction: null };
+    sortState = nextSortState;
+    void loadRows(1, nextSortState);
   }
 
   function exportCsv() {
@@ -174,12 +227,18 @@
       <div class="grid-area">
         <ToolStrip
           {sortState}
+          sortDescription={sortLabel}
           filtersVisible={filtersVisible}
           activeFilterCount={activeFilterCount}
           onToggleFilters={toggleFilters}
         />
         <div class="grid-shell" class:loading-overlay={tableLoading}>
-          <DataGrid {columns} rows={queryResult?.rows ?? []} />
+          <DataGrid
+            {columns}
+            rows={queryResult?.rows ?? []}
+            {sortState}
+            onSortChange={handleSortChange}
+          />
           {#if tableLoading}
             <div class="grid-loading">
               <div class="loading-spinner"></div>
