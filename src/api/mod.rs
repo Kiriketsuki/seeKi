@@ -375,7 +375,11 @@ fn pg_value_to_csv_string(
             .try_get::<i64, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
-        "real" | "double precision" => row
+        "real" => row
+            .try_get::<f32, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "double precision" => row
             .try_get::<f64, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
