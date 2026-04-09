@@ -11,17 +11,23 @@
 
   let {
     sortState,
+    sortDescription,
     filtersVisible = false,
     activeFilterCount = 0,
     onToggleFilters,
   }: {
     sortState: SortState;
+    sortDescription?: string;
     filtersVisible?: boolean;
     activeFilterCount?: number;
     onToggleFilters?: () => void;
   } = $props();
 
-  let sortLabel = $derived.by(() => {
+  let computedSortLabel = $derived.by(() => {
+    if (sortDescription) {
+      return sortDescription;
+    }
+
     if (!sortState.column || !sortState.direction) {
       return 'No active sort';
     }
@@ -48,7 +54,7 @@
       </span>
     </button>
 
-    <div class="tool-indicator" aria-label={sortLabel} title={sortLabel}>
+    <div class="tool-indicator" aria-label={computedSortLabel} title={computedSortLabel}>
       {#if sortState.direction === 'asc'}
         <ChevronUp size={16} />
       {:else if sortState.direction === 'desc'}
