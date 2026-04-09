@@ -1,16 +1,22 @@
-# Fix Manifest — PR #29: epic: Data Grid & Table Navigation (Session 4)
+# Fix Manifest — PR #29: epic: Data Grid & Table Navigation (Session 5)
 
-Council verdict: **CONDITIONAL→FOR** | 2026-04-09 | 9 findings (9 verified) | 1v1 no-questioner | 2 rounds
+Council verdict: **CONDITIONAL→FOR** | 2026-04-09 | 12 findings (12 verified) | 1v1 no-questioner | 2 rounds
 
-Prior sessions: Session 1 (3 fixed, 3 dismissed), Session 2 (2 fixed, 1 tracked, 1 dismissed), Session 3 (1 fixed, 1 tracked).
+Prior sessions: Session 1 (3 fixed, 3 dismissed), Session 2 (2 fixed, 1 tracked, 1 dismissed), Session 3 (1 fixed, 1 tracked), Session 4 (1 fixed, 1 tracked).
 
-## Session 4 Fix (applied in this commit)
+## Session 5 Fixes (applied in this commit)
 
-### 1. real (float4) columns silently null out via try_get::\<f64\> OID mismatch
-- **File**: `src/db/postgres.rs:386-389`, `src/api/mod.rs:378-381`
+### 1. Boolean filter broken: Yes/No display vs true/false SQL cast
+- **File**: `src/db/postgres.rs:221-248`
 - **Severity**: high
-- **Fix**: Split `"real" | "double precision"` arm — use `try_get::<f32>` for `real` (OID 700), keep `try_get::<f64>` for `double precision` (OID 701). Applied in both `pg_value_to_json` and `pg_value_to_csv_string`.
-- **Conceded by**: ADVOCATE (full concession after arbiter verified sqlx source)
+- **Fix**: Boolean columns now use `= TRUE`/`= FALSE` comparison instead of `::text ILIKE`. Filter input mapped: yes/true/t/1 → TRUE, no/false/f/0 → FALSE. Non-matching input yields no rows.
+- **Conceded by**: ADVOCATE (full concession — violates "no visible SQL" design principle)
+
+### 2. numeric/decimal columns display as left-aligned plain text
+- **File**: `frontend/src/lib/data-grid.ts:16-21, 152-157`
+- **Severity**: medium
+- **Fix**: Added `NUMERIC_TEXT_TYPES` set for 'numeric'/'decimal'. Returns `kind: 'number'` with raw string display (no Number() cast), giving right-alignment and tabular-nums without precision loss.
+- **Conceded by**: ADVOCATE (display regression from Session 3 precision fix)
 
 ## Prior Session Fixes
 
@@ -25,6 +31,9 @@ Prior sessions: Session 1 (3 fixed, 3 dismissed), Session 2 (2 fixed, 1 tracked,
 
 ### Session 3
 1. **numeric/decimal precision loss via Number() cast** — `data-grid.ts:14-15`: removed numeric/decimal from NUMBER_TYPES
+
+### Session 4
+1. **real (float4) columns silently null out via OID mismatch** — `postgres.rs:386-389`: split real/double precision arms
 
 ## Tracked (post-merge, not blocking)
 
@@ -41,9 +50,14 @@ Prior sessions: Session 1 (3 fixed, 3 dismissed), Session 2 (2 fixed, 1 tracked,
 ### 3. Missing aria-sort on sorted column headers (WCAG 1.3.1)
 - **File**: `frontend/src/components/DataGrid.svelte:66-100`
 - **Severity**: medium
-- **Fix**: Add `aria-sort="ascending"` / `"descending"` to header div in renderHeader. May require inspecting RevoGrid's rendered DOM to target the actual `<th>`.
+- **Fix**: Add `aria-sort="ascending"` / `"descending"` to header div in renderHeader
 
-## Dismissed (sessions 1-3)
+### 4. real (float4) grid vs CSV serialization inconsistency
+- **File**: `src/db/postgres.rs:388`, `src/api/mod.rs:380`
+- **Severity**: low
+- **Fix**: Use `f32.to_string()` then parse for JSON instead of `f32 as f64` widening
+
+## Dismissed (sessions 1-4)
 - `on:beforesorting` Svelte 5 syntax — correct for Svelte 4 dispatcher consumed by Svelte 5
 - Boolean coercion misses 1/yes/on — backend sends JSON booleans only
 - ILIKE performance on 500K rows — pre-existing design choice

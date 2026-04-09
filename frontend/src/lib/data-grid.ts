@@ -13,6 +13,13 @@ const NUMBER_TYPES = new Set([
   'double precision',
 ]);
 
+// Types where the backend sends a full-precision string to avoid JS float truncation.
+// Display as right-aligned numbers with tabular-nums but skip Number() casting.
+const NUMERIC_TEXT_TYPES = new Set([
+  'numeric',
+  'decimal',
+]);
+
 const DATE_ONLY_TYPES = new Set([
   'date',
 ]);
@@ -141,6 +148,14 @@ export function formatCellValue(
         tooltip: raw,
       };
     }
+  }
+
+  if (NUMERIC_TEXT_TYPES.has(column.data_type)) {
+    // Backend sends full-precision string — display as-is to avoid float truncation.
+    return {
+      kind: 'number',
+      display: String(value),
+    };
   }
 
   if (NUMBER_TYPES.has(column.data_type)) {

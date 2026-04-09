@@ -218,14 +218,37 @@ fn build_query_clauses(
         }
     }
 
-    // Per-column filter conditions (AND-ed, ILIKE with %value%)
+    // Per-column filter conditions (AND-ed)
+    // Boolean columns use = TRUE/FALSE instead of ILIKE to match Yes/No display.
+    let column_types: std::collections::HashMap<&str, &str> = columns
+        .iter()
+        .map(|c| (c.name.as_str(), c.data_type.as_str()))
+        .collect();
+
     let mut filter_entries: Vec<_> = filters.iter().collect();
     filter_entries.sort_by_key(|(k, _)| k.as_str());
 
     for (col_name, value) in &filter_entries {
-        conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
-        bind_values.push(format!("%{value}%"));
-        param_idx += 1;
+        let col_type = column_types.get(col_name.as_str()).copied().unwrap_or("");
+        if col_type == "boolean" {
+            // Map user-friendly input to SQL boolean
+            let normalized = value.trim().to_lowercase();
+            let bool_val = match normalized.as_str() {
+                "yes" | "true" | "t" | "1" => Some(true),
+                "no" | "false" | "f" | "0" => Some(false),
+                _ => None,
+            };
+            if let Some(b) = bool_val {
+                conditions.push(format!("\"{}\" = {}", col_name, if b { "TRUE" } else { "FALSE" }));
+            } else {
+                // Non-boolean input on a boolean column → no rows match
+                conditions.push("FALSE".to_string());
+            }
+        } else {
+            conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
+            bind_values.push(format!("%{value}%"));
+            param_idx += 1;
+        }
     }
 
     let where_clause = if conditions.is_empty() {
