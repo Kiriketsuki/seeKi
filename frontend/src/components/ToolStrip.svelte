@@ -54,7 +54,7 @@
       </span>
     </button>
 
-    <div class="tool-indicator" aria-label={computedSortLabel} title={computedSortLabel}>
+    <div class="tool-indicator" role="status" aria-label={computedSortLabel} title={computedSortLabel}>
       {#if sortState.direction === 'asc'}
         <ChevronUp size={16} />
       {:else if sortState.direction === 'desc'}

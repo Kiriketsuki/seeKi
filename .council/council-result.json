@@ -1,95 +1,80 @@
 {
-  "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged into main?",
-  "verdict": "FOR",
+  "motion": "Merge PR #29: epic: Data Grid & Table Navigation",
+  "verdict": "CONDITIONAL",
   "date": "2026-04-09",
-  "council": {
-    "advocates": 1,
-    "critics": 1,
-    "questioner": 0,
-    "rounds": 2,
-    "mode": "1v1-no-questioner",
-    "session": 3,
-    "note": "Final review after sessions 1+2 fixed all pre-merge findings. No new pre-merge blockers found."
+  "rounds": 3,
+  "agents": {
+    "advocate-1": "CONDITIONAL",
+    "advocate-2": "CONDITIONAL",
+    "critic-1": "CONDITIONAL",
+    "critic-2": "CONDITIONAL",
+    "questioner": "2 bugs confirmed, 0 unsubstantiated"
   },
   "findings": [
     {
       "id": 1,
-      "description": "setup.rs CWD write — CRITIC claimed new in this PR; arbiter verified pre-existing in main since Epic 1 (commit c276345, PR #27). CWD write is symmetric with config.rs:202-207 loader.",
-      "file": "src/api/setup.rs",
-      "line": 155,
-      "type": "improvement",
-      "severity": "medium",
+      "description": "Date off-by-one for non-UTC users: new Date() on bare date string parses as UTC midnight, rendered in local timezone shows wrong day. Also shows spurious time components for date-only fields.",
+      "file": "frontend/src/lib/data-grid.ts",
+      "line": 111,
+      "type": "bug",
+      "severity": "high",
       "verified": true,
-      "conceded_by": [],
-      "classification": "dismissed",
-      "status": "DISMISSED",
-      "dismissal_reason": "Pre-existing code merged via Epic 1 (PR #27, commit c276345). Not introduced by this PR. CWD write is symmetric with find_config_file() at config.rs:202-207."
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "fix_description": "Detect date-only columns (column.data_type === 'date') and either append 'T00:00:00' for local parsing or use a separate date-only formatter without time components.",
+      "citations": [
+        "frontend/src/lib/data-grid.ts:111",
+        "frontend/src/lib/data-grid.ts:18-23",
+        "src/db/postgres.rs:408-411"
+      ]
     },
     {
       "id": 2,
-      "description": "Toolbar shows previous table's display name during table-switch loading — selectedTable updates after fetch completes at App.svelte:62",
-      "file": "frontend/src/App.svelte",
-      "line": 62,
-      "related_files": ["frontend/src/App.svelte:143", "frontend/src/App.svelte:153-158"],
-      "type": "improvement",
-      "severity": "low",
+      "description": "Timestamp formatter omits year: multi-year records display identically (e.g. 'Jan 15, 3:45 PM' for both 2023 and 2024). Year only visible in tooltip.",
+      "file": "frontend/src/lib/data-grid.ts",
+      "line": 25,
+      "type": "bug",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED",
-      "note": "ADVOCATE concedes the label lags but argues deliberate UX trade-off: updating early would show new name over stale rows. Loading overlay and spinner signal transition. Arbiter agrees — design choice, not bug."
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "fix_description": "Add year: 'numeric' to the Intl.DateTimeFormat options object at line 25-30.",
+      "citations": [
+        "frontend/src/lib/data-grid.ts:25-30"
+      ]
     },
     {
       "id": 3,
-      "description": "Justfile dev recipe: background cargo process survives Ctrl+C because kill line never runs when SIGINT hits the subshell",
-      "file": "Justfile",
-      "line": 9,
+      "description": "ToolStrip sort indicator div has aria-label but no role — invisible to assistive technology.",
+      "file": "frontend/src/components/ToolStrip.svelte",
+      "line": 57,
       "type": "improvement",
-      "severity": "low",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED"
-    },
-    {
-      "id": 4,
-      "description": "pick<T>() in mock.ts returns undefined on empty arrays despite T return type — type unsoundness in dev-only mock layer",
-      "file": "frontend/src/lib/mock.ts",
-      "line": 326,
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED"
+      "conceded_by": ["advocate-1", "advocate-2"],
+      "fix_description": "Add role=\"status\" to the sort indicator <div> element.",
+      "citations": [
+        "frontend/src/components/ToolStrip.svelte:57"
+      ]
     }
   ],
   "dismissed": [
     {
-      "id": 1,
-      "reason": "Pre-existing code from Epic 1 (main branch), not introduced by this PR"
-    }
-  ],
-  "conditions_met": true,
-  "prior_sessions": [
-    {
-      "session": 1,
-      "findings": 8,
-      "fixed": 8,
-      "dismissed": 1
+      "claim": "on:beforesorting is wrong Svelte 5 syntax",
+      "reason": "QUESTIONER verified @revolist/svelte-datagrid v4.21.4 uses createEventDispatcher (Svelte 4), so on: syntax is correct from Svelte 5 consumers."
     },
     {
-      "session": 2,
-      "findings": 9,
-      "fixed": 2,
-      "tracked": 7,
-      "dismissed": 0
+      "claim": "Boolean coercion misses 1/yes/on",
+      "reason": "QUESTIONER verified postgres.rs:394-396 sends JSON booleans. Non-boolean representations cannot arrive from current backend."
+    },
+    {
+      "claim": "ILIKE performance on 500K rows",
+      "reason": "Pre-existing design choice from prior epic, not introduced by this PR."
     }
   ],
-  "follow_up_issues": [
-    "Consider updating selectedTable before fetch for immediate toolbar feedback",
-    "Add trap to Justfile dev recipe to kill background cargo on SIGINT",
-    "Fix pick<T>() type safety in mock.ts"
+  "follow_ups": [
+    "Add unit tests for data-grid.ts pure functions (formatCellValue, columnWidth, sortStateToConfig, buildSortableColumn, getColumnDisplayName)",
+    "Tighten sortStateToConfig return type to Record<string, 'asc' | 'desc'>",
+    "Expand boolean coercion for future SQLite support (value === 1, 'yes', 'on')",
+    "Investigate aria-sort on RevoGrid column headers at runtime"
   ],
   "critical_discoveries": []
 }

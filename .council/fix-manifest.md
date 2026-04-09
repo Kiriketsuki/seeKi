@@ -1,37 +1,51 @@
-# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Session 3)
+# Fix Manifest — PR #29: epic: Data Grid & Table Navigation
 
-Council verdict: **FOR** | 2026-04-09 | 4 findings (4 verified, 1 dismissed) | 1v1 no-questioner | 2 rounds
+Council verdict: **CONDITIONAL** | 2026-04-09 | 3 findings (3 verified)
 
-Prior sessions: Session 1 (8 findings, all fixed), Session 2 (9 findings, 2 pre-merge fixed, 7 tracked).
+## Fixes Required
 
-## No Fixes Required (pre-merge)
+### 1. Date off-by-one for non-UTC users
+- **File**: `frontend/src/lib/data-grid.ts`
+- **Line**: 111
+- **Type**: bug
+- **Severity**: high
+- **Verification**: verified
+- **Fix**: Detect date-only columns (`column.data_type === 'date'`) and either:
+  (a) Append `'T00:00:00'` to force local-timezone parsing, or
+  (b) Use a separate date-only `Intl.DateTimeFormat` (no hour/minute) for `date` columns.
+  Date columns should NOT show time components in the display.
+- **Citations**: `data-grid.ts:111`, `data-grid.ts:18-23`, `postgres.rs:408-411`
 
-All pre-merge issues from prior sessions have been resolved. Session 3 found no new pre-merge blockers.
+### 2. Timestamp formatter omits year
+- **File**: `frontend/src/lib/data-grid.ts`
+- **Line**: 25
+- **Type**: bug
+- **Severity**: medium
+- **Verification**: verified
+- **Fix**: Add `year: 'numeric'` to the `Intl.DateTimeFormat` options at lines 25-30.
+- **Citations**: `data-grid.ts:25-30`
 
-### Dismissed: setup.rs CWD write
-- **File**: `src/api/setup.rs:155`
-- **Reason**: CRITIC claimed new code in this PR. Arbiter verified via `git log main -- src/api/setup.rs` that `save_config` was merged in Epic 1 (commit c276345, PR #27). CWD write is symmetric with `config.rs:202-207` loader. Not in scope.
+### 3. ToolStrip sort indicator missing ARIA role
+- **File**: `frontend/src/components/ToolStrip.svelte`
+- **Line**: 57
+- **Type**: improvement
+- **Severity**: medium
+- **Verification**: verified
+- **Fix**: Add `role="status"` to the sort indicator `<div>` element.
+- **Citations**: `ToolStrip.svelte:57`
 
-## Tracked (post-merge, not blocking)
+## Conditions
+- All 3 fixes must be applied before merge
 
-### 1. Toolbar shows previous table name during loading
-- **File**: `frontend/src/App.svelte:62`
-- **Severity**: low
-- **Fix**: Move `selectedTable = tableName` before the `await`, or accept as deliberate UX trade-off
-
-### 2. Justfile dev recipe orphans cargo on Ctrl+C
-- **File**: `Justfile:9-17`
-- **Severity**: low
-- **Fix**: Add `trap "kill $CARGO_PID 2>/dev/null" EXIT INT TERM` after backgrounding cargo
-
-### 3. pick<T>() unsound on empty arrays
-- **File**: `frontend/src/lib/mock.ts:326`
-- **Severity**: nit
-- **Fix**: Add empty-array guard or change return type to `T | undefined`
+## Follow-ups (not blocking)
+- Unit tests for `data-grid.ts` pure functions
+- Tighten `sortStateToConfig` return type
+- Boolean coercion for future SQLite
+- Investigate `aria-sort` on RevoGrid column headers
 
 ## Test Command
 ```bash
-cd frontend && npm run build && cd .. && cargo test
+cd frontend && npm run test && npm run check
 ```
 
 ## Raw Data

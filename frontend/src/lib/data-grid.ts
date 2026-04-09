@@ -15,14 +15,24 @@ const NUMBER_TYPES = new Set([
   'decimal',
 ]);
 
-const DATETIME_TYPES = new Set([
+const DATE_ONLY_TYPES = new Set([
   'date',
+]);
+
+const DATETIME_TYPES = new Set([
   'timestamp',
   'timestamp without time zone',
   'timestamp with time zone',
 ]);
 
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+});
+
 const formatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
   month: 'short',
   day: 'numeric',
   hour: 'numeric',
@@ -101,6 +111,21 @@ export function formatCellValue(
       display: booleanValue ? 'Yes' : 'No',
       booleanValue,
     };
+  }
+
+  if (DATE_ONLY_TYPES.has(column.data_type)) {
+    const raw = String(value);
+    // Append local time to prevent UTC midnight being shifted to the previous day
+    // for users west of UTC (ECMAScript parses bare date strings as UTC midnight).
+    const parsed = new Date(`${raw}T00:00:00`);
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return {
+        kind: 'timestamp',
+        display: dateFormatter.format(parsed),
+        tooltip: raw,
+      };
+    }
   }
 
   if (
