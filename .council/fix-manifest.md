@@ -1,39 +1,38 @@
-# Fix Manifest -- epic/1-backend-api-config merge into main
+# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Session 3)
 
-Council verdict: CONDITIONAL | 2026-04-08 | 2 findings (2 verified)
+Council verdict: **FOR** | 2026-04-09 | 4 findings (4 verified, 1 dismissed) | 1v1 no-questioner | 2 rounds
 
-Third adversarial council (pre-merge review). Prior councils found 8 issues total -- all fixed.
-This council reviews the fully-hardened state before merging into main.
+Prior sessions: Session 1 (8 findings, all fixed), Session 2 (9 findings, 2 pre-merge fixed, 7 tracked).
 
-## Fixes Required
+## No Fixes Required (pre-merge)
 
-### 1. u32 overflow in OFFSET computation
-- **File**: `src/db/postgres.rs`
-- **Line**: 287
-- **Type**: bug
-- **Severity**: high
-- **Verification**: verified by Critic 2, conceded by Advocate
-- **Fix**: Cast `page` and `page_size` to `u64` before multiplication to prevent silent wrapping in release mode. e.g. `let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);` and interpolate as u64 into SQL.
-- **Citations**: `src/db/postgres.rs:287`, `src/db/mod.rs:48-49`
+All pre-merge issues from prior sessions have been resolved. Session 3 found no new pre-merge blockers.
 
-### 2. CSV error sentinel is not valid CSV
-- **File**: `src/api/mod.rs`
-- **Lines**: 271-276, 322-327
-- **Type**: bug
-- **Severity**: medium
-- **Verification**: verified by Critic 1 + Critic 2, conceded by Advocate
-- **Fix**: Either (a) remove the raw error text sentinels entirely and just close the stream (log the error server-side, which already happens), or (b) emit the error as a properly quoted CSV row. Option (a) is simpler and safer -- a truncated CSV is less harmful than a corrupted one.
-- **Citations**: `src/api/mod.rs:271-276`, `src/api/mod.rs:322-327`
+### Dismissed: setup.rs CWD write
+- **File**: `src/api/setup.rs:155`
+- **Reason**: CRITIC claimed new code in this PR. Arbiter verified via `git log main -- src/api/setup.rs` that `save_config` was merged in Epic 1 (commit c276345, PR #27). CWD write is symmetric with `config.rs:202-207` loader. Not in scope.
 
-## Informational Notes (not blocking)
-- CORS prefix match could be tightened to exact match (main.rs:47) -- low severity for localhost tool
-- No integration tests for DB layer (pre-existing gap, not introduced by this branch)
-- save_config accepts non-localhost hosts (low risk, setup mode is one-time)
-- Identifier validation rejects `$` in table/column names (compatibility edge case)
-- display_config / get_columns not cached (acceptable for v0.1, cache for v0.2)
-- Divergent pg_value_to_json / pg_value_to_csv_string boolean rendering (intentional: true/false vs Yes/No)
+## Tracked (post-merge, not blocking)
+
+### 1. Toolbar shows previous table name during loading
+- **File**: `frontend/src/App.svelte:62`
+- **Severity**: low
+- **Fix**: Move `selectedTable = tableName` before the `await`, or accept as deliberate UX trade-off
+
+### 2. Justfile dev recipe orphans cargo on Ctrl+C
+- **File**: `Justfile:9-17`
+- **Severity**: low
+- **Fix**: Add `trap "kill $CARGO_PID 2>/dev/null" EXIT INT TERM` after backgrounding cargo
+
+### 3. pick<T>() unsound on empty arrays
+- **File**: `frontend/src/lib/mock.ts:326`
+- **Severity**: nit
+- **Fix**: Add empty-array guard or change return type to `T | undefined`
 
 ## Test Command
+```bash
+cd frontend && npm run build && cd .. && cargo test
 ```
-cargo test
-```
+
+## Raw Data
+council-result.json: .council/council-result.json

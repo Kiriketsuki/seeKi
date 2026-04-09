@@ -1,0 +1,95 @@
+{
+  "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged into main?",
+  "verdict": "FOR",
+  "date": "2026-04-09",
+  "council": {
+    "advocates": 1,
+    "critics": 1,
+    "questioner": 0,
+    "rounds": 2,
+    "mode": "1v1-no-questioner",
+    "session": 3,
+    "note": "Final review after sessions 1+2 fixed all pre-merge findings. No new pre-merge blockers found."
+  },
+  "findings": [
+    {
+      "id": 1,
+      "description": "setup.rs CWD write — CRITIC claimed new in this PR; arbiter verified pre-existing in main since Epic 1 (commit c276345, PR #27). CWD write is symmetric with config.rs:202-207 loader.",
+      "file": "src/api/setup.rs",
+      "line": 155,
+      "type": "improvement",
+      "severity": "medium",
+      "verified": true,
+      "conceded_by": [],
+      "classification": "dismissed",
+      "status": "DISMISSED",
+      "dismissal_reason": "Pre-existing code merged via Epic 1 (PR #27, commit c276345). Not introduced by this PR. CWD write is symmetric with find_config_file() at config.rs:202-207."
+    },
+    {
+      "id": 2,
+      "description": "Toolbar shows previous table's display name during table-switch loading — selectedTable updates after fetch completes at App.svelte:62",
+      "file": "frontend/src/App.svelte",
+      "line": 62,
+      "related_files": ["frontend/src/App.svelte:143", "frontend/src/App.svelte:153-158"],
+      "type": "improvement",
+      "severity": "low",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "classification": "post-merge",
+      "status": "TRACKED",
+      "note": "ADVOCATE concedes the label lags but argues deliberate UX trade-off: updating early would show new name over stale rows. Loading overlay and spinner signal transition. Arbiter agrees — design choice, not bug."
+    },
+    {
+      "id": 3,
+      "description": "Justfile dev recipe: background cargo process survives Ctrl+C because kill line never runs when SIGINT hits the subshell",
+      "file": "Justfile",
+      "line": 9,
+      "type": "improvement",
+      "severity": "low",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "classification": "post-merge",
+      "status": "TRACKED"
+    },
+    {
+      "id": 4,
+      "description": "pick<T>() in mock.ts returns undefined on empty arrays despite T return type — type unsoundness in dev-only mock layer",
+      "file": "frontend/src/lib/mock.ts",
+      "line": 326,
+      "type": "improvement",
+      "severity": "nit",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "classification": "post-merge",
+      "status": "TRACKED"
+    }
+  ],
+  "dismissed": [
+    {
+      "id": 1,
+      "reason": "Pre-existing code from Epic 1 (main branch), not introduced by this PR"
+    }
+  ],
+  "conditions_met": true,
+  "prior_sessions": [
+    {
+      "session": 1,
+      "findings": 8,
+      "fixed": 8,
+      "dismissed": 1
+    },
+    {
+      "session": 2,
+      "findings": 9,
+      "fixed": 2,
+      "tracked": 7,
+      "dismissed": 0
+    }
+  ],
+  "follow_up_issues": [
+    "Consider updating selectedTable before fetch for immediate toolbar feedback",
+    "Add trap to Justfile dev recipe to kill background cargo on SIGINT",
+    "Fix pick<T>() type safety in mock.ts"
+  ],
+  "critical_discoveries": []
+}
