@@ -75,11 +75,11 @@
     const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
-    currentPage = page;
     try {
       const result = await fetchRows(selectedTable, { page });
       if (myRequest !== selectRequestId) return;
       queryResult = result;
+      currentPage = page;
     } catch (e) {
       if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load page';

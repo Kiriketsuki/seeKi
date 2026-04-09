@@ -1,18 +1,19 @@
 {
   "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged into main?",
-  "verdict": "CONDITIONAL",
-  "date": "2026-04-08",
+  "verdict": "FOR",
+  "date": "2026-04-09",
   "council": {
     "advocates": 1,
     "critics": 1,
     "questioner": 0,
     "rounds": 2,
-    "mode": "1v1-no-questioner"
+    "mode": "1v1-no-questioner",
+    "round": 3
   },
   "findings": [
     {
       "id": 1,
-      "description": "selectTable race condition — concurrent table clicks can corrupt UI state (last-write-wins with no cancellation guard)",
+      "description": "selectTable race condition — concurrent table clicks can corrupt UI state",
       "file": "frontend/src/App.svelte",
       "line": 50,
       "type": "bug",
@@ -20,12 +21,12 @@
       "verified": true,
       "conceded_by": ["advocate-1"],
       "classification": "pre-merge",
-      "status": "OPEN",
-      "fix_description": "Add a monotonic request counter. At entry, increment and capture const myId = ++requestId. After the await, guard: if (myId !== requestId) return."
+      "status": "FIXED",
+      "fix_applied": "Monotonic request counter (selectRequestId) guards all state writes in selectTable and goToPage. Commit 5933501."
     },
     {
       "id": 2,
-      "description": "CSV error row is invalid CSV — '# ERROR:' line appended on mid-stream failure is ingested as data by downstream parsers",
+      "description": "CSV error row is invalid CSV — '# ERROR:' line corrupts downstream parsers",
       "file": "src/api/mod.rs",
       "line": 322,
       "type": "bug",
@@ -33,12 +34,12 @@
       "verified": true,
       "conceded_by": ["advocate-1"],
       "classification": "pre-merge",
-      "status": "OPEN",
-      "fix_description": "Remove the error comment row (lines 322-328). The tracing::warn at line 321 already logs the event. Truncated output is safer than corrupt output."
+      "status": "FIXED",
+      "fix_applied": "Error comment row removed. tracing::warn logs the event. Commit 5933501."
     },
     {
       "id": 3,
-      "description": "csv::Writer instantiated per row in export loop — 500K Writer allocations for large table exports",
+      "description": "csv::Writer instantiated per row in export loop — 500K Writer allocations",
       "file": "src/api/mod.rs",
       "line": 291,
       "type": "improvement",
@@ -46,16 +47,29 @@
       "verified": true,
       "conceded_by": ["advocate-1"],
       "classification": "pre-merge",
-      "status": "OPEN",
-      "fix_description": "Create one csv::Writer before the loop. Flush at batch boundaries, take the buffer, send the chunk."
+      "status": "FIXED",
+      "fix_applied": "Single csv::Writer hoisted outside loop, flush at batch boundaries. Commit 5933501."
     },
     {
       "id": 4,
-      "description": "goToPage sets currentPage before fetch confirms — on failure, StatusBar shows wrong page number",
-      "file": "frontend/src/App.svelte",
-      "line": 73,
+      "description": "CSV export silently delivers truncated files on mid-stream DB error — HTTP 200 committed before spawn, no client-visible truncation signal",
+      "file": "src/api/mod.rs",
+      "line": 328,
       "type": "bug",
-      "severity": "nit",
+      "severity": "should-fix",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "classification": "follow-up",
+      "status": "OPEN",
+      "fix_description": "Send Err(...) to tx on stream_error instead of silently dropping the sender. Client can detect stream error."
+    },
+    {
+      "id": 5,
+      "description": "goToPage sets currentPage before fetch resolves — on failure, StatusBar shows wrong page number while grid shows stale data",
+      "file": "frontend/src/App.svelte",
+      "line": 78,
+      "type": "bug",
+      "severity": "should-fix",
       "verified": true,
       "conceded_by": ["advocate-1"],
       "classification": "follow-up",
@@ -63,21 +77,29 @@
       "fix_description": "Move currentPage = page to after queryResult = result inside the try block."
     },
     {
-      "id": 5,
-      "description": "Content-Disposition filename not sanitized — display name with quotes or semicolons produces malformed header",
+      "id": 6,
+      "description": "Content-Disposition filename not sanitized — display name with quotes or CRLF produces malformed header",
       "file": "src/api/mod.rs",
-      "line": 338,
+      "line": 341,
       "type": "hardening",
       "severity": "nit",
       "verified": true,
       "conceded_by": [],
       "classification": "follow-up",
       "status": "OPEN",
-      "fix_description": "Strip double-quote, semicolon, CR, LF from filename before header injection."
+      "fix_description": "Strip double-quote, semicolon, CR, LF from filename before header interpolation."
     }
   ],
-  "conditions": [
-    "Fix findings #1, #2, #3 before merge",
-    "Findings #4 and #5 acceptable as fast follow-ups"
-  ]
+  "conditions_met": true,
+  "fixes_applied": [
+    "Finding 1: selectTable race condition (commit 5933501)",
+    "Finding 2: CSV error row removed (commit 5933501)",
+    "Finding 3: csv::Writer hoisted outside loop (commit 5933501)"
+  ],
+  "follow_up_issues": [
+    "CSV export silent truncation on mid-stream error (finding 4)",
+    "goToPage optimistic currentPage not rolled back on error (finding 5)",
+    "Content-Disposition filename sanitization (finding 6)"
+  ],
+  "critical_discoveries": []
 }

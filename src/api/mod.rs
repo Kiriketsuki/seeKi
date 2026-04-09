@@ -229,7 +229,12 @@ async fn export_csv(
     let display_table = display_name_table(&table, &state.config.display)
         .replace(' ', "_")
         .to_lowercase();
-    let filename = format!("{display_table}.csv");
+    let sanitized = display_table
+        .replace('"', "")
+        .replace(';', "")
+        .replace('\r', "")
+        .replace('\n', "");
+    let filename = format!("{sanitized}.csv");
 
     // Owned values for the spawned task
     let sort_column = params.sort_column.clone();
@@ -327,6 +332,12 @@ async fn export_csv(
 
         if stream_error {
             tracing::warn!("CSV export: stream ended with error, output may be truncated");
+            let _ = tx
+                .send(Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "CSV export interrupted: not all rows were exported",
+                )))
+                .await;
         }
     });
 
