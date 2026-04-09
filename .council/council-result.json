@@ -1,6 +1,6 @@
 {
   "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged into main?",
-  "verdict": "CONDITIONAL",
+  "verdict": "FOR",
   "date": "2026-04-09",
   "council": {
     "advocates": 1,
@@ -8,46 +8,44 @@
     "questioner": 0,
     "rounds": 2,
     "mode": "1v1-no-questioner",
-    "session": 2,
-    "note": "Fresh review after prior council's 8 findings were all fixed"
+    "session": 3,
+    "note": "Final review after sessions 1+2 fixed all pre-merge findings. No new pre-merge blockers found."
   },
   "findings": [
     {
       "id": 1,
-      "description": "sqlx missing chrono feature — timestamp/date/uuid columns silently render as null/empty in grid and CSV",
-      "file": "Cargo.toml",
-      "line": 17,
-      "related_files": ["src/db/postgres.rs:400-404", "src/api/mod.rs:390-396", "src/db/postgres.rs:408-426"],
-      "type": "bug",
-      "severity": "critical",
+      "description": "setup.rs CWD write — CRITIC claimed new in this PR; arbiter verified pre-existing in main since Epic 1 (commit c276345, PR #27). CWD write is symmetric with config.rs:202-207 loader.",
+      "file": "src/api/setup.rs",
+      "line": 155,
+      "type": "improvement",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "pre-merge",
-      "status": "OPEN",
-      "fix_description": "Add chrono feature to sqlx in Cargo.toml. Add explicit match arms for timestamp/timestamptz/date/time/uuid in pg_value_to_json and pg_value_to_csv_string."
+      "conceded_by": [],
+      "classification": "dismissed",
+      "status": "DISMISSED",
+      "dismissal_reason": "Pre-existing code merged via Epic 1 (PR #27, commit c276345). Not introduced by this PR. CWD write is symmetric with find_config_file() at config.rs:202-207."
     },
     {
       "id": 2,
-      "description": "Toolbar displays raw internal table name instead of display name — violates 'no visible SQL' design principle",
+      "description": "Toolbar shows previous table's display name during table-switch loading — selectedTable updates after fetch completes at App.svelte:62",
       "file": "frontend/src/App.svelte",
-      "line": 146,
-      "related_files": ["frontend/src/components/Toolbar.svelte:16"],
-      "type": "bug",
-      "severity": "should-fix",
+      "line": 62,
+      "related_files": ["frontend/src/App.svelte:143", "frontend/src/App.svelte:153-158"],
+      "type": "improvement",
+      "severity": "low",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "pre-merge",
-      "status": "OPEN",
-      "fix_description": "Pass displayConfig?.tables[selectedTable]?.display_name ?? selectedTable as tableName to Toolbar."
+      "classification": "post-merge",
+      "status": "TRACKED",
+      "note": "ADVOCATE concedes the label lags but argues deliberate UX trade-off: updating early would show new name over stale rows. Loading overlay and spinner signal transition. Arbiter agrees — design choice, not bug."
     },
     {
       "id": 3,
-      "description": "Duplicate localStorage key constant defined independently in App.svelte:16 and Sidebar.svelte:5",
-      "file": "frontend/src/App.svelte",
-      "line": 16,
-      "related_files": ["frontend/src/components/Sidebar.svelte:5"],
+      "description": "Justfile dev recipe: background cargo process survives Ctrl+C because kill line never runs when SIGINT hits the subshell",
+      "file": "Justfile",
+      "line": 9,
       "type": "improvement",
-      "severity": "should-fix",
+      "severity": "low",
       "verified": true,
       "conceded_by": ["advocate-1"],
       "classification": "post-merge",
@@ -55,70 +53,9 @@
     },
     {
       "id": 4,
-      "description": "Stale comment references non-existent getInitialCollapsed() function",
-      "file": "frontend/src/components/Sidebar.svelte",
-      "line": 21,
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED"
-    },
-    {
-      "id": 5,
-      "description": "Zero frontend test coverage — no Vitest or Playwright tests for frontend logic",
-      "file": "frontend/",
-      "type": "improvement",
-      "severity": "tracked",
-      "verified": true,
-      "conceded_by": [],
-      "classification": "post-merge",
-      "status": "TRACKED",
-      "note": "ADVOCATE rebuts (scaffold scope, mock layer enables future tests). CRITIC downgrades from blocking. Tracked obligation: Vitest setup with assertShape tests before Epic 3."
-    },
-    {
-      "id": 6,
-      "description": "Justfile dev recipe does not detect backend startup failure",
-      "file": "Justfile",
-      "line": 9,
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED"
-    },
-    {
-      "id": 7,
-      "description": "Mock total_rows inconsistent with row_count_estimate in TABLES array",
+      "description": "pick<T>() in mock.ts returns undefined on empty arrays despite T return type — type unsoundness in dev-only mock layer",
       "file": "frontend/src/lib/mock.ts",
-      "line": 437,
-      "related_files": ["frontend/src/lib/mock.ts:8-18"],
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED"
-    },
-    {
-      "id": 8,
-      "description": "DataGrid column width hardcoded at 150px for all columns",
-      "file": "frontend/src/components/DataGrid.svelte",
-      "line": 16,
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "post-merge",
-      "status": "TRACKED"
-    },
-    {
-      "id": 9,
-      "description": "No fetch timeout — hung backend query produces infinite spinner with no recovery",
-      "file": "frontend/src/lib/api.ts",
-      "line": 31,
+      "line": 326,
       "type": "improvement",
       "severity": "nit",
       "verified": true,
@@ -127,22 +64,32 @@
       "status": "TRACKED"
     }
   ],
-  "dismissed": [],
-  "conditions_met": false,
-  "prior_session": {
-    "findings": 8,
-    "fixed": 8,
-    "dismissed": 1,
-    "note": "All 8 findings from prior council session were fixed in commits 5933501, 7f92f80, eb95851"
-  },
+  "dismissed": [
+    {
+      "id": 1,
+      "reason": "Pre-existing code from Epic 1 (main branch), not introduced by this PR"
+    }
+  ],
+  "conditions_met": true,
+  "prior_sessions": [
+    {
+      "session": 1,
+      "findings": 8,
+      "fixed": 8,
+      "dismissed": 1
+    },
+    {
+      "session": 2,
+      "findings": 9,
+      "fixed": 2,
+      "tracked": 7,
+      "dismissed": 0
+    }
+  ],
   "follow_up_issues": [
-    "Vitest setup with assertShape unit tests before Epic 3",
-    "Extract shared localStorage key constant",
-    "Fix stale getInitialCollapsed() comment in Sidebar.svelte",
-    "Improve Justfile dev recipe backend failure detection",
-    "Fix mock total_rows consistency",
-    "Dynamic DataGrid column widths",
-    "Add fetch timeout / AbortController to api.ts"
+    "Consider updating selectedTable before fetch for immediate toolbar feedback",
+    "Add trap to Justfile dev recipe to kill background cargo on SIGINT",
+    "Fix pick<T>() type safety in mock.ts"
   ],
   "critical_discoveries": []
 }
