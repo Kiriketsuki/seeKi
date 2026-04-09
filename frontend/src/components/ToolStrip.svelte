@@ -81,8 +81,8 @@
     <button
       class="tool-button tool-button-disabled"
       disabled
-      aria-label="Export tools coming later"
-      title="Export tools coming later"
+      aria-label="More export options coming soon"
+      title="More export options coming soon"
       type="button"
     >
       <Download size={16} />
