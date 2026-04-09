@@ -324,6 +324,7 @@ const PRODUCTS = [
 const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 function pick<T>(arr: readonly T[]): T {
+  if (arr.length === 0) throw new Error('pick called on empty array');
   return arr[Math.floor(Math.random() * arr.length)];
 }
 

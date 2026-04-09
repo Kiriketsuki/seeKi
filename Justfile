@@ -8,6 +8,7 @@ dev:
     set -euo pipefail
     cargo run &
     CARGO_PID=$!
+    trap "kill $CARGO_PID 2>/dev/null" EXIT INT TERM
     # Wait briefly and verify the backend started
     sleep 2
     if ! kill -0 $CARGO_PID 2>/dev/null; then
@@ -15,7 +16,6 @@ dev:
         exit 1
     fi
     cd frontend && npm run dev
-    kill $CARGO_PID 2>/dev/null || true
 
 # Start frontend only with mock data (no backend needed)
 dev-mock:

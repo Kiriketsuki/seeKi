@@ -50,6 +50,7 @@
 
   async function selectTable(tableName: string) {
     const myRequest = ++selectRequestId;
+    selectedTable = tableName;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
@@ -59,7 +60,6 @@
         fetchRows(tableName)
       ]);
       if (myRequest !== selectRequestId) return;
-      selectedTable = tableName;
       columns = cols;
       queryResult = result;
     } catch (e) {
