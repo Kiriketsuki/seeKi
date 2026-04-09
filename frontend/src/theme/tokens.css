@@ -1,0 +1,62 @@
+:root {
+  /* Palette */
+  --sk-bg: #F5F0EB;
+  --sk-text: #2F4858;
+  --sk-accent: #00A9A5;
+  --sk-muted: #8a7a6c;
+  --sk-secondary: #a0917f;
+  --sk-faded: #b0a090;
+
+  /* Glass surfaces */
+  --sk-glass-sidebar: rgba(255, 255, 255, 0.5);
+  --sk-glass-sidebar-blur: blur(20px);
+  --sk-glass-toolbar: rgba(255, 255, 255, 0.4);
+  --sk-glass-toolbar-blur: blur(20px);
+  --sk-glass-grid: rgba(255, 255, 255, 0.55);
+  --sk-glass-grid-blur: blur(24px);
+  --sk-glass-statusbar: rgba(255, 255, 255, 0.4);
+  --sk-glass-statusbar-blur: blur(20px);
+  --sk-glass-input: rgba(255, 255, 255, 0.6);
+  --sk-glass-input-blur: blur(8px);
+  --sk-glass-button: rgba(255, 255, 255, 0.6);
+  --sk-glass-button-blur: blur(8px);
+
+  /* Borders */
+  --sk-border: rgba(47, 72, 88, 0.06);
+  --sk-border-light: rgba(47, 72, 88, 0.05);
+  --sk-border-lighter: rgba(47, 72, 88, 0.03);
+
+  /* Spacing */
+  --sk-space-xs: 4px;
+  --sk-space-sm: 8px;
+  --sk-space-md: 12px;
+  --sk-space-lg: 16px;
+  --sk-space-xl: 20px;
+  --sk-space-2xl: 24px;
+
+  /* Radius */
+  --sk-radius-sm: 5px;
+  --sk-radius-md: 6px;
+  --sk-radius-lg: 8px;
+
+  /* Shadows */
+  --sk-shadow-card: 0 2px 16px rgba(47, 72, 88, 0.04);
+  --sk-shadow-accent: 0 2px 8px rgba(0, 169, 165, 0.2);
+
+  /* Typography */
+  --sk-font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --sk-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', monospace;
+  --sk-font-size-xs: 9px;
+  --sk-font-size-sm: 10px;
+  --sk-font-size-body: 12px;
+  --sk-font-size-md: 13px;
+  --sk-font-size-lg: 15px;
+  --sk-font-size-xl: 17px;
+
+  /* Sidebar */
+  --sk-sidebar-width: 210px;
+  --sk-sidebar-collapsed: 48px;
+
+  /* Zebra striping */
+  --sk-row-alt: rgba(245, 240, 235, 0.3);
+}

@@ -397,6 +397,26 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
         "json" | "jsonb" => row
             .try_get::<serde_json::Value, _>(col)
             .unwrap_or(Value::Null),
+        "timestamp without time zone" => row
+            .try_get::<chrono::NaiveDateTime, _>(col)
+            .map(|v| Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string()))
+            .unwrap_or(Value::Null),
+        "timestamp with time zone" => row
+            .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
+            .map(|v| Value::String(v.to_rfc3339()))
+            .unwrap_or(Value::Null),
+        "date" => row
+            .try_get::<chrono::NaiveDate, _>(col)
+            .map(|v| Value::String(v.format("%Y-%m-%d").to_string()))
+            .unwrap_or(Value::Null),
+        "time without time zone" | "time with time zone" => row
+            .try_get::<chrono::NaiveTime, _>(col)
+            .map(|v| Value::String(v.format("%H:%M:%S").to_string()))
+            .unwrap_or(Value::Null),
+        "uuid" => row
+            .try_get::<uuid::Uuid, _>(col)
+            .map(|v| Value::String(v.to_string()))
+            .unwrap_or(Value::Null),
         _ => row
             .try_get::<String, _>(col)
             .map(Value::from)

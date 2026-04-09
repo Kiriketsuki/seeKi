@@ -24,6 +24,11 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/tables/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
         .route("/export/{table}/csv", get(export_csv))
+        .route("/status", get(status_normal))
+}
+
+async fn status_normal() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "mode": "normal" }))
 }
 
 #[derive(Serialize)]
@@ -224,7 +229,12 @@ async fn export_csv(
     let display_table = display_name_table(&table, &state.config.display)
         .replace(' ', "_")
         .to_lowercase();
-    let filename = format!("{display_table}.csv");
+    let sanitized = display_table
+        .replace('"', "")
+        .replace(';', "")
+        .replace('\r', "")
+        .replace('\n', "");
+    let filename = format!("{sanitized}.csv");
 
     // Owned values for the spawned task
     let sort_column = params.sort_column.clone();
@@ -271,11 +281,11 @@ async fn export_csv(
             }
         };
 
-        let mut batch_buf = Vec::with_capacity(8192);
+        let mut wtr = csv::Writer::from_writer(Vec::with_capacity(8192));
         let mut batch_count = 0u32;
         let mut stream_error = false;
 
-        while let Some(row_result) = row_stream.next().await {
+        'rows: while let Some(row_result) = row_stream.next().await {
             match row_result {
                 Ok(row) => {
                     let fields: Vec<String> = columns
@@ -283,19 +293,22 @@ async fn export_csv(
                         .map(|col| pg_value_to_csv_string(&row, &col.name, &col.data_type))
                         .collect();
 
-                    let mut wtr = csv::Writer::from_writer(&mut batch_buf);
                     if wtr.write_record(&fields).is_err() {
                         stream_error = true;
                         break;
                     }
-                    drop(wtr);
                     batch_count += 1;
 
                     if batch_count >= 100 {
-                        let chunk = std::mem::take(&mut batch_buf);
+                        if wtr.flush().is_err() {
+                            stream_error = true;
+                            break 'rows;
+                        }
+                        let chunk = wtr.into_inner().unwrap_or_default();
                         if tx.send(Ok(bytes::Bytes::from(chunk))).await.is_err() {
                             return; // Client disconnected — no error to signal
                         }
+                        wtr = csv::Writer::from_writer(Vec::with_capacity(8192));
                         batch_count = 0;
                     }
                 }
@@ -307,17 +320,22 @@ async fn export_csv(
             }
         }
 
-        // Flush remaining data rows
-        if !batch_buf.is_empty() {
-            let _ = tx.send(Ok(bytes::Bytes::from(std::mem::take(&mut batch_buf)))).await;
+        // Flush any remaining buffered rows
+        if !stream_error {
+            if wtr.flush().is_ok() {
+                let remaining = wtr.into_inner().unwrap_or_default();
+                if !remaining.is_empty() {
+                    let _ = tx.send(Ok(bytes::Bytes::from(remaining))).await;
+                }
+            }
         }
 
         if stream_error {
             tracing::warn!("CSV export: stream ended with error, output may be truncated");
-            // Signal truncation to the client as a valid CSV comment row
             let _ = tx
-                .send(Ok(bytes::Bytes::from_static(
-                    b"# ERROR: Export incomplete - not all rows were exported. Please retry.\n",
+                .send(Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "CSV export interrupted: not all rows were exported",
                 )))
                 .await;
         }
@@ -370,6 +388,26 @@ fn pg_value_to_csv_string(
             .unwrap_or_default(),
         "json" | "jsonb" => row
             .try_get::<serde_json::Value, _>(col)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        "timestamp without time zone" => row
+            .try_get::<chrono::NaiveDateTime, _>(col)
+            .map(|v| v.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default(),
+        "timestamp with time zone" => row
+            .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
+            .map(|v| v.to_rfc3339())
+            .unwrap_or_default(),
+        "date" => row
+            .try_get::<chrono::NaiveDate, _>(col)
+            .map(|v| v.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
+        "time without time zone" | "time with time zone" => row
+            .try_get::<chrono::NaiveTime, _>(col)
+            .map(|v| v.format("%H:%M:%S").to_string())
+            .unwrap_or_default(),
+        "uuid" => row
+            .try_get::<uuid::Uuid, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
         _ => row

@@ -1,4 +1,4 @@
-use axum::{Json, Router, routing::post};
+use axum::{Json, Router, routing::{get, post}};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{AppConfig, DatabaseKind};
@@ -8,6 +8,11 @@ pub fn router() -> Router {
     Router::new()
         .route("/setup/test-connection", post(test_connection))
         .route("/setup/save", post(save_config))
+        .route("/status", get(status_setup))
+}
+
+async fn status_setup() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "mode": "setup" }))
 }
 
 #[derive(Deserialize)]
