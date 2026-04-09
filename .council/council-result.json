@@ -1,120 +1,83 @@
 {
   "motion": "Should PR #28: epic: Frontend Scaffold & Integration be merged into main?",
-  "verdict": "FOR",
+  "verdict": "CONDITIONAL",
   "date": "2026-04-08",
   "council": {
     "advocates": 1,
     "critics": 1,
     "questioner": 0,
-    "rounds": 4,
-    "mode": "1v1-no-questioner",
-    "round": 2
+    "rounds": 2,
+    "mode": "1v1-no-questioner"
   },
   "findings": [
     {
       "id": 1,
-      "description": "selectTable error overwrites global error state, destroying working UI on single table load failure",
+      "description": "selectTable race condition — concurrent table clicks can corrupt UI state (last-write-wins with no cancellation guard)",
       "file": "frontend/src/App.svelte",
-      "line": 40,
+      "line": 50,
       "type": "bug",
-      "severity": "high",
+      "severity": "should-fix",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "blocker",
-      "status": "FIXED",
-      "fix_applied": "Scoped to tableError variable; global error only set by onMount. Inline banner for table-level failures."
+      "classification": "pre-merge",
+      "status": "OPEN",
+      "fix_description": "Add a monotonic request counter. At entry, increment and capture const myId = ++requestId. After the await, guard: if (myId !== requestId) return."
     },
     {
       "id": 2,
-      "description": "Error state permanent after transient failure — error never cleared on recovery",
-      "file": "frontend/src/App.svelte",
-      "line": 40,
+      "description": "CSV error row is invalid CSV — '# ERROR:' line appended on mid-stream failure is ingested as data by downstream parsers",
+      "file": "src/api/mod.rs",
+      "line": 322,
       "type": "bug",
-      "severity": "high",
+      "severity": "should-fix",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "blocker",
-      "status": "FIXED",
-      "fix_applied": "tableError is cleared at start of selectTable (line 42). Global error is never set by selectTable."
+      "classification": "pre-merge",
+      "status": "OPEN",
+      "fix_description": "Remove the error comment row (lines 322-328). The tracing::warn at line 321 already logs the event. Truncated output is safer than corrupt output."
     },
     {
       "id": 3,
-      "description": "Pagination permanently disabled — only page 1 ever loads for multi-page datasets",
-      "file": "frontend/src/components/StatusBar.svelte",
-      "lines": [25, 29],
-      "type": "missing-feature",
-      "severity": "high",
+      "description": "csv::Writer instantiated per row in export loop — 500K Writer allocations for large table exports",
+      "file": "src/api/mod.rs",
+      "line": 291,
+      "type": "improvement",
+      "severity": "should-fix",
       "verified": true,
-      "conceded_by": [],
-      "classification": "follow-up",
-      "rationale": "Scaffold PR scope — all interactive buttons (search, columns, export, pagination) are intentionally disabled placeholders. Backend pagination is fully implemented. Wiring is Epic 3.",
-      "arbiter_ruling": "Reclassified from blocker to HIGH follow-up. Disabled placeholders are consistent with scaffold scope."
+      "conceded_by": ["advocate-1"],
+      "classification": "pre-merge",
+      "status": "OPEN",
+      "fix_description": "Create one csv::Writer before the loop. Flush at batch boundaries, take the buffer, send the chunk."
     },
     {
       "id": 4,
-      "description": "Export button wired to nothing despite fully implemented backend",
-      "file": "frontend/src/components/Toolbar.svelte",
-      "line": 35,
-      "type": "missing-feature",
-      "severity": "medium",
+      "description": "goToPage sets currentPage before fetch confirms — on failure, StatusBar shows wrong page number",
+      "file": "frontend/src/App.svelte",
+      "line": 73,
+      "type": "bug",
+      "severity": "nit",
       "verified": true,
+      "conceded_by": ["advocate-1"],
       "classification": "follow-up",
-      "rationale": "Same scaffold pattern as pagination — placeholder button"
+      "status": "OPEN",
+      "fix_description": "Move currentPage = page to after queryResult = result inside the try block."
     },
     {
       "id": 5,
-      "description": "Duplicate table-list nav markup across error and normal branches",
-      "file": "frontend/src/App.svelte",
-      "lines": [66, 101],
-      "type": "improvement",
-      "severity": "low",
+      "description": "Content-Disposition filename not sanitized — display name with quotes or semicolons produces malformed header",
+      "file": "src/api/mod.rs",
+      "line": 338,
+      "type": "hardening",
+      "severity": "nit",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "follow-up"
-    },
-    {
-      "id": 6,
-      "description": "Mock generates only 50 rows, masking pagination gap during mock development",
-      "file": "frontend/src/lib/mock.ts",
-      "line": 437,
-      "type": "improvement",
-      "severity": "low",
-      "verified": true,
-      "classification": "follow-up"
-    },
-    {
-      "id": 7,
-      "description": "No loading state indicator during initial data fetch",
-      "file": "frontend/src/App.svelte",
-      "line": 19,
-      "type": "ux",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "classification": "follow-up"
-    },
-    {
-      "id": 8,
-      "description": "Sidebar localStorage restore causes flash of expanded-to-collapsed on mount",
-      "file": "frontend/src/components/Sidebar.svelte",
-      "line": 21,
-      "type": "ux",
-      "severity": "low",
-      "verified": true,
-      "classification": "follow-up"
+      "conceded_by": [],
+      "classification": "follow-up",
+      "status": "OPEN",
+      "fix_description": "Strip double-quote, semicolon, CR, LF from filename before header injection."
     }
   ],
-  "merge_conditions": [],
-  "conditions_met": true,
-  "fixes_applied": [
-    "Finding 1+2: selectTable error handling scoped to tableError variable (commit 8a75543)"
-  ],
-  "follow_up_issues": [
-    "Wire pagination in StatusBar (finding 3 — HIGH priority, Epic 3)",
-    "Wire export button to /export/{table}/csv (finding 4)",
-    "Extract TableList.svelte to deduplicate nav markup (finding 5)",
-    "Add loading state indicator (finding 7)",
-    "Fix sidebar localStorage flash (finding 8)"
-  ],
-  "critical_discoveries": []
+  "conditions": [
+    "Fix findings #1, #2, #3 before merge",
+    "Findings #4 and #5 acceptable as fast follow-ups"
+  ]
 }

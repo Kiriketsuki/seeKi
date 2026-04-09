@@ -276,11 +276,11 @@ async fn export_csv(
             }
         };
 
-        let mut batch_buf = Vec::with_capacity(8192);
+        let mut wtr = csv::Writer::from_writer(Vec::with_capacity(8192));
         let mut batch_count = 0u32;
         let mut stream_error = false;
 
-        while let Some(row_result) = row_stream.next().await {
+        'rows: while let Some(row_result) = row_stream.next().await {
             match row_result {
                 Ok(row) => {
                     let fields: Vec<String> = columns
@@ -288,19 +288,22 @@ async fn export_csv(
                         .map(|col| pg_value_to_csv_string(&row, &col.name, &col.data_type))
                         .collect();
 
-                    let mut wtr = csv::Writer::from_writer(&mut batch_buf);
                     if wtr.write_record(&fields).is_err() {
                         stream_error = true;
                         break;
                     }
-                    drop(wtr);
                     batch_count += 1;
 
                     if batch_count >= 100 {
-                        let chunk = std::mem::take(&mut batch_buf);
+                        if wtr.flush().is_err() {
+                            stream_error = true;
+                            break 'rows;
+                        }
+                        let chunk = wtr.into_inner().unwrap_or_default();
                         if tx.send(Ok(bytes::Bytes::from(chunk))).await.is_err() {
                             return; // Client disconnected — no error to signal
                         }
+                        wtr = csv::Writer::from_writer(Vec::with_capacity(8192));
                         batch_count = 0;
                     }
                 }
@@ -312,19 +315,18 @@ async fn export_csv(
             }
         }
 
-        // Flush remaining data rows
-        if !batch_buf.is_empty() {
-            let _ = tx.send(Ok(bytes::Bytes::from(std::mem::take(&mut batch_buf)))).await;
+        // Flush any remaining buffered rows
+        if !stream_error {
+            if wtr.flush().is_ok() {
+                let remaining = wtr.into_inner().unwrap_or_default();
+                if !remaining.is_empty() {
+                    let _ = tx.send(Ok(bytes::Bytes::from(remaining))).await;
+                }
+            }
         }
 
         if stream_error {
             tracing::warn!("CSV export: stream ended with error, output may be truncated");
-            // Signal truncation to the client as a valid CSV comment row
-            let _ = tx
-                .send(Ok(bytes::Bytes::from_static(
-                    b"# ERROR: Export incomplete - not all rows were exported. Please retry.\n",
-                )))
-                .await;
         }
     });
 

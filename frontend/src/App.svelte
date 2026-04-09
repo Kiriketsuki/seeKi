@@ -23,6 +23,7 @@
   let error: string | null = $state(null);
   let tableError: string | null = $state(null);
   let currentPage: number = $state(1);
+  let selectRequestId = 0;
 
   onMount(async () => {
     try {
@@ -48,6 +49,7 @@
   });
 
   async function selectTable(tableName: string) {
+    const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
@@ -56,28 +58,33 @@
         fetchColumns(tableName),
         fetchRows(tableName)
       ]);
+      if (myRequest !== selectRequestId) return;
       selectedTable = tableName;
       columns = cols;
       queryResult = result;
     } catch (e) {
+      if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load table';
     } finally {
-      tableLoading = false;
+      if (myRequest === selectRequestId) tableLoading = false;
     }
   }
 
   async function goToPage(page: number) {
     if (!selectedTable) return;
+    const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
     currentPage = page;
     try {
       const result = await fetchRows(selectedTable, { page });
+      if (myRequest !== selectRequestId) return;
       queryResult = result;
     } catch (e) {
+      if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load page';
     } finally {
-      tableLoading = false;
+      if (myRequest === selectRequestId) tableLoading = false;
     }
   }
 
