@@ -165,9 +165,10 @@ pub async fn get_columns_bulk(
     Ok(result)
 }
 
-/// Validate that a name contains only alphanumeric characters and underscores.
+/// Validate that a name is safe for use as a double-quoted SQL identifier.
+/// Allows alphanumeric, underscore, hyphen, and space — all safe inside `"..."`.
 fn is_valid_identifier(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
 }
 
 /// Shared WHERE clause and bind values builder for query_rows and export.
@@ -457,19 +458,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valid_identifier_accepts_alphanumeric_underscore() {
+    fn valid_identifier_accepts_safe_chars() {
         assert!(is_valid_identifier("vehicle_id"));
         assert!(is_valid_identifier("col1"));
         assert!(is_valid_identifier("_private"));
         assert!(is_valid_identifier("CamelCase"));
+        assert!(is_valid_identifier("col-name"));
+        assert!(is_valid_identifier("col name"));
+        assert!(is_valid_identifier("my-table"));
     }
 
     #[test]
     fn valid_identifier_rejects_special_chars() {
-        assert!(!is_valid_identifier("col-name"));
         assert!(!is_valid_identifier("col.name"));
-        assert!(!is_valid_identifier("col name"));
         assert!(!is_valid_identifier("col;DROP TABLE"));
+        assert!(!is_valid_identifier("col\"name"));
         assert!(!is_valid_identifier(""));
     }
 
