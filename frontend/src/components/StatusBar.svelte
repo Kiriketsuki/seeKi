@@ -25,7 +25,7 @@
 
 <div class="statusbar">
   <span class="showing">
-    Showing {start.toLocaleString()} – {end.toLocaleString()} of {total.toLocaleString()}
+    Showing {start.toLocaleString()} - {end.toLocaleString()} of {total.toLocaleString()}
   </span>
 
   <div class="pagination">
