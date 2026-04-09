@@ -133,7 +133,8 @@ export function formatCellValue(
     column.display_type === 'datetime'
   ) {
     const raw = String(value);
-    const parsed = new Date(raw);
+    // Replace space with T for ISO 8601 compliance — Safari rejects "2024-01-15 14:30:00"
+    const parsed = new Date(raw.replace(' ', 'T'));
 
     if (!Number.isNaN(parsed.getTime())) {
       return {

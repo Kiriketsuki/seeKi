@@ -206,7 +206,17 @@
 
   function exportCsv() {
     if (!selectedTable) return;
-    window.open(`/api/export/${encodeURIComponent(selectedTable)}/csv`, '_blank');
+    const params = buildRowsParams(currentPage);
+    const searchParams = new URLSearchParams();
+    if (params.sort_column) searchParams.set('sort_column', params.sort_column);
+    if (params.sort_direction) searchParams.set('sort_direction', params.sort_direction);
+    if (params.filters) {
+      for (const [col, val] of Object.entries(params.filters)) {
+        searchParams.set(`filter.${col}`, val);
+      }
+    }
+    const qs = searchParams.toString();
+    window.open(`/api/export/${encodeURIComponent(selectedTable)}/csv${qs ? `?${qs}` : ''}`, '_blank');
   }
 </script>
 

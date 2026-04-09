@@ -1,45 +1,40 @@
 {
   "motion": "Merge PR #29: epic: Data Grid & Table Navigation",
-  "verdict": "CONDITIONAL",
+  "verdict": "FOR",
   "date": "2026-04-09",
-  "rounds": 3,
-  "agents": {
-    "advocate-1": "CONDITIONAL",
-    "advocate-2": "CONDITIONAL",
-    "critic-1": "CONDITIONAL",
-    "critic-2": "CONDITIONAL",
-    "questioner": "2 bugs confirmed, 0 unsubstantiated"
+  "council": {
+    "advocates": 1,
+    "critics": 1,
+    "questioner": 0,
+    "rounds": 2,
+    "mode": "1v1-no-questioner",
+    "session": 2,
+    "note": "Session 2: post-fix review. All pre-merge findings from sessions 1+2 resolved. No new pre-merge blockers."
   },
   "findings": [
     {
       "id": 1,
-      "description": "Date off-by-one for non-UTC users: new Date() on bare date string parses as UTC midnight, rendered in local timezone shows wrong day. Also shows spurious time components for date-only fields.",
+      "description": "Date off-by-one for non-UTC users: new Date() on bare date string parses as UTC midnight, shows wrong day west of UTC.",
       "file": "frontend/src/lib/data-grid.ts",
-      "line": 111,
+      "line": 116,
       "type": "bug",
       "severity": "high",
       "verified": true,
-      "conceded_by": ["advocate-1", "advocate-2"],
-      "fix_description": "Detect date-only columns (column.data_type === 'date') and either append 'T00:00:00' for local parsing or use a separate date-only formatter without time components.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:111",
-        "frontend/src/lib/data-grid.ts:18-23",
-        "src/db/postgres.rs:408-411"
-      ]
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 1
     },
     {
       "id": 2,
-      "description": "Timestamp formatter omits year: multi-year records display identically (e.g. 'Jan 15, 3:45 PM' for both 2023 and 2024). Year only visible in tooltip.",
+      "description": "Timestamp formatter omits year: multi-year records display identically.",
       "file": "frontend/src/lib/data-grid.ts",
-      "line": 25,
+      "line": 34,
       "type": "bug",
       "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1", "advocate-2"],
-      "fix_description": "Add year: 'numeric' to the Intl.DateTimeFormat options object at line 25-30.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:25-30"
-      ]
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 1
     },
     {
       "id": 3,
@@ -49,10 +44,42 @@
       "type": "improvement",
       "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1", "advocate-2"],
-      "fix_description": "Add role=\"status\" to the sort indicator <div> element.",
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 1
+    },
+    {
+      "id": 4,
+      "description": "Safari Invalid Date for timestamp without time zone: postgres.rs sends space-separated datetime, Safari rejects non-ISO format.",
+      "file": "frontend/src/lib/data-grid.ts",
+      "line": 137,
+      "type": "bug",
+      "severity": "high",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 2,
+      "fix_description": "Replace space with T before new Date() for cross-browser ISO 8601 compliance.",
       "citations": [
-        "frontend/src/components/ToolStrip.svelte:57"
+        "frontend/src/lib/data-grid.ts:137",
+        "src/db/postgres.rs:401-403"
+      ]
+    },
+    {
+      "id": 5,
+      "description": "CSV export ignores active filters and sort state — user sees filtered view but exports full table.",
+      "file": "frontend/src/App.svelte",
+      "line": 207,
+      "type": "bug",
+      "severity": "medium",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 2,
+      "fix_description": "Pass sortState and filters as query params to the export URL via buildRowsParams.",
+      "citations": [
+        "frontend/src/App.svelte:207-219",
+        "src/api/mod.rs:204-211"
       ]
     }
   ],
@@ -68,13 +95,34 @@
     {
       "claim": "ILIKE performance on 500K rows",
       "reason": "Pre-existing design choice from prior epic, not introduced by this PR."
+    },
+    {
+      "claim": "sortStateToConfig returns undefined breaks RevoGrid sort indicators",
+      "reason": "ADVOCATE rebutted: sort indicators are driven by per-column order prop (DataGrid.svelte:198-199), not the sorting prop. Clearing sortState sets all columns to order: undefined, which correctly removes arrows."
     }
   ],
   "follow_ups": [
-    "Add unit tests for data-grid.ts pure functions (formatCellValue, columnWidth, sortStateToConfig, buildSortableColumn, getColumnDisplayName)",
+    "Add unit tests for data-grid.ts pure functions",
     "Tighten sortStateToConfig return type to Record<string, 'asc' | 'desc'>",
-    "Expand boolean coercion for future SQLite support (value === 1, 'yes', 'on')",
+    "Expand boolean coercion for future SQLite support",
+    "Relax is_valid_identifier to allow hyphens in quoted identifiers (postgres.rs:169-171)",
     "Investigate aria-sort on RevoGrid column headers at runtime"
+  ],
+  "conditions_met": true,
+  "prior_sessions": [
+    {
+      "session": 1,
+      "findings": 3,
+      "fixed": 3,
+      "dismissed": 3
+    },
+    {
+      "session": 2,
+      "findings": 4,
+      "fixed": 2,
+      "tracked": 1,
+      "dismissed": 1
+    }
   ],
   "critical_discoveries": []
 }
