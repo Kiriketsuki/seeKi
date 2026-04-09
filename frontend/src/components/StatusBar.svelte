@@ -7,6 +7,7 @@
     end = 0,
     page = 1,
     totalPages = 1,
+    loading = false,
     onPageChange,
   }: {
     total: number;
@@ -14,11 +15,12 @@
     end: number;
     page: number;
     totalPages: number;
+    loading?: boolean;
     onPageChange?: (page: number) => void;
   } = $props();
 
-  let canPrev = $derived(page > 1);
-  let canNext = $derived(page < totalPages);
+  let canPrev = $derived(page > 1 && !loading);
+  let canNext = $derived(page < totalPages && !loading);
 </script>
 
 <div class="statusbar">

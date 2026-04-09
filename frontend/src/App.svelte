@@ -163,7 +163,8 @@
         start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
         end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
         page={queryResult?.page ?? 1}
-        totalPages={queryResult ? Math.ceil(queryResult.total_rows / queryResult.page_size) : 1}
+        totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
+        loading={tableLoading}
         onPageChange={goToPage}
       />
     </main>

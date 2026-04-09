@@ -8,7 +8,7 @@
     "questioner": 0,
     "rounds": 2,
     "mode": "1v1-no-questioner",
-    "round": 3
+    "round": 4
   },
   "findings": [
     {
@@ -59,9 +59,9 @@
       "severity": "should-fix",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "follow-up",
-      "status": "OPEN",
-      "fix_description": "Send Err(...) to tx on stream_error instead of silently dropping the sender. Client can detect stream error."
+      "classification": "pre-merge",
+      "status": "FIXED",
+      "fix_applied": "Send Err(UnexpectedEof) to tx on stream_error. Commit 7f92f80."
     },
     {
       "id": 5,
@@ -72,9 +72,9 @@
       "severity": "should-fix",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "classification": "follow-up",
-      "status": "OPEN",
-      "fix_description": "Move currentPage = page to after queryResult = result inside the try block."
+      "classification": "pre-merge",
+      "status": "FIXED",
+      "fix_applied": "Move currentPage = page to after queryResult = result inside the try block. Commit 7f92f80."
     },
     {
       "id": 6,
@@ -85,21 +85,58 @@
       "severity": "nit",
       "verified": true,
       "conceded_by": [],
-      "classification": "follow-up",
-      "status": "OPEN",
-      "fix_description": "Strip double-quote, semicolon, CR, LF from filename before header interpolation."
+      "classification": "pre-merge",
+      "status": "FIXED",
+      "fix_applied": "Strip double-quote, semicolon, CR, LF from filename before header interpolation. Commit 7f92f80."
+    },
+    {
+      "id": 7,
+      "description": "goToPage/selectTable cross-type race — pagination buttons remain clickable during table switch, can silently cancel in-flight table navigation",
+      "file": "frontend/src/App.svelte",
+      "line": 75,
+      "type": "bug",
+      "severity": "should-fix",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "classification": "pre-merge",
+      "status": "FIXED",
+      "fix_applied": "Pass loading={tableLoading} to StatusBar; pagination buttons disabled when loading. Council round 4."
+    },
+    {
+      "id": 8,
+      "description": "'1 of 0' pagination display on empty tables — Math.ceil(0/N)=0 but page=1 from backend",
+      "file": "frontend/src/App.svelte",
+      "line": 166,
+      "type": "bug",
+      "severity": "cosmetic",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "classification": "pre-merge",
+      "status": "FIXED",
+      "fix_applied": "Math.max(1, Math.ceil(...)) ensures totalPages >= 1. Council round 4."
+    }
+  ],
+  "dismissed": [
+    {
+      "description": "into_inner().unwrap_or_default() silent batch drop in CSV export",
+      "file": "src/api/mod.rs",
+      "line": 307,
+      "reason": "Unsubstantiated — csv::Writer wraps Vec<u8>; flush() on Vec is infallible; into_inner() after successful flush cannot fail. unwrap_or_default() is dead-code defense."
     }
   ],
   "conditions_met": true,
   "fixes_applied": [
     "Finding 1: selectTable race condition (commit 5933501)",
     "Finding 2: CSV error row removed (commit 5933501)",
-    "Finding 3: csv::Writer hoisted outside loop (commit 5933501)"
+    "Finding 3: csv::Writer hoisted outside loop (commit 5933501)",
+    "Finding 4: CSV truncation error signal (commit 7f92f80)",
+    "Finding 5: goToPage currentPage after success (commit 7f92f80)",
+    "Finding 6: filename sanitization (commit 7f92f80)",
+    "Finding 7: pagination disabled during table loading (council round 4)",
+    "Finding 8: totalPages Math.max(1, ...) (council round 4)"
   ],
   "follow_up_issues": [
-    "CSV export silent truncation on mid-stream error (finding 4)",
-    "goToPage optimistic currentPage not rolled back on error (finding 5)",
-    "Content-Disposition filename sanitization (finding 6)"
+    "Frontend test infrastructure (zero frontend tests — noted, not blocking)"
   ],
   "critical_discoveries": []
 }

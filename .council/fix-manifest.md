@@ -1,40 +1,51 @@
-# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Round 3)
+# Fix Manifest -- PR #28: epic: Frontend Scaffold & Integration (Round 4 — Final)
 
-Council verdict: **FOR** | 2026-04-09 | 6 findings (6 verified) | 1v1 no-questioner | 3 rounds total
+Council verdict: **FOR** | 2026-04-09 | 8 findings (8 verified, 1 dismissed) | 1v1 no-questioner | 4 rounds total
 
-## Pre-merge fixes (all applied)
+## All findings fixed
 
-### 1. selectTable race condition — FIXED
+### 1. selectTable race condition — FIXED (commit 5933501)
 - **File**: `frontend/src/App.svelte:50-67`
-- **Fix applied**: Monotonic `selectRequestId` counter guards all state writes in `selectTable` and `goToPage`.
-- **Commit**: 5933501
+- **Fix**: Monotonic `selectRequestId` counter guards all state writes.
 
-### 2. CSV error row corrupts output — FIXED
+### 2. CSV error row corrupts output — FIXED (commit 5933501)
 - **File**: `src/api/mod.rs:322-328`
-- **Fix applied**: Error comment row removed. `tracing::warn` logs the event. Truncated output is safer than corrupt output.
-- **Commit**: 5933501
+- **Fix**: Error comment row removed. `tracing::warn` logs the event.
 
-### 3. csv::Writer per-row allocation — FIXED
+### 3. csv::Writer per-row allocation — FIXED (commit 5933501)
 - **File**: `src/api/mod.rs:283-313`
-- **Fix applied**: Single `csv::Writer` hoisted outside loop, flush at batch boundaries.
-- **Commit**: 5933501
+- **Fix**: Single `csv::Writer` hoisted outside loop, flush at batch boundaries.
 
-## Follow-ups (post-merge)
+### 4. CSV export silent truncation — FIXED (commit 7f92f80)
+- **File**: `src/api/mod.rs:333-341`
+- **Fix**: `Err(UnexpectedEof)` sent to `tx` on `stream_error`.
 
-### 4. CSV export silent truncation on mid-stream DB error (should-fix)
-- **File**: `src/api/mod.rs:328-330`
-- **Issue**: HTTP 200 committed before spawn; mid-stream DB error produces silently truncated file with no client-visible signal.
-- **Fix**: Send `Err(...)` to `tx` on `stream_error` instead of silently dropping the sender.
+### 5. goToPage optimistic currentPage — FIXED (commit 7f92f80)
+- **File**: `frontend/src/App.svelte:82`
+- **Fix**: `currentPage = page` moved to after successful fetch.
 
-### 5. goToPage optimistic currentPage not rolled back on error (should-fix)
-- **File**: `frontend/src/App.svelte:78`
-- **Issue**: `currentPage = page` set before fetch; on failure, StatusBar shows wrong page while grid shows stale data.
-- **Fix**: Move `currentPage = page` to after `queryResult = result` inside the try block.
+### 6. Content-Disposition filename unsanitized — FIXED (commit 7f92f80)
+- **File**: `src/api/mod.rs:232-236`
+- **Fix**: Strip `"`, `;`, `\r`, `\n` from filename.
 
-### 6. Content-Disposition filename unsanitized (nit)
-- **File**: `src/api/mod.rs:341`
-- **Issue**: Display name with `"` or CRLF produces malformed header. Operator-controlled, not external attack surface.
-- **Fix**: Strip `"`, `;`, `\r`, `\n` from filename before header interpolation.
+### 7. goToPage/selectTable cross-type race — FIXED (round 4)
+- **File**: `frontend/src/App.svelte:161`, `frontend/src/components/StatusBar.svelte`
+- **Issue**: Pagination buttons remained clickable during table switch (StatusBar outside loading overlay). goToPage could silently cancel in-flight selectTable.
+- **Fix**: Pass `loading={tableLoading}` to StatusBar; pagination buttons disabled when `loading=true`.
+
+### 8. "1 of 0" pagination on empty tables — FIXED (round 4)
+- **File**: `frontend/src/App.svelte:166`
+- **Issue**: `Math.ceil(0/N) = 0` but `page=1`, showing "1 of 0".
+- **Fix**: `Math.max(1, Math.ceil(...))` ensures totalPages >= 1.
+
+## Dismissed
+
+### into_inner().unwrap_or_default() silent batch drop
+- **File**: `src/api/mod.rs:307`
+- **Reason**: Unsubstantiated. `csv::Writer` wraps `Vec<u8>`; `flush()` on Vec is infallible; `into_inner()` after successful flush cannot fail. Dead-code defense only.
+
+## Follow-ups (not blocking)
+- Frontend test infrastructure (zero frontend tests — scaffold establishes patterns, tests are a natural follow-up)
 
 ## Test Command
 ```bash
