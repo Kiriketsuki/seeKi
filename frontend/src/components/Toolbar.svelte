@@ -56,7 +56,7 @@
     return `${sortState.column} ${sortState.direction}`;
   });
 
-  let searchTitle = $derived(searchActive ? 'Close search (Ctrl+K)' : 'Open search (Ctrl+K)');
+  let searchTitle = $derived(searchVisible ? 'Close search (Ctrl+K)' : 'Open search (Ctrl+K)');
   let filterTitle = $derived(
     filtersVisible || activeFilterCount > 0
       ? `Filters active (${activeFilterCount}) (Ctrl+F)`

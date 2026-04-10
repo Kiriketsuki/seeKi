@@ -5,8 +5,8 @@
   "format": "1v1, no questioner",
   "date": "2026-04-10",
   "verdict": "CONDITIONAL",
-  "rounds": 5,
-  "session": 5,
+  "rounds": 6,
+  "session": 6,
   "findings": [
     {
       "id": 1,
@@ -121,8 +121,7 @@
       "fix": "aria-label=\"Search\" → aria-label={searchTitle}; searchTitle derived prop already existed",
       "status": "fixed",
       "session": 4
-    }
-  ],
+    },
     {
       "id": 11,
       "description": "aria-label on role-less <div class=\"tool-indicator\"> is invisible to screen readers — lucide SVG children are aria-hidden by default, leaving AT with no way to read current sort state",
@@ -142,11 +141,23 @@
       "type": "a11y",
       "severity": "low",
       "verified": true,
-      "fix": "Added id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button; AT can now programmatically jump from trigger to region",
+      "fix": "Added id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button",
       "status": "fixed",
       "session": 5
+    },
+    {
+      "id": 13,
+      "description": "searchTitle derived from searchActive (searchVisible || searchQuery.length > 0) rather than searchVisible — when bar is collapsed but search term is active, label says 'Close search' but clicking opens the bar",
+      "file": "frontend/src/components/Toolbar.svelte:59",
+      "also": "frontend/src/App.svelte:227-234",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Changed derivation basis from searchActive to searchVisible; label now matches the action toggleSearch() will perform",
+      "status": "fixed",
+      "session": 6
     }
   ],
-  "merge_conditions": "All 12 findings fixed across 5 sessions. svelte-check passes 0 errors 0 warnings.",
+  "merge_conditions": "All 13 findings fixed across 6 sessions. svelte-check passes 0 errors 0 warnings.",
   "test_command": "cd frontend && npx svelte-check"
 }
