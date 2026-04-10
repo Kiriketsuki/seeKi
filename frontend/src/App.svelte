@@ -93,34 +93,42 @@
   });
 
   onMount(() => {
+    function isTextEditingTarget(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      return target.isContentEditable;
+    }
+
     function handleKeydown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.altKey) return;
 
       const key = event.key.toLowerCase();
       const isShortcut = event.ctrlKey || event.metaKey;
+      const inTextField = isTextEditingTarget(event.target);
 
-      if (isShortcut && key === 'k') {
+      if (isShortcut && key === 'k' && !inTextField) {
         event.preventDefault();
         toggleSearch();
         return;
       }
 
-      if (isShortcut && key === 'f') {
+      if (isShortcut && key === 'f' && !inTextField) {
         event.preventDefault();
         toggleFilters();
         return;
       }
 
       if (event.key === 'Escape') {
-        if (searchVisible || searchQuery.length > 0) {
-          event.preventDefault();
-          handleSearchClear();
-          return;
-        }
-
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
+          return;
+        }
+
+        if (searchVisible || searchQuery.length > 0) {
+          event.preventDefault();
+          handleSearchClear();
         }
       }
     }
@@ -192,10 +200,14 @@
     }
 
     const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${tableName}`;
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify(normalizeColumnVisibility(tableColumns, visibility))
-    );
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(normalizeColumnVisibility(tableColumns, visibility))
+      );
+    } catch {
+      // Degrade to in-memory only (e.g. Safari private mode QuotaExceededError)
+    }
   }
 
   function resetSearchState() {
@@ -612,6 +624,12 @@
 
   .search-input::placeholder {
     color: var(--sk-muted);
+  }
+
+  .search-input::-webkit-search-cancel-button,
+  .search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
   }
 
   .clear-search {

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { Check, Square } from 'lucide-svelte';
   import type { ColumnInfo } from '../lib/types';
 
@@ -8,30 +7,14 @@
     columnVisibility = {},
     onToggleColumnVisibility,
     onShowAllColumns,
-    onClose,
   }: {
     columns: ColumnInfo[];
     columnVisibility: Record<string, boolean>;
     onToggleColumnVisibility?: (columnName: string, visible: boolean) => void;
     onShowAllColumns?: () => void;
-    onClose?: () => void;
   } = $props();
 
   let panel: HTMLDivElement | null = null;
-
-  function handleGlobalKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onClose?.();
-    }
-  }
-
-  onMount(() => {
-    window.addEventListener('keydown', handleGlobalKeydown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeydown);
-    };
-  });
 
   function isVisible(column: ColumnInfo): boolean {
     return columnVisibility[column.name] !== false;
@@ -60,10 +43,11 @@
     </button>
   </div>
 
-  <div class="list" role="list">
+  <div class="list">
     {#each columns as column}
       <button
         type="button"
+        aria-pressed={isVisible(column)}
         class="column-row"
         class:hidden={!isVisible(column)}
         onclick={() => toggleColumn(column)}
