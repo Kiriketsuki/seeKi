@@ -1,358 +1,72 @@
 {
-  "motion": "Merge PR #29: epic: Data Grid & Table Navigation",
-  "verdict": "FOR",
-  "date": "2026-04-09",
-  "council": {
-    "advocates": 1,
-    "critics": 1,
-    "questioner": 0,
-    "rounds": 2,
-    "mode": "1v1-no-questioner",
-    "session": 8,
-    "note": "Session 8: 1v1 no-questioner. Fresh review of current code state. 1 finding dismissed (pre-existing get_columns_bulk schema filter from PR #27). 3 new post-merge follow-ups tracked: formatCellValue test gap, Content-Disposition non-ASCII filenames, missing type=button. 1 noted: ToolStrip role=status live region noisiness. No pre-merge blockers."
+  "motion": "Merge PR #30: epic: Toolbar, Column Management & Export -- ROUND 2 post-fix audit (commit 5a9e382 applied round-1 fixes D1, D2, D3, C6)",
+  "motion_type": "CODE",
+  "timestamp": "2026-04-10T14:00:00Z",
+  "pr_number": 30,
+  "verdict": "CONDITIONAL",
+  "confidence": "high",
+  "round_generation": 2,
+  "prior_council": ".council/2026-04-10-council-recommendation-round1.md",
+  "rounds_completed": 1,
+  "rounds_max": 4,
+  "early_convergence": true,
+  "fallback": false,
+  "questioner_enabled": false,
+  "agents": {
+    "ADVOCATE-1": { "status": "completed", "model": "sonnet" },
+    "CRITIC-1":   { "status": "completed", "model": "sonnet" },
+    "ARBITER":    { "status": "completed", "model": "sonnet" }
+  },
+  "round1_fix_audit": {
+    "D1": { "status": "verified", "note": "role=\"list\" removed from ColumnDropdown.svelte:46" },
+    "D2": { "status": "verified-with-phantom-note", "note": "aria-pressed added at ColumnDropdown.svelte:50. Round-1 D2 cited role=\"checkbox\"/aria-checked which were never present in any commit; fix is a valid improvement regardless." },
+    "D3": { "status": "verified", "note": "::-webkit-search-cancel-button suppression added at App.svelte:629-633" },
+    "C6": { "status": "verified", "note": "try/catch around localStorage.setItem added at App.svelte:203-210" }
   },
   "findings": [
     {
       "id": 1,
-      "description": "Date off-by-one for non-UTC users: new Date() on bare date string parses as UTC midnight, shows wrong day west of UTC.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 116,
+      "code": "R2-1",
       "type": "bug",
       "severity": "high",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 1
+      "description": "role=\"dialog\" declared on ColumnDropdown outer container without any of the three mandatory dialog keyboard behaviors (WAI-ARIA 1.2 § 6.6): no focus-on-open (no tick()+.focus() call when columnsOpen becomes true), no Tab containment (no focus trap), and no focus-return-on-close (Escape and outside-click both set columnsOpen=false without restoring focus to the trigger). Toolbar.svelte:129 declares aria-haspopup=\"dialog\" making an AT promise the implementation does not keep.",
+      "file": "frontend/src/components/ColumnDropdown.svelte",
+      "line": 32,
+      "fix_description": "Replace role=\"dialog\" with no role (Disclosure pattern) on ColumnDropdown.svelte:32, and change aria-haspopup=\"dialog\" to aria-haspopup=\"true\" on Toolbar.svelte:129. The column panel is a non-modal disclosure widget -- users can Tab out naturally, the trigger already carries aria-expanded, and WAI-ARIA APG Disclosure pattern has no focus-trap requirement. ~4 lines total across two files. Alternative (not recommended): keep role=\"dialog\" and implement all three behaviors (~15-20 lines).",
+      "verification": "verified",
+      "citations": [
+        "frontend/src/components/ColumnDropdown.svelte:32",
+        "frontend/src/components/Toolbar.svelte:129"
+      ]
     },
     {
       "id": 2,
-      "description": "Timestamp formatter omits year: multi-year records display identically.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 34,
-      "type": "bug",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 1
-    },
-    {
-      "id": 3,
-      "description": "ToolStrip sort indicator div has aria-label but no role — invisible to assistive technology.",
-      "file": "frontend/src/components/ToolStrip.svelte",
-      "line": 57,
-      "type": "improvement",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 1
-    },
-    {
-      "id": 4,
-      "description": "Safari Invalid Date for timestamp without time zone: postgres.rs sends space-separated datetime, Safari rejects non-ISO format.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 137,
-      "type": "bug",
-      "severity": "high",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 2,
-      "fix_description": "Replace space with T before new Date() for cross-browser ISO 8601 compliance.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:137",
-        "src/db/postgres.rs:401-403"
-      ]
-    },
-    {
-      "id": 5,
-      "description": "CSV export ignores active filters and sort state — user sees filtered view but exports full table.",
-      "file": "frontend/src/App.svelte",
-      "line": 207,
-      "type": "bug",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 2,
-      "fix_description": "Pass sortState and filters as query params to the export URL via buildRowsParams.",
-      "citations": [
-        "frontend/src/App.svelte:207-219",
-        "src/api/mod.rs:204-211"
-      ]
-    },
-    {
-      "id": 6,
-      "description": "numeric/decimal columns lose precision: NUMBER_TYPES includes 'numeric' and 'decimal', causing Number() cast on backend string values — float64 rounds beyond 15 significant digits.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 14,
-      "type": "bug",
-      "severity": "high",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 3,
-      "fix_description": "Removed 'numeric' and 'decimal' from NUMBER_TYPES so they fall through to the text formatter, preserving the backend's full-precision string.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:14-15",
-        "src/db/postgres.rs:390-393"
-      ]
-    },
-    {
-      "id": 7,
-      "description": "bigint values > 2^53 lose precision in JSON transport: postgres.rs serializes i64 as JSON number, JavaScript JSON.parse converts to float64.",
-      "file": "src/db/postgres.rs",
-      "line": 382,
-      "type": "bug",
-      "severity": "low",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 3,
-      "note": "Both agents agreed post-merge is defensible — 2^53 threshold rarely hit in practice. Fix requires API-level decision (string-encode large bigints).",
-      "fix_description": "Serialize bigint as string when unsigned_abs() > 2^53. Values within safe JS range remain JSON numbers.",
-      "fixed_session": 7
-    },
-    {
-      "id": 8,
-      "description": "real (float4) columns silently null out: try_get::<f64> fails OID check against FLOAT4 (OID 700 vs 701), every real value rendered as NULL.",
-      "file": "src/db/postgres.rs",
-      "line": 386,
-      "related_files": ["src/api/mod.rs:378-381"],
-      "type": "bug",
-      "severity": "high",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 4,
-      "fix_description": "Split 'real' | 'double precision' arm: use try_get::<f32> for real, try_get::<f64> for double precision. Applied in both pg_value_to_json and pg_value_to_csv_string.",
-      "citations": [
-        "src/db/postgres.rs:386-389",
-        "src/api/mod.rs:378-381",
-        "sqlx-postgres-0.8.6/src/types/float.rs:9-13,38-42",
-        "sqlx-postgres-0.8.6/src/type_info.rs:1053-1058"
-      ]
-    },
-    {
-      "id": 9,
-      "description": "Missing aria-sort on sorted column headers: renderHeader sets aria-hidden on sort arrow but no aria-sort attribute on header div. WCAG 1.3.1 Level A violation.",
-      "file": "frontend/src/components/DataGrid.svelte",
-      "line": 66,
-      "type": "accessibility",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 4,
-      "note": "Post-merge. RevoGrid's hyperscript layer may require DOM inspection to place aria-sort on the actual <th> element.",
-      "fix_description": "Added aria-sort='ascending'/'descending' to header wrapper div in renderHeader via conditional spread.",
-      "fixed_session": 7
-    },
-    {
-      "id": 10,
-      "description": "Boolean filter broken: users see Yes/No badges but must type 'true'/'false' to filter — ::text ILIKE casts boolean to 'true'/'false', not 'yes'/'no'.",
-      "file": "src/db/postgres.rs",
-      "line": 226,
-      "related_files": ["frontend/src/lib/data-grid.ts:106-111"],
-      "type": "bug",
-      "severity": "high",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 5,
-      "fix_description": "Boolean columns now use = TRUE/FALSE comparison instead of ::text ILIKE. Filter input mapped: yes/true/t/1 → TRUE, no/false/f/0 → FALSE. Non-matching input yields no rows.",
-      "citations": [
-        "src/db/postgres.rs:221-248",
-        "frontend/src/lib/data-grid.ts:106-111"
-      ]
-    },
-    {
-      "id": 11,
-      "description": "numeric/decimal columns display as left-aligned plain text — no tabular-nums, no right-alignment. Session 3 precision fix removed from NUMBER_TYPES but display classification was never updated.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 10,
-      "type": "bug",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 5,
-      "fix_description": "Added NUMERIC_TEXT_TYPES set for 'numeric'/'decimal'. Returns kind: 'number' with raw string display (no Number() cast), giving right-alignment and tabular-nums without precision loss.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:16-21",
-        "frontend/src/lib/data-grid.ts:152-157"
-      ]
-    },
-    {
-      "id": 12,
-      "description": "real (float4) grid vs CSV serialization inconsistency: f32 as f64 widening in JSON produces artifacts (3.140000104904175) while f32.to_string() in CSV is clean (3.14).",
-      "file": "src/db/postgres.rs",
-      "line": 388,
-      "related_files": ["src/api/mod.rs:380"],
-      "type": "bug",
-      "severity": "low",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 5,
-      "note": "Both agents agreed toLocaleString() masks the artifact in the UI. Only raw API shows inconsistency — invisible to target non-technical users.",
-      "fix_description": "Parse f32 via to_string().parse::<f64>() to avoid widening artifacts in JSON serialization.",
-      "fixed_session": 7
-    },
-    {
-      "id": 13,
-      "description": "Dead 'decimal' entry in NUMERIC_TEXT_TYPES — PostgreSQL normalizes DECIMAL to 'numeric', so this Set entry can never match.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 20,
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 6,
-      "note": "Both agents agreed: dead code, zero runtime impact, post-merge cleanup.",
-      "fix_description": "Removed 'decimal' from NUMERIC_TEXT_TYPES — PostgreSQL normalizes DECIMAL to 'numeric'.",
-      "fixed_session": 7
-    },
-    {
-      "id": 14,
-      "description": "Content-Disposition filename sanitizer missing backslash escape — RFC 2183 compliance gap for admin-configured display names containing backslash.",
-      "file": "src/api/mod.rs",
-      "line": 235,
-      "type": "improvement",
-      "severity": "nit",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 6,
-      "note": "CRITIC downgraded from Low to Nit. Display names are admin-configured, not user-exploitable. One-line fix: .replace('\\\\', \"\").",
-      "fix_description": "Added .replace('\\\\', \"\") to Content-Disposition filename sanitizer chain.",
-      "fixed_session": 7
-    },
-    {
-      "id": 15,
-      "description": "ToolStrip export button aria-label says 'Export tools coming later' but CSV export already works via Toolbar — misinforms screen reader users.",
-      "file": "frontend/src/components/ToolStrip.svelte",
-      "line": 83,
-      "type": "accessibility",
-      "severity": "medium",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 6,
-      "fix_description": "Changed aria-label and title to 'More export options coming soon' to disambiguate from the existing Toolbar CSV export.",
-      "citations": [
-        "frontend/src/components/ToolStrip.svelte:83-85",
-        "frontend/src/App.svelte:271"
-      ]
-    },
-    {
-      "id": 16,
-      "description": "Search ILIKE path interpolates schema-derived column names into SQL without is_valid_identifier guard — asymmetric with filter/sort paths which both validate. Column with embedded double-quote would produce broken SQL (500 error, not injection).",
-      "file": "src/db/postgres.rs",
-      "line": 211,
+      "code": "R2-2",
       "type": "improvement",
       "severity": "low",
-      "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 7,
-      "note": "CRITIC initially recommended CONDITIONAL. ADVOCATE rebutted: c.name is schema metadata from information_schema, not user input; failure mode is 500 not injection; precondition (embedded double-quote in column name) is exotic. CRITIC conceded to TRACKED but correctly disputed ADVOCATE's Point 4 — pg_value_to_json uses try_get() as row key, not SQL interpolation. Trust boundary argument (points 1-3) was sufficient.",
-      "fix_description": "Added is_valid_identifier guard to search text_cols filter: .filter(|c| is_text_type(&c.data_type) && is_valid_identifier(&c.name))",
-      "fixed_session": 7
+      "description": "Dead `panel` binding left behind by the fix commit (5a9e382). `let panel: HTMLDivElement | null = null;` is declared at ColumnDropdown.svelte:17 and bound via bind:this at line 32, but nothing reads it -- the onMount block that would have consumed it was removed by the fix commit. Grep confirms no read access to `panel` anywhere in the script block.",
+      "file": "frontend/src/components/ColumnDropdown.svelte",
+      "line": 17,
+      "fix_description": "Remove `let panel: HTMLDivElement | null = null;` declaration at line 17 and remove `bind:this={panel}` from the outer div at line 32. ~2 lines removed, no behavior change.",
+      "verification": "verified",
+      "citations": [
+        "frontend/src/components/ColumnDropdown.svelte:17",
+        "frontend/src/components/ColumnDropdown.svelte:32"
+      ]
     }
   ],
-  "dismissed": [
-    {
-      "claim": "on:beforesorting is wrong Svelte 5 syntax",
-      "reason": "QUESTIONER verified @revolist/svelte-datagrid v4.21.4 uses createEventDispatcher (Svelte 4), so on: syntax is correct from Svelte 5 consumers."
-    },
-    {
-      "claim": "Boolean coercion misses 1/yes/on",
-      "reason": "QUESTIONER verified postgres.rs:394-396 sends JSON booleans. Non-boolean representations cannot arrive from current backend."
-    },
-    {
-      "claim": "ILIKE performance on 500K rows",
-      "reason": "Pre-existing design choice from prior epic, not introduced by this PR."
-    },
-    {
-      "claim": "sortStateToConfig returns undefined breaks RevoGrid sort indicators",
-      "reason": "ADVOCATE rebutted: sort indicators are driven by per-column order prop (DataGrid.svelte:198-199), not the sorting prop. Clearing sortState sets all columns to order: undefined, which correctly removes arrows."
-    },
-    {
-      "claim": "get_columns_bulk PK subquery missing table_schema filter",
-      "reason": "Session 8: ARBITER verified both get_columns and get_columns_bulk exist on main since PR #27 (Epic 1) with identical missing table_schema pattern. Pre-existing code, not introduced by this PR. CRITIC withdrew."
-    }
+  "concessions": [
+    { "agent": "ADVOCATE-1", "conceded_to": "CRITIC-1", "point": "D2 phantom: round-1 cited role=\"checkbox\" and aria-checked which were never present in any commit of ColumnDropdown.svelte. aria-pressed addition is a valid improvement regardless.", "round": 1 },
+    { "agent": "ADVOCATE-1", "conceded_to": "CRITIC-1", "point": "R2-1: role=\"dialog\" without focus management is a real ARIA defect introduced by the PR and missed by round 1.", "round": 1 },
+    { "agent": "ADVOCATE-1", "conceded_to": "CRITIC-1", "point": "R2-2: dead `panel` binding is real dead code.", "round": 1 },
+    { "agent": "CRITIC-1", "conceded_to": "ADVOCATE-1", "point": "BLOCKING label withdrawn; CONDITIONAL is the correct treatment given the surgical fix surface (~4 lines total).", "round": 1 }
   ],
-  "follow_ups": [
-    "Add unit tests for data-grid.ts pure functions (formatCellValue, columnWidth, sortStateToConfig) — session 8 F2",
-    "Add RFC 6266 filename*=UTF-8'' encoding for non-ASCII Content-Disposition filenames — session 8 F3",
-    "Add type='button' to TableList.svelte:43, StatusBar.svelte:33,41 — session 8 F4",
-    "Consider replacing role='status' on ToolStrip sort indicator with non-live aria-label — session 8 noted",
-    "Tighten sortStateToConfig return type to Record<string, 'asc' | 'desc'>",
-    "Expand boolean coercion for future SQLite support"
+  "conditions": [
+    "Apply Fix R2-1 on this branch before merging.",
+    "Apply Fix R2-2 on this branch before merging.",
+    "Verify in a screen reader or Lighthouse accessibility audit that the ColumnDropdown announces as a region/disclosure (not a dialog) and no 'dialog opened but focus did not move' error is reported."
   ],
-  "conditions_met": true,
-  "prior_sessions": [
-    {
-      "session": 1,
-      "findings": 3,
-      "fixed": 3,
-      "dismissed": 3
-    },
-    {
-      "session": 2,
-      "findings": 4,
-      "fixed": 2,
-      "tracked": 1,
-      "dismissed": 1
-    },
-    {
-      "session": 3,
-      "findings": 2,
-      "fixed": 1,
-      "tracked": 1,
-      "dismissed": 0
-    },
-    {
-      "session": 4,
-      "findings": 2,
-      "fixed": 1,
-      "tracked": 1,
-      "dismissed": 0
-    },
-    {
-      "session": 5,
-      "findings": 3,
-      "fixed": 2,
-      "tracked": 1,
-      "dismissed": 0
-    },
-    {
-      "session": 6,
-      "findings": 3,
-      "fixed": 1,
-      "tracked": 2,
-      "dismissed": 0
-    },
-    {
-      "session": 7,
-      "findings": 1,
-      "fixed": 7,
-      "tracked": 0,
-      "dismissed": 0,
-      "note": "1 new finding (#16) + 6 previously tracked findings all fixed"
-    },
-    {
-      "session": 8,
-      "findings": 4,
-      "fixed": 0,
-      "tracked": 3,
-      "noted": 1,
-      "dismissed": 1,
-      "note": "Fresh review. 1 dismissed (pre-existing). 3 tracked post-merge (test gap, non-ASCII filename, type=button). 1 noted (role=status noisiness). No pre-merge blockers."
-    }
-  ],
-  "critical_discoveries": []
+  "summary": "Round 2 post-fix audit verified that all 4 round-1 fixes (D1, D2, D3, C6) are correctly applied in commit 5a9e382, and the PR's core features (debounce coordination, race guard, localStorage resilience, spec Must-Haves) remain sound and untouched. Two new defects surfaced that round 1 missed: (1) role=\"dialog\" on ColumnDropdown is declared with none of the three WAI-ARIA 1.2 § 6.6 mandatory dialog keyboard behaviors, and (2) the panel variable is dead code left behind by the fix commit. Both debaters converged quickly on CONDITIONAL with surgical fixes (~4 lines total across two files). Also on the record: round-1 D2 cited role=\"checkbox\" code that was never present -- a phantom defect -- though the aria-pressed improvement it produced is still correct and stands.",
+  "recommendation_file": ".council/council-recommendation.md",
+  "test_command": "cd frontend && npm run build"
 }

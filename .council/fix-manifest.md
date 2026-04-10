@@ -1,60 +1,63 @@
-# Fix Manifest — PR #29: epic: Data Grid & Table Navigation (Session 8)
+# Fix Manifest — PR #30: Toolbar, Column Management & Export (Round 2 post-fix audit)
 
-Council verdict: **FOR** | 2026-04-10 | Session 8: 4 findings (1 dismissed, 3 tracked, 1 noted) | 1v1 no-questioner | 2 rounds
+Council verdict: **CONDITIONAL** | 2026-04-10 | 2 findings (2 verified) | Rounds: 1/4 | Questioner: disabled
+Prior council: `.council/2026-04-10-council-recommendation-round1.md` (round 1 produced 4 fixes D1, D2, D3, C6 applied in commit 5a9e382)
 
-Prior sessions: Sessions 1-7 produced 16 findings, all FIXED. Session 8 is a fresh review of the final code state.
+All 4 round-1 fixes verified correctly applied. Round 2 identified 2 new defects that round 1 missed.
 
-## No Pre-Merge Fixes Required
+## Round-1 Fix Audit (commit 5a9e382)
 
-Session 8 found no pre-merge blockers. All findings are post-merge follow-ups.
+| Fix | File:Line | Verification |
+|-----|-----------|--------------|
+| D1 — `role="list"` removed | `ColumnDropdown.svelte:46` | ✅ verified |
+| D2 — `aria-pressed` added | `ColumnDropdown.svelte:50` | ✅ verified (round-1 cited phantom `role="checkbox"` — never existed; improvement stands) |
+| D3 — webkit cancel CSS | `App.svelte:629-633` | ✅ verified |
+| C6 — try/catch setItem | `App.svelte:203-210` | ✅ verified |
 
-## Session 8 Findings
+## Fixes Required (round 2, all in-PR, all verified)
 
-### Dismissed: `get_columns_bulk` PK subquery missing `table_schema`
-- **File**: `src/db/postgres.rs:134-140`
-- **Reason**: ARBITER verified both `get_columns` and `get_columns_bulk` exist on `main` since PR #27 (Epic 1) with identical missing `table_schema` pattern. Pre-existing, not introduced by this PR. CRITIC withdrew.
+### R2-1. `role="dialog"` without focus management (WAI-ARIA 1.2 § 6.6 violation)
+- **Files**:
+  - `frontend/src/components/ColumnDropdown.svelte` L32
+  - `frontend/src/components/Toolbar.svelte` L129
+- **Type**: bug
+- **Severity**: high
+- **Verification**: verified
+- **Current code**:
+  - `ColumnDropdown.svelte:32`: `<div class="dropdown" bind:this={panel} role="dialog" aria-label="Column visibility">`
+  - `Toolbar.svelte:129`: `aria-haspopup="dialog"`
+- **Fix**: Swap to Disclosure pattern.
+  - `ColumnDropdown.svelte:32`: remove `role="dialog"`, `aria-label="Column visibility"`, and `bind:this={panel}` → `<div class="dropdown">`
+  - `Toolbar.svelte:129`: remove `aria-haspopup="dialog"` line (the trigger already has `aria-expanded={columnsOpen}`)
+- **Why**: `role="dialog"` mandates (1) focus-on-open, (2) Tab containment, (3) focus-return-on-close. None of these are implemented: no `tick()` + `.focus()` anywhere when `columnsOpen` becomes true, no focus trap in ColumnDropdown, and Escape/outside-click close without restoring focus. The trigger's `aria-haspopup="dialog"` makes an AT promise the implementation doesn't keep. The panel is a non-modal Disclosure widget (users can Tab out naturally, `aria-expanded` already signals state) so the Disclosure pattern is the correct semantic fit and has no focus-trap requirement. ~4 lines total.
 
-### Tracked 1: `formatCellValue` has zero unit tests (medium)
-- **File**: `frontend/src/lib/data-grid.ts:100-174`
+### R2-2. Dead `panel` binding left behind by fix commit
+- **File**: `frontend/src/components/ColumnDropdown.svelte`
+- **Lines**: 17 (declaration), 32 (`bind:this`)
 - **Type**: improvement
-- **Fix**: Add `data-grid.test.ts` covering null, boolean, date (T00:00:00 suffix), datetime (space→T), numeric passthrough, NaN/Infinity guard.
+- **Severity**: low
+- **Verification**: verified
+- **Current code**:
+  - L17: `let panel: HTMLDivElement | null = null;`
+  - L32: `bind:this={panel}`
+- **Fix**: Delete both the declaration at L17 and the `bind:this={panel}` from the outer div at L32. (Combined with R2-1 above — L32 collapses to `<div class="dropdown">`.)
+- **Why**: `panel` is written by `bind:this` and never read anywhere in the script block. The `onMount` block that could have consumed it was removed in commit 5a9e382. Dead code, trivial removal, no behavior change.
 
-### Tracked 2: Content-Disposition non-ASCII filename (low)
-- **File**: `src/api/mod.rs:229-238`
-- **Type**: bug (cosmetic)
-- **Fix**: Add RFC 6266 `filename*=UTF-8''<percent-encoded>` for non-ASCII display names, or strip non-ASCII in sanitizer.
+## Conditions (from arbiter)
+- Apply Fixes R2-1 and R2-2 on this branch before merging.
+- Verify in a screen reader or Lighthouse accessibility audit that the ColumnDropdown announces as a region/disclosure (not a dialog) and no "dialog opened but focus did not move" error is reported.
 
-### Tracked 3: Missing `type="button"` (nit)
-- **Files**: `frontend/src/components/TableList.svelte:43`, `frontend/src/components/StatusBar.svelte:33,41`
-- **Fix**: Add `type="button"` to all three `<button>` elements.
+## D2 Phantom (informational)
 
-### Noted: ToolStrip `role="status"` live region noisiness
-- **File**: `frontend/src/components/ToolStrip.svelte:57`
-- **Type**: accessibility refinement
-- **Fix**: Consider replacing `role="status"` with `aria-label` on a non-live container to avoid announcing every sort change.
-
-## Cumulative History (sessions 1-7)
-
-All 16 findings from sessions 1-7 are FIXED:
-- Session 1: Date off-by-one, timestamp year omission, ToolStrip ARIA role
-- Session 2: Safari Invalid Date, CSV export ignores filters/sort
-- Session 3: numeric/decimal precision loss via Number() cast
-- Session 4: real (float4) OID mismatch, missing aria-sort on headers
-- Session 5: Boolean filter mapping, numeric display classification
-- Session 6: ToolStrip export aria-label misinformation, dead 'decimal' entry, Content-Disposition backslash
-- Session 7: Search ILIKE identifier validation, bigint > 2^53 serialization, dead currentPage arg, + 4 tracked fixes
-
-## Dismissed Across All Sessions
-- `on:beforesorting` Svelte 5 syntax — correct for Svelte 4 dispatcher
-- Boolean coercion misses 1/yes/on — backend sends JSON booleans only
-- ILIKE performance on 500K rows — pre-existing design choice
-- sortStateToConfig returns undefined — sort indicators driven by per-column `order` prop
-- get_columns_bulk schema filter — pre-existing on main since Epic 1
+Round-1 D2 cited `<button role="checkbox" aria-checked={isVisible(column)}>` at `ColumnDropdown.svelte:48-50`. CRITIC-1 verified via `git show 0222ab7` and `git show a1b92c8` that those attributes were never present in any commit — the buttons were plain `<button type="button">` elements with no ARIA state. The fix commit added `aria-pressed={isVisible(column)}` to buttons that had no prior role, which is a valid improvement but was not repairing the described defect. On the record to avoid future confusion.
 
 ## Test Command
-```bash
-cd frontend && npm run check && cd .. && cargo test
 ```
+cd frontend && npm run check && npm run build
+```
+(No frontend test suite — svelte-check + production build is the available gate.)
 
 ## Raw Data
-council-result.json: .council/council-result.json
+- Round 2 recommendation: `.council/council-recommendation.md`
+- Round 2 structured result: `.council/council-result.json`
+- Round 1 archived recommendation: `.council/2026-04-10-council-recommendation-round1.md`

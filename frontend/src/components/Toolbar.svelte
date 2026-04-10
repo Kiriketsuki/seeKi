@@ -126,7 +126,6 @@
       class="tool-button"
       class:active={columnsOpen}
       aria-expanded={columnsOpen}
-      aria-haspopup="dialog"
       aria-label="Manage columns"
       title={columnsTitle}
       onclick={() => onToggleColumns?.()}
@@ -156,7 +155,6 @@
       {columnVisibility}
       onToggleColumnVisibility={onToggleColumnVisibility}
       onShowAllColumns={onShowAllColumns}
-      onClose={onCloseColumns}
     />
   {/if}
 </div>

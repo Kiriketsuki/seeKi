@@ -14,8 +14,6 @@
     onShowAllColumns?: () => void;
   } = $props();
 
-  let panel: HTMLDivElement | null = null;
-
   function isVisible(column: ColumnInfo): boolean {
     return columnVisibility[column.name] !== false;
   }
@@ -29,7 +27,7 @@
   );
 </script>
 
-<div class="dropdown" bind:this={panel} role="dialog" aria-label="Column visibility">
+<div class="dropdown">
   <div class="dropdown-header">
     <div>
       <div class="title">Columns</div>
