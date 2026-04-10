@@ -128,6 +128,7 @@
       class="tool-button"
       class:active={columnsOpen}
       aria-expanded={columnsOpen}
+      aria-controls="columns-panel"
       aria-label={columnsTitle}
       title={columnsTitle}
       onclick={() => onToggleColumns?.()}

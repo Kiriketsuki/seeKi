@@ -142,11 +142,11 @@
       "type": "a11y",
       "severity": "low",
       "verified": true,
-      "fix": "Follow-up: add id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button (WAI-ARIA APG SHOULD, not MUST; keyboard navigation not broken without it)",
-      "status": "open",
+      "fix": "Added id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button; AT can now programmatically jump from trigger to region",
+      "status": "fixed",
       "session": 5
     }
   ],
-  "merge_conditions": "Finding 11 fixed (session 5). Finding 12 is a low-priority follow-up (SHOULD per APG, not blocking). svelte-check passes 0 errors 0 warnings.",
+  "merge_conditions": "All 12 findings fixed across 5 sessions. svelte-check passes 0 errors 0 warnings.",
   "test_command": "cd frontend && npx svelte-check"
 }

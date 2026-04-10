@@ -27,7 +27,7 @@
   );
 </script>
 
-<div class="dropdown" role="region" aria-label="Column visibility">
+<div id="columns-panel" class="dropdown" role="region" aria-label="Column visibility">
   <div class="dropdown-header">
     <div>
       <div class="title">Columns</div>
