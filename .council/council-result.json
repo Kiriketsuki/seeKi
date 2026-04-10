@@ -8,8 +8,8 @@
     "questioner": 0,
     "rounds": 2,
     "mode": "1v1-no-questioner",
-    "session": 7,
-    "note": "Session 7: 1v1 no-questioner. One new low-severity finding (#16, search ILIKE identifier validation). All 6 previously tracked findings + finding #16 + dead currentPage arg fixed in this session. 16/16 findings now FIXED. PR clean."
+    "session": 8,
+    "note": "Session 8: 1v1 no-questioner. Fresh review of current code state. 1 finding dismissed (pre-existing get_columns_bulk schema filter from PR #27). 3 new post-merge follow-ups tracked: formatCellValue test gap, Content-Disposition non-ASCII filenames, missing type=button. 1 noted: ToolStrip role=status live region noisiness. No pre-merge blockers."
   },
   "findings": [
     {
@@ -279,19 +279,19 @@
     {
       "claim": "sortStateToConfig returns undefined breaks RevoGrid sort indicators",
       "reason": "ADVOCATE rebutted: sort indicators are driven by per-column order prop (DataGrid.svelte:198-199), not the sorting prop. Clearing sortState sets all columns to order: undefined, which correctly removes arrows."
+    },
+    {
+      "claim": "get_columns_bulk PK subquery missing table_schema filter",
+      "reason": "Session 8: ARBITER verified both get_columns and get_columns_bulk exist on main since PR #27 (Epic 1) with identical missing table_schema pattern. Pre-existing code, not introduced by this PR. CRITIC withdrew."
     }
   ],
   "follow_ups": [
-    "Add unit tests for data-grid.ts pure functions",
+    "Add unit tests for data-grid.ts pure functions (formatCellValue, columnWidth, sortStateToConfig) — session 8 F2",
+    "Add RFC 6266 filename*=UTF-8'' encoding for non-ASCII Content-Disposition filenames — session 8 F3",
+    "Add type='button' to TableList.svelte:43, StatusBar.svelte:33,41 — session 8 F4",
+    "Consider replacing role='status' on ToolStrip sort indicator with non-live aria-label — session 8 noted",
     "Tighten sortStateToConfig return type to Record<string, 'asc' | 'desc'>",
-    "Expand boolean coercion for future SQLite support",
-    "Serialize bigint as string in postgres.rs for values > Number.MAX_SAFE_INTEGER",
-    "Remove dead currentPage arg from exportCsv buildRowsParams call (App.svelte:209)",
-    "Add aria-sort attribute to RevoGrid column headers (WCAG 1.3.1)",
-    "Normalize real (float4) JSON serialization to match CSV (use f32.to_string() instead of f32 as f64)",
-    "Remove dead 'decimal' entry from NUMERIC_TEXT_TYPES (data-grid.ts:20)",
-    "Add backslash to Content-Disposition filename sanitizer (api/mod.rs:235)",
-    "Add is_valid_identifier guard to search ILIKE text_cols filter (postgres.rs:211)"
+    "Expand boolean coercion for future SQLite support"
   ],
   "conditions_met": true,
   "prior_sessions": [
@@ -343,6 +343,15 @@
       "tracked": 0,
       "dismissed": 0,
       "note": "1 new finding (#16) + 6 previously tracked findings all fixed"
+    },
+    {
+      "session": 8,
+      "findings": 4,
+      "fixed": 0,
+      "tracked": 3,
+      "noted": 1,
+      "dismissed": 1,
+      "note": "Fresh review. 1 dismissed (pre-existing). 3 tracked post-merge (test gap, non-ASCII filename, type=button). 1 noted (role=status noisiness). No pre-merge blockers."
     }
   ],
   "critical_discoveries": []
