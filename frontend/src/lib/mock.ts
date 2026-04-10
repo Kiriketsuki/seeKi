@@ -430,6 +430,7 @@ export function mockFetchRows(
     sort_column?: string;
     sort_direction?: string;
     search?: string;
+    filters?: Record<string, string>;
   },
 ): QueryResult {
   const page = params?.page ?? 1;
@@ -447,6 +448,20 @@ export function mockFetchRows(
         String(v ?? '').toLowerCase().includes(q),
       ),
     );
+  }
+
+  if (params?.filters) {
+    const activeFilters = Object.entries(params.filters).filter(
+      ([, value]) => value.trim().length > 0,
+    );
+
+    if (activeFilters.length > 0) {
+      rows = rows.filter((row) =>
+        activeFilters.every(([column, value]) =>
+          String(row[column] ?? '').toLowerCase().includes(value.toLowerCase()),
+        ),
+      );
+    }
   }
 
   if (params?.sort_column) {

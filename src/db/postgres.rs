@@ -165,9 +165,10 @@ pub async fn get_columns_bulk(
     Ok(result)
 }
 
-/// Validate that a name contains only alphanumeric characters and underscores.
+/// Validate that a name is safe for use as a double-quoted SQL identifier.
+/// Allows alphanumeric, underscore, hyphen, and space — all safe inside `"..."`.
 fn is_valid_identifier(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
 }
 
 /// Shared WHERE clause and bind values builder for query_rows and export.
@@ -206,7 +207,7 @@ fn build_query_clauses(
     if has_search {
         let text_cols: Vec<String> = columns
             .iter()
-            .filter(|c| is_text_type(&c.data_type))
+            .filter(|c| is_text_type(&c.data_type) && is_valid_identifier(&c.name))
             .map(|c| format!("\"{}\"::text ILIKE '%' || ${param_idx} || '%'", c.name))
             .collect();
 
@@ -217,14 +218,37 @@ fn build_query_clauses(
         }
     }
 
-    // Per-column filter conditions (AND-ed, ILIKE with %value%)
+    // Per-column filter conditions (AND-ed)
+    // Boolean columns use = TRUE/FALSE instead of ILIKE to match Yes/No display.
+    let column_types: std::collections::HashMap<&str, &str> = columns
+        .iter()
+        .map(|c| (c.name.as_str(), c.data_type.as_str()))
+        .collect();
+
     let mut filter_entries: Vec<_> = filters.iter().collect();
     filter_entries.sort_by_key(|(k, _)| k.as_str());
 
     for (col_name, value) in &filter_entries {
-        conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
-        bind_values.push(format!("%{value}%"));
-        param_idx += 1;
+        let col_type = column_types.get(col_name.as_str()).copied().unwrap_or("");
+        if col_type == "boolean" {
+            // Map user-friendly input to SQL boolean
+            let normalized = value.trim().to_lowercase();
+            let bool_val = match normalized.as_str() {
+                "yes" | "true" | "t" | "1" => Some(true),
+                "no" | "false" | "f" | "0" => Some(false),
+                _ => None,
+            };
+            if let Some(b) = bool_val {
+                conditions.push(format!("\"{}\" = {}", col_name, if b { "TRUE" } else { "FALSE" }));
+            } else {
+                // Non-boolean input on a boolean column → no rows match
+                conditions.push("FALSE".to_string());
+            }
+        } else {
+            conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
+            bind_values.push(format!("%{value}%"));
+            param_idx += 1;
+        }
     }
 
     let where_clause = if conditions.is_empty() {
@@ -380,9 +404,26 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .unwrap_or(Value::Null),
         "bigint" => row
             .try_get::<i64, _>(col)
-            .map(Value::from)
+            .map(|v| {
+                // Values beyond ±2^53 lose precision in JavaScript's float64 JSON.parse.
+                // Serialize as string to preserve full i64 range.
+                if v.unsigned_abs() > (1u64 << 53) {
+                    Value::String(v.to_string())
+                } else {
+                    Value::from(v)
+                }
+            })
             .unwrap_or(Value::Null),
-        "real" | "double precision" => row
+        "real" => row
+            .try_get::<f32, _>(col)
+            .map(|v| {
+                // Parse via f32's string repr to avoid f64 widening artifacts
+                // (e.g., 3.14f32 as f64 → 3.140000104904175)
+                let clean: f64 = v.to_string().parse().unwrap_or(v as f64);
+                Value::from(clean)
+            })
+            .unwrap_or(Value::Null),
+        "double precision" => row
             .try_get::<f64, _>(col)
             .map(Value::from)
             .unwrap_or(Value::Null),
@@ -457,19 +498,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valid_identifier_accepts_alphanumeric_underscore() {
+    fn valid_identifier_accepts_safe_chars() {
         assert!(is_valid_identifier("vehicle_id"));
         assert!(is_valid_identifier("col1"));
         assert!(is_valid_identifier("_private"));
         assert!(is_valid_identifier("CamelCase"));
+        assert!(is_valid_identifier("col-name"));
+        assert!(is_valid_identifier("col name"));
+        assert!(is_valid_identifier("my-table"));
     }
 
     #[test]
     fn valid_identifier_rejects_special_chars() {
-        assert!(!is_valid_identifier("col-name"));
         assert!(!is_valid_identifier("col.name"));
-        assert!(!is_valid_identifier("col name"));
         assert!(!is_valid_identifier("col;DROP TABLE"));
+        assert!(!is_valid_identifier("col\"name"));
         assert!(!is_valid_identifier(""));
     }
 
