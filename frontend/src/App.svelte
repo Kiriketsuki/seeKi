@@ -479,6 +479,7 @@
       filtersVisible={filtersVisible}
       activeFilterCount={activeFilterCount}
       searchActive={searchActive}
+      searchVisible={searchVisible}
       columnsOpen={columnsOpen}
       columns={columns}
       columnVisibility={columnVisibility}
@@ -626,12 +627,6 @@
 
   .search-input::placeholder {
     color: var(--sk-muted);
-  }
-
-  .search-input::-webkit-search-cancel-button,
-  .search-input::-webkit-search-decoration {
-    -webkit-appearance: none;
-    appearance: none;
   }
 
   .clear-search {

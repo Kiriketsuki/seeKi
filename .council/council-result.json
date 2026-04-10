@@ -5,8 +5,8 @@
   "format": "1v1, no questioner",
   "date": "2026-04-10",
   "verdict": "CONDITIONAL",
-  "rounds": 6,
-  "session": 6,
+  "rounds": 7,
+  "session": 7,
   "findings": [
     {
       "id": 1,
@@ -156,8 +156,20 @@
       "fix": "Changed derivation basis from searchActive to searchVisible; label now matches the action toggleSearch() will perform",
       "status": "fixed",
       "session": 6
+    },
+    {
+      "id": 14,
+      "description": "searchTitle in Toolbar.svelte derived from searchVisible which was never added as a prop — S6 fix changed the variable name in the derivation but did not wire searchVisible as a Toolbar prop; searchTitle permanently evaluated to 'Open search (Ctrl+K)' at runtime",
+      "file": "frontend/src/components/Toolbar.svelte:59",
+      "also": "frontend/src/App.svelte:481",
+      "type": "a11y",
+      "severity": "high",
+      "verified": true,
+      "fix": "Added searchVisible?: boolean = false to Toolbar props; passed searchVisible={searchVisible} from App.svelte; removed dead ::-webkit-search-cancel-button CSS (input is type=text not type=search)",
+      "status": "fixed",
+      "session": 7
     }
   ],
-  "merge_conditions": "All 13 findings fixed across 6 sessions. svelte-check passes 0 errors 0 warnings.",
+  "merge_conditions": "All 14 findings fixed across 7 sessions. svelte-check passes 0 errors 0 warnings.",
   "test_command": "cd frontend && npx svelte-check"
 }

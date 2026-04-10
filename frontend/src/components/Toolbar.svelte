@@ -18,6 +18,7 @@
     filtersVisible = false,
     activeFilterCount = 0,
     searchActive = false,
+    searchVisible = false,
     columnsOpen = false,
     columns = [],
     columnVisibility = {},
@@ -36,6 +37,7 @@
     filtersVisible?: boolean;
     activeFilterCount?: number;
     searchActive?: boolean;
+    searchVisible?: boolean;
     columnsOpen?: boolean;
     columns: ColumnInfo[];
     columnVisibility: Record<string, boolean>;
