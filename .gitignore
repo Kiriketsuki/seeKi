@@ -27,3 +27,4 @@ node_modules/
 frontend/dist/
 .brainstorm/
 .gitnexus
+.claude/
