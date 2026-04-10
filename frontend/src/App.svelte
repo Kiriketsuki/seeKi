@@ -3,10 +3,20 @@
   import Sidebar from './components/Sidebar.svelte';
   import TableList from './components/TableList.svelte';
   import Toolbar from './components/Toolbar.svelte';
+  import ToolStrip from './components/ToolStrip.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
-  import type { TableInfo, ColumnInfo, QueryResult, DisplayConfig } from './lib/types';
+  import type { FetchRowsParams } from './lib/api';
+  import type {
+    TableInfo,
+    ColumnInfo,
+    QueryResult,
+    DisplayConfig,
+    SortState,
+    FilterState,
+    SortDirection,
+  } from './lib/types';
   import { SIDEBAR_COLLAPSED_KEY } from './lib/constants';
 
   let tables: TableInfo[] = $state([]);
@@ -23,7 +33,23 @@
   let error: string | null = $state(null);
   let tableError: string | null = $state(null);
   let currentPage: number = $state(1);
+  let sortState: SortState = $state({ column: null, direction: null });
+  let filtersVisible: boolean = $state(false);
+  let filters: FilterState = $state({});
+  let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let selectRequestId = 0;
+  let activeFilterCount = $derived(
+    Object.values(filters).filter((value) => value.trim().length > 0).length
+  );
+  let sortLabel = $derived.by(() => {
+    if (!sortState.column || !sortState.direction) {
+      return 'No active sort';
+    }
+
+    const currentColumn = columns.find((column) => column.name === sortState.column);
+    const displayName = currentColumn?.display_name ?? sortState.column;
+    return `${displayName} ${sortState.direction}`;
+  });
 
   onMount(async () => {
     try {
@@ -48,16 +74,39 @@
     }
   });
 
+  onMount(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey) return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      if (event.key.toLowerCase() !== 'f') return;
+
+      event.preventDefault();
+      toggleFilters();
+    }
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+      clearFilterDebounce();
+    };
+  });
+
   async function selectTable(tableName: string) {
     const myRequest = ++selectRequestId;
+    const resetSortState: SortState = { column: null, direction: null };
+    const resetFilters: FilterState = {};
     selectedTable = tableName;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
+    sortState = resetSortState;
+    filtersVisible = false;
+    filters = resetFilters;
+    clearFilterDebounce();
     try {
       const [cols, result] = await Promise.all([
         fetchColumns(tableName),
-        fetchRows(tableName)
+        fetchRows(tableName, buildRowsParams(1, resetSortState, resetFilters))
       ]);
       if (myRequest !== selectRequestId) return;
       columns = cols;
@@ -70,27 +119,104 @@
     }
   }
 
-  async function goToPage(page: number) {
+  function toggleFilters() {
+    filtersVisible = !filtersVisible;
+  }
+
+  function clearFilterDebounce() {
+    if (filterDebounceId != null) {
+      clearTimeout(filterDebounceId);
+      filterDebounceId = null;
+    }
+  }
+
+  function buildRowsParams(
+    page: number,
+    nextSortState: SortState = sortState,
+    nextFilters: FilterState = filters,
+  ): FetchRowsParams {
+    const params: FetchRowsParams = { page };
+    if (nextSortState.column && nextSortState.direction) {
+      params.sort_column = nextSortState.column;
+      params.sort_direction = nextSortState.direction;
+    }
+
+    const activeFilters = Object.fromEntries(
+      Object.entries(nextFilters).filter(([, value]) => value.trim().length > 0)
+    );
+    if (Object.keys(activeFilters).length > 0) {
+      params.filters = activeFilters;
+    }
+
+    return params;
+  }
+
+  async function loadRows(
+    page: number,
+    nextSortState: SortState = sortState,
+    nextFilters: FilterState = filters,
+  ) {
     if (!selectedTable) return;
     const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
     try {
-      const result = await fetchRows(selectedTable, { page });
+      const result = await fetchRows(
+        selectedTable,
+        buildRowsParams(page, nextSortState, nextFilters)
+      );
       if (myRequest !== selectRequestId) return;
       queryResult = result;
       currentPage = page;
     } catch (e) {
       if (myRequest !== selectRequestId) return;
-      tableError = e instanceof Error ? e.message : 'Failed to load page';
+      tableError = e instanceof Error ? e.message : 'Failed to load rows';
     } finally {
       if (myRequest === selectRequestId) tableLoading = false;
     }
   }
 
+  async function goToPage(page: number) {
+    clearFilterDebounce();
+    await loadRows(page);
+  }
+
+  function handleSortChange(column: string, direction: SortDirection | null) {
+    clearFilterDebounce();
+    const nextSortState: SortState = direction
+      ? { column, direction }
+      : { column: null, direction: null };
+    sortState = nextSortState;
+    void loadRows(1, nextSortState);
+  }
+
+  function handleFilterChange(column: string, value: string) {
+    const nextFilters: FilterState = {
+      ...filters,
+      [column]: value,
+    };
+    filters = nextFilters;
+
+    clearFilterDebounce();
+    filterDebounceId = setTimeout(() => {
+      void loadRows(1, sortState, nextFilters);
+      filterDebounceId = null;
+    }, 300);
+  }
+
   function exportCsv() {
     if (!selectedTable) return;
-    window.open(`/api/export/${encodeURIComponent(selectedTable)}/csv`, '_blank');
+    const params = buildRowsParams(1);
+    const searchParams = new URLSearchParams();
+    if (params.sort_column) searchParams.set('sort_column', params.sort_column);
+    if (params.sort_direction) searchParams.set('sort_direction', params.sort_direction);
+    if (params.filters) {
+      for (const [col, val] of Object.entries(params.filters)) {
+        searchParams.set(`filter.${col}`, val);
+      }
+    }
+    const qs = searchParams.toString();
+    window.open(`/api/export/${encodeURIComponent(selectedTable)}/csv${qs ? `?${qs}` : ''}`, '_blank');
   }
 </script>
 
@@ -150,13 +276,30 @@
           <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
         </div>
       {/if}
-      <div class="grid-area" class:loading-overlay={tableLoading}>
-        <DataGrid {columns} rows={queryResult?.rows ?? []} />
-        {#if tableLoading}
-          <div class="grid-loading">
-            <div class="loading-spinner"></div>
-          </div>
-        {/if}
+      <div class="grid-area">
+        <ToolStrip
+          {sortState}
+          sortDescription={sortLabel}
+          filtersVisible={filtersVisible}
+          activeFilterCount={activeFilterCount}
+          onToggleFilters={toggleFilters}
+        />
+        <div class="grid-shell" class:loading-overlay={tableLoading}>
+          <DataGrid
+            {columns}
+            rows={queryResult?.rows ?? []}
+            {sortState}
+            {filters}
+            {filtersVisible}
+            onSortChange={handleSortChange}
+            onFilterChange={handleFilterChange}
+          />
+          {#if tableLoading}
+            <div class="grid-loading">
+              <div class="loading-spinner"></div>
+            </div>
+          {/if}
+        </div>
       </div>
       <StatusBar
         total={queryResult?.total_rows ?? 0}
@@ -183,11 +326,21 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
   }
   .grid-area {
     flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: var(--sk-space-md);
     padding: var(--sk-space-lg) var(--sk-space-2xl);
-    overflow: auto;
+    overflow: hidden;
+    align-items: stretch;
+  }
+  .grid-shell {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
     position: relative;
   }
   .loading-overlay {
@@ -200,6 +353,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    background: rgba(245, 240, 235, 0.28);
   }
   .loading-state {
     flex: 1;
