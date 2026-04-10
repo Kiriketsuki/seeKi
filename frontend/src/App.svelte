@@ -586,11 +586,6 @@
     display: flex;
     align-items: center;
     min-height: 0;
-    transition: opacity 0.18s ease, transform 0.18s ease;
-  }
-
-  .search-panel.active {
-    transform: translateY(0);
   }
 
   .search-box {
