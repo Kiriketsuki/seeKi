@@ -6,6 +6,10 @@ import type {
   StatusResponse,
   TablesResponse,
   ColumnsResponse,
+  SshWizardConfig,
+  TestConnectionResult,
+  SetupSaveRequest,
+  SetupSaveResponse,
 } from './types';
 import {
   mockFetchTables,
@@ -120,4 +124,38 @@ export async function fetchStatus(): Promise<StatusResponse> {
   const data = await apiFetch<StatusResponse>('/api/status');
   assertShape(data, ['mode'], '/api/status');
   return data;
+}
+
+export async function getStatus(): Promise<StatusResponse> {
+  return fetchStatus();
+}
+
+export async function setupTestConnection(req: {
+  kind: string;
+  url: string;
+  ssh?: SshWizardConfig;
+}): Promise<TestConnectionResult> {
+  const res = await fetch('/api/setup/test-connection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Setup test-connection failed: ${text}`);
+  }
+  return res.json();
+}
+
+export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveResponse> {
+  const res = await fetch('/api/setup/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Setup save failed: ${text}`);
+  }
+  return res.json();
 }
