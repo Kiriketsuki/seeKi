@@ -6,7 +6,7 @@
   "date": "2026-04-10",
   "verdict": "CONDITIONAL",
   "rounds": 4,
-  "session": 3,
+  "session": 4,
   "findings": [
     {
       "id": 1,
@@ -98,8 +98,31 @@
       "fix": "Derived title and aria-label from hasTable: 'Select a table to export' when !hasTable",
       "status": "fixed",
       "session": 3
+    },
+    {
+      "id": 9,
+      "description": "role=\"dialog\" on ColumnDropdown without dialog keyboard contract — Disclosure trigger uses aria-expanded (Disclosure pattern) while container used role=\"dialog\" (Dialog pattern); WAI-ARIA §6.6 MUST behaviors not implemented",
+      "file": "frontend/src/components/ColumnDropdown.svelte:30",
+      "also": "frontend/src/components/Toolbar.svelte:128-133",
+      "type": "a11y",
+      "severity": "high",
+      "verified": true,
+      "fix": "Replaced role=\"dialog\" with role=\"region\"; Disclosure Button pattern now consistent end-to-end",
+      "status": "fixed",
+      "session": 4
+    },
+    {
+      "id": 10,
+      "description": "Search button static aria-label=\"Search\" not updated when filter/columns were given dynamic labels in session 3",
+      "file": "frontend/src/components/Toolbar.svelte:91",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "aria-label=\"Search\" → aria-label={searchTitle}; searchTitle derived prop already existed",
+      "status": "fixed",
+      "session": 4
     }
   ],
-  "merge_conditions": "All 8 findings fixed across 3 sessions. svelte-check passes 0 errors 0 warnings.",
+  "merge_conditions": "All 10 findings fixed across 4 sessions. svelte-check passes 0 errors 0 warnings.",
   "test_command": "cd frontend && npx svelte-check"
 }

@@ -1,6 +1,6 @@
 # Fix Manifest — PR #30: epic: Toolbar, Column Management & Export
 
-Council verdict: CONDITIONAL | 2026-04-10 | 8 findings (8 verified) | All fixed (3 sessions)
+Council verdict: CONDITIONAL | 2026-04-10 | 10 findings (10 verified) | All fixed (4 sessions)
 
 ---
 
@@ -68,8 +68,26 @@ Council verdict: CONDITIONAL | 2026-04-10 | 8 findings (8 verified) | All fixed 
 
 ---
 
+## Session 4 Fixes (this session)
+
+### 9. role="dialog" on ColumnDropdown without dialog keyboard contract
+- **File**: `frontend/src/components/ColumnDropdown.svelte`
+- **Line**: 30
+- **Type**: a11y / **Severity**: high
+- **Fix**: Replaced `role="dialog"` with `role="region"` — matches the Disclosure Button pattern already established by `aria-expanded` on the trigger; `aria-label="Column visibility"` transfers correctly; no focus management required
+- **Citations**: `ColumnDropdown.svelte:30`, `Toolbar.svelte:128-133`
+
+### 10. Search button has static aria-label while filter/columns were updated to dynamic in session 3
+- **File**: `frontend/src/components/Toolbar.svelte`
+- **Line**: 91
+- **Type**: a11y / **Severity**: medium
+- **Fix**: `aria-label="Search"` → `aria-label={searchTitle}`; `searchTitle` derived prop ("Open search (Ctrl+K)" / "Close search (Ctrl+K)") already existed at `Toolbar.svelte:59`
+- **Citations**: `Toolbar.svelte:91`, `Toolbar.svelte:59`
+
+---
+
 ## Conditions
-All 8 findings fixed. `svelte-check` passes: 0 errors, 0 warnings.
+All 10 findings fixed. `svelte-check` passes: 0 errors, 0 warnings.
 
 ## Test Command
 ```

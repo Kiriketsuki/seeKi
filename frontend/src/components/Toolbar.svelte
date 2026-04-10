@@ -88,7 +88,7 @@
       type="button"
       class="tool-button"
       class:active={searchActive}
-      aria-label="Search"
+      aria-label={searchTitle}
       title={searchTitle}
       onclick={() => onToggleSearch?.()}
     >
