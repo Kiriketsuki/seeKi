@@ -1,19 +1,20 @@
 mod api;
+mod app_mode;
 mod auth;
 mod config;
 mod db;
 mod embed;
+mod ssh;
 #[cfg(test)]
 mod testutil;
-
-use std::sync::Arc;
 
 use axum::Router;
 use axum::http::Method;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
 
-use crate::config::{AppConfig, ConfigLoadError};
+use crate::app_mode::{AppMode, initial_mode};
+use crate::config::{AppConfig, ConfigLoadError, SecretsConfig};
 use crate::db::DatabasePool;
 
 pub struct AppState {
@@ -27,21 +28,50 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env().add_directive("seeki=info".parse()?))
         .init();
 
-    match AppConfig::load() {
-        Ok(config) => start_normal(config).await,
-        Err(ConfigLoadError::NotFound) => start_setup_mode().await,
+    let mode = match AppConfig::load() {
+        Ok(config) => {
+            config.tables.warn_overlaps();
+            let secrets = SecretsConfig::load_from_cwd();
+            let ssh_pair = config.ssh.as_ref().map(|s| (s, &secrets));
+            tracing::info!("Connecting to database...");
+            let db = DatabasePool::connect(&config.database, ssh_pair).await?;
+            tracing::info!("Connected to database");
+            initial_mode(Some(AppState { db, config }))
+        }
+        Err(ConfigLoadError::NotFound) => {
+            tracing::info!("No config file found — starting in setup mode");
+            initial_mode(None)
+        }
         Err(ConfigLoadError::Invalid { path, source }) => {
-            tracing::error!(
-                "Config file at {} is invalid: {source}",
-                path.display()
-            );
+            tracing::error!("Config file at {} is invalid: {source}", path.display());
             tracing::error!("Fix the config file or delete it to enter setup mode");
             anyhow::bail!("Invalid config at {}: {source}", path.display())
         }
-    }
+    };
+
+    let bind_addr = {
+        let guard = mode.read().await;
+        match &*guard {
+            AppMode::Normal(state) => {
+                format!("{}:{}", state.config.server.host, state.config.server.port)
+            }
+            AppMode::Setup => {
+                std::env::var("SEEKI_BIND").unwrap_or_else(|_| "127.0.0.1:3141".to_string())
+            }
+        }
+    };
+
+    let app = Router::new()
+        .nest("/api", api::router(mode.clone()))
+        .layer(localhost_cors())
+        .fallback(embed::handler);
+
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    tracing::info!("SeeKi listening on http://{bind_addr}");
+    axum::serve(listener, app).await?;
+    Ok(())
 }
 
-/// Build a CORS layer that only allows localhost origins.
 fn localhost_cors() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(|origin, _| {
@@ -58,47 +88,4 @@ fn localhost_cors() -> CorsLayer {
         }))
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([axum::http::header::CONTENT_TYPE])
-}
-
-/// Normal mode: config exists, connect to DB and serve full API.
-async fn start_normal(config: AppConfig) -> anyhow::Result<()> {
-    config.tables.warn_overlaps();
-    let bind_addr = format!("{}:{}", config.server.host, config.server.port);
-
-    tracing::info!("Connecting to database...");
-    let db = DatabasePool::connect(&config.database).await?;
-    tracing::info!("Connected successfully");
-
-    let state = Arc::new(AppState { db, config });
-
-    let app = Router::new()
-        .nest("/api", api::router())
-        .layer(localhost_cors())
-        .with_state(state)
-        .fallback(embed::handler);
-
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    tracing::info!("SeeKi listening on http://{bind_addr}");
-    axum::serve(listener, app).await?;
-
-    Ok(())
-}
-
-/// Setup mode: no config found, serve only setup wizard endpoints.
-async fn start_setup_mode() -> anyhow::Result<()> {
-    let bind_addr = std::env::var("SEEKI_BIND").unwrap_or_else(|_| "127.0.0.1:3141".to_string());
-
-    tracing::info!("No config file found — starting in setup mode");
-
-    let app = Router::new()
-        .nest("/api", api::setup::router())
-        .layer(localhost_cors())
-        .fallback(embed::handler);
-
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    tracing::info!("SeeKi setup wizard listening on http://{}", bind_addr);
-    tracing::info!("Configure your database connection, then restart the app");
-    axum::serve(listener, app).await?;
-
-    Ok(())
 }
