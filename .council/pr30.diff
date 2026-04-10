@@ -1,0 +1,1478 @@
+diff --git a/frontend/src/App.svelte b/frontend/src/App.svelte
+index a79c9d9..1d62309 100644
+--- a/frontend/src/App.svelte
++++ b/frontend/src/App.svelte
+@@ -1,9 +1,10 @@
+ <script lang="ts">
+-  import { onMount } from 'svelte';
++  import { onMount, tick } from 'svelte';
++  import { Search, X } from 'lucide-svelte';
+   import Sidebar from './components/Sidebar.svelte';
+   import TableList from './components/TableList.svelte';
+   import Toolbar from './components/Toolbar.svelte';
+-  import ToolStrip from './components/ToolStrip.svelte';
++  import TableHeader from './components/TableHeader.svelte';
+   import DataGrid from './components/DataGrid.svelte';
+   import StatusBar from './components/StatusBar.svelte';
+   import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
+@@ -17,7 +18,7 @@
+     FilterState,
+     SortDirection,
+   } from './lib/types';
+-  import { SIDEBAR_COLLAPSED_KEY } from './lib/constants';
++  import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
+ 
+   let tables: TableInfo[] = $state([]);
+   let selectedTable: string = $state('');
+@@ -36,11 +37,28 @@
+   let sortState: SortState = $state({ column: null, direction: null });
+   let filtersVisible: boolean = $state(false);
+   let filters: FilterState = $state({});
++  let searchTerm: string = $state('');
++  let searchVisible: boolean = $state(false);
++  let columnsOpen: boolean = $state(false);
++  let columnVisibility: Record<string, boolean> = $state({});
++  let searchInputEl: HTMLInputElement | null = $state(null);
+   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
++  let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
+   let selectRequestId = 0;
+   let activeFilterCount = $derived(
+     Object.values(filters).filter((value) => value.trim().length > 0).length
+   );
++  let searchQuery = $derived.by(() => searchTerm.trim());
++  let searchActive = $derived.by(() => searchVisible || searchQuery.length > 0);
++  let hiddenColumnCount = $derived.by(
++    () => columns.filter((column) => columnVisibility[column.name] === false).length
++  );
++  let visibleColumns = $derived.by(
++    () => columns.filter((column) => columnVisibility[column.name] !== false)
++  );
++  let selectedTableDisplayName = $derived.by(
++    () => displayConfig?.tables[selectedTable]?.display_name ?? selectedTable
++  );
+   let sortLabel = $derived.by(() => {
+     if (!sortState.column || !sortState.direction) {
+       return 'No active sort';
+@@ -60,7 +78,7 @@
+       }
+       const [fetchedTables, config] = await Promise.all([
+         fetchTables(),
+-        fetchDisplayConfig()
++        fetchDisplayConfig(),
+       ]);
+       tables = fetchedTables;
+       displayConfig = config;
+@@ -75,22 +93,157 @@
+   });
+ 
+   onMount(() => {
++    function isTextEditingTarget(target: EventTarget | null): boolean {
++      if (!(target instanceof HTMLElement)) return false;
++      const tag = target.tagName;
++      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
++      return target.isContentEditable;
++    }
++
+     function handleKeydown(event: KeyboardEvent) {
+       if (event.defaultPrevented || event.altKey) return;
+-      if (!event.ctrlKey && !event.metaKey) return;
+-      if (event.key.toLowerCase() !== 'f') return;
+ 
+-      event.preventDefault();
+-      toggleFilters();
++      const key = event.key.toLowerCase();
++      const isShortcut = event.ctrlKey || event.metaKey;
++      const inTextField = isTextEditingTarget(event.target);
++
++      if (isShortcut && key === 'k' && !inTextField) {
++        event.preventDefault();
++        toggleSearch();
++        return;
++      }
++
++      if (isShortcut && key === 'f' && !inTextField) {
++        event.preventDefault();
++        toggleFilters();
++        return;
++      }
++
++      if (event.key === 'Escape') {
++        if (columnsOpen) {
++          event.preventDefault();
++          columnsOpen = false;
++          return;
++        }
++
++        if (searchVisible || searchQuery.length > 0) {
++          event.preventDefault();
++          handleSearchClear();
++        }
++      }
+     }
+ 
+     window.addEventListener('keydown', handleKeydown);
+     return () => {
+       window.removeEventListener('keydown', handleKeydown);
+       clearFilterDebounce();
++      clearSearchDebounce();
+     };
+   });
+ 
++  function clearFilterDebounce() {
++    if (filterDebounceId != null) {
++      clearTimeout(filterDebounceId);
++      filterDebounceId = null;
++    }
++  }
++
++  function clearSearchDebounce() {
++    if (searchDebounceId != null) {
++      clearTimeout(searchDebounceId);
++      searchDebounceId = null;
++    }
++  }
++
++  function normalizeColumnVisibility(
++    tableColumns: ColumnInfo[],
++    visibility: Record<string, boolean>,
++  ): Record<string, boolean> {
++    return Object.fromEntries(
++      tableColumns.map((column) => [column.name, visibility[column.name] !== false])
++    );
++  }
++
++  function loadColumnVisibility(
++    tableName: string,
++    tableColumns: ColumnInfo[],
++  ): Record<string, boolean> {
++    if (typeof localStorage === 'undefined') {
++      return normalizeColumnVisibility(tableColumns, {});
++    }
++
++    const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${tableName}`;
++    const raw = localStorage.getItem(storageKey);
++    if (!raw) {
++      return normalizeColumnVisibility(tableColumns, {});
++    }
++
++    try {
++      const parsed = JSON.parse(raw) as Record<string, unknown>;
++      const nextVisibility: Record<string, boolean> = {};
++      for (const column of tableColumns) {
++        nextVisibility[column.name] = parsed[column.name] === false ? false : true;
++      }
++      return nextVisibility;
++    } catch {
++      return normalizeColumnVisibility(tableColumns, {});
++    }
++  }
++
++  function persistColumnVisibility(
++    tableName: string,
++    tableColumns: ColumnInfo[],
++    visibility: Record<string, boolean>,
++  ) {
++    if (typeof localStorage === 'undefined') {
++      return;
++    }
++
++    const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${tableName}`;
++    try {
++      localStorage.setItem(
++        storageKey,
++        JSON.stringify(normalizeColumnVisibility(tableColumns, visibility))
++      );
++    } catch {
++      // Degrade to in-memory only (e.g. Safari private mode QuotaExceededError)
++    }
++  }
++
++  function resetSearchState() {
++    clearSearchDebounce();
++    searchTerm = '';
++    searchVisible = false;
++  }
++
++  async function openSearch() {
++    searchVisible = true;
++    await tick();
++    searchInputEl?.focus();
++    searchInputEl?.select();
++  }
++
++  function toggleSearch() {
++    if (searchVisible) {
++      searchVisible = false;
++      return;
++    }
++
++    void openSearch();
++  }
++
++  function toggleFilters() {
++    filtersVisible = !filtersVisible;
++  }
++
++  function toggleColumns() {
++    columnsOpen = !columnsOpen;
++  }
++
++  function closeColumns() {
++    columnsOpen = false;
++  }
++
+   async function selectTable(tableName: string) {
+     const myRequest = ++selectRequestId;
+     const resetSortState: SortState = { column: null, direction: null };
+@@ -102,14 +255,17 @@
+     sortState = resetSortState;
+     filtersVisible = false;
+     filters = resetFilters;
++    columnsOpen = false;
+     clearFilterDebounce();
++    resetSearchState();
+     try {
+       const [cols, result] = await Promise.all([
+         fetchColumns(tableName),
+-        fetchRows(tableName, buildRowsParams(1, resetSortState, resetFilters))
++        fetchRows(tableName, buildRowsParams(1, resetSortState, resetFilters, '')),
+       ]);
+       if (myRequest !== selectRequestId) return;
+       columns = cols;
++      columnVisibility = loadColumnVisibility(tableName, cols);
+       queryResult = result;
+     } catch (e) {
+       if (myRequest !== selectRequestId) return;
+@@ -119,21 +275,11 @@
+     }
+   }
+ 
+-  function toggleFilters() {
+-    filtersVisible = !filtersVisible;
+-  }
+-
+-  function clearFilterDebounce() {
+-    if (filterDebounceId != null) {
+-      clearTimeout(filterDebounceId);
+-      filterDebounceId = null;
+-    }
+-  }
+-
+   function buildRowsParams(
+     page: number,
+     nextSortState: SortState = sortState,
+     nextFilters: FilterState = filters,
++    nextSearchTerm: string = searchTerm,
+   ): FetchRowsParams {
+     const params: FetchRowsParams = { page };
+     if (nextSortState.column && nextSortState.direction) {
+@@ -148,6 +294,11 @@
+       params.filters = activeFilters;
+     }
+ 
++    const trimmedSearch = nextSearchTerm.trim();
++    if (trimmedSearch.length > 0) {
++      params.search = trimmedSearch;
++    }
++
+     return params;
+   }
+ 
+@@ -155,6 +306,7 @@
+     page: number,
+     nextSortState: SortState = sortState,
+     nextFilters: FilterState = filters,
++    nextSearchTerm: string = searchTerm,
+   ) {
+     if (!selectedTable) return;
+     const myRequest = ++selectRequestId;
+@@ -163,7 +315,7 @@
+     try {
+       const result = await fetchRows(
+         selectedTable,
+-        buildRowsParams(page, nextSortState, nextFilters)
++        buildRowsParams(page, nextSortState, nextFilters, nextSearchTerm)
+       );
+       if (myRequest !== selectRequestId) return;
+       queryResult = result;
+@@ -178,11 +330,13 @@
+ 
+   async function goToPage(page: number) {
+     clearFilterDebounce();
++    clearSearchDebounce();
+     await loadRows(page);
+   }
+ 
+   function handleSortChange(column: string, direction: SortDirection | null) {
+     clearFilterDebounce();
++    clearSearchDebounce();
+     const nextSortState: SortState = direction
+       ? { column, direction }
+       : { column: null, direction: null };
+@@ -198,25 +352,79 @@
+     filters = nextFilters;
+ 
+     clearFilterDebounce();
++    clearSearchDebounce();
+     filterDebounceId = setTimeout(() => {
+       void loadRows(1, sortState, nextFilters);
+       filterDebounceId = null;
+     }, 300);
+   }
+ 
++  function scheduleSearchReload() {
++    clearSearchDebounce();
++    clearFilterDebounce();
++    if (!selectedTable) return;
++
++    searchDebounceId = setTimeout(() => {
++      void loadRows(1);
++      searchDebounceId = null;
++    }, 300);
++  }
++
++  function handleSearchInput(event: Event) {
++    searchTerm = (event.currentTarget as HTMLInputElement).value;
++    scheduleSearchReload();
++  }
++
++  function handleSearchClear() {
++    clearFilterDebounce();
++    resetSearchState();
++    if (!selectedTable) {
++      return;
++    }
++
++    void loadRows(1, sortState, filters, '');
++  }
++
++  function handleToggleColumnVisibility(columnName: string, visible: boolean) {
++    if (!selectedTable) return;
++
++    const nextVisibility = normalizeColumnVisibility(columns, {
++      ...columnVisibility,
++      [columnName]: visible,
++    });
++    columnVisibility = nextVisibility;
++    persistColumnVisibility(selectedTable, columns, nextVisibility);
++  }
++
++  function handleShowAllColumns() {
++    if (!selectedTable) return;
++
++    const nextVisibility = normalizeColumnVisibility(
++      columns,
++      Object.fromEntries(columns.map((column) => [column.name, true])) as Record<string, boolean>
++    );
++    columnVisibility = nextVisibility;
++    persistColumnVisibility(selectedTable, columns, nextVisibility);
++  }
++
+   function exportCsv() {
+     if (!selectedTable) return;
++
+     const params = buildRowsParams(1);
+     const searchParams = new URLSearchParams();
+     if (params.sort_column) searchParams.set('sort_column', params.sort_column);
+     if (params.sort_direction) searchParams.set('sort_direction', params.sort_direction);
++    if (params.search) searchParams.set('search', params.search);
+     if (params.filters) {
+       for (const [col, val] of Object.entries(params.filters)) {
+         searchParams.set(`filter.${col}`, val);
+       }
+     }
+     const qs = searchParams.toString();
+-    window.open(`/api/export/${encodeURIComponent(selectedTable)}/csv${qs ? `?${qs}` : ''}`, '_blank');
++    window.open(
++      `/api/export/${encodeURIComponent(selectedTable)}/csv${qs ? `?${qs}` : ''}`,
++      '_blank'
++    );
+   }
+ </script>
+ 
+@@ -264,12 +472,53 @@
+         <TableList {tables} {selectedTable} onSelect={selectTable} />
+       {/if}
+     </Sidebar>
++    <Toolbar
++      sortState={sortState}
++      sortDescription={sortLabel}
++      filtersVisible={filtersVisible}
++      activeFilterCount={activeFilterCount}
++      searchActive={searchActive}
++      columnsOpen={columnsOpen}
++      columns={columns}
++      columnVisibility={columnVisibility}
++      hiddenColumnCount={hiddenColumnCount}
++      onToggleSearch={toggleSearch}
++      onToggleFilters={toggleFilters}
++      onToggleColumns={toggleColumns}
++      onToggleColumnVisibility={handleToggleColumnVisibility}
++      onShowAllColumns={handleShowAllColumns}
++      onCloseColumns={closeColumns}
++      onExport={exportCsv}
++    />
+     <main class="main">
+-      <Toolbar
+-        tableName={displayConfig?.tables[selectedTable]?.display_name ?? selectedTable}
+-        rowCount={queryResult?.total_rows ?? 0}
+-        onExport={exportCsv}
+-      />
++      <div class="table-panel">
++        <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
++        {#if searchVisible}
++          <div class="search-panel" class:active={searchActive}>
++            <div class="search-box">
++              <Search size={14} />
++              <input
++                bind:this={searchInputEl}
++                type="search"
++                class="search-input"
++                class:has-value={searchQuery.length > 0}
++                placeholder="Search all text columns..."
++                value={searchTerm}
++                oninput={handleSearchInput}
++                aria-label="Search rows"
++              />
++              <button
++                type="button"
++                class="clear-search"
++                aria-label="Clear search"
++                onclick={handleSearchClear}
++              >
++                <X size={14} />
++              </button>
++            </div>
++          </div>
++        {/if}
++      </div>
+       {#if tableError}
+         <div class="table-error-banner">
+           <span>{tableError}</span>
+@@ -277,16 +526,9 @@
+         </div>
+       {/if}
+       <div class="grid-area">
+-        <ToolStrip
+-          {sortState}
+-          sortDescription={sortLabel}
+-          filtersVisible={filtersVisible}
+-          activeFilterCount={activeFilterCount}
+-          onToggleFilters={toggleFilters}
+-        />
+         <div class="grid-shell" class:loading-overlay={tableLoading}>
+           <DataGrid
+-            {columns}
++            columns={visibleColumns}
+             rows={queryResult?.rows ?? []}
+             {sortState}
+             {filters}
+@@ -321,6 +563,7 @@
+     width: 100vw;
+     overflow: hidden;
+   }
++
+   .main {
+     flex: 1;
+     display: flex;
+@@ -328,25 +571,109 @@
+     min-width: 0;
+     min-height: 0;
+   }
++
++  .table-panel {
++    display: flex;
++    flex-direction: column;
++    gap: var(--sk-space-sm);
++    padding: var(--sk-space-lg) var(--sk-space-2xl) 0;
++  }
++
++  .search-panel {
++    display: flex;
++    align-items: center;
++    min-height: 0;
++    transition: opacity 0.18s ease, transform 0.18s ease;
++  }
++
++  .search-panel.active {
++    transform: translateY(0);
++  }
++
++  .search-box {
++    display: flex;
++    align-items: center;
++    gap: var(--sk-space-sm);
++    width: min(520px, 100%);
++    padding: var(--sk-space-xs) var(--sk-space-md);
++    border: 1px solid var(--sk-border-light);
++    border-radius: var(--sk-radius-md);
++    background: var(--sk-glass-input);
++    backdrop-filter: var(--sk-glass-input-blur);
++    -webkit-backdrop-filter: var(--sk-glass-input-blur);
++    color: var(--sk-muted);
++    box-shadow: var(--sk-shadow-card);
++  }
++
++  .search-panel.active .search-box {
++    border-color: rgba(0, 169, 165, 0.32);
++    box-shadow: var(--sk-shadow-card), var(--sk-shadow-accent);
++    color: var(--sk-accent);
++  }
++
++  .search-input {
++    flex: 1;
++    border: none;
++    outline: none;
++    background: none;
++    font-family: var(--sk-font-ui);
++    font-size: var(--sk-font-size-body);
++    color: var(--sk-text);
++    min-width: 0;
++  }
++
++  .search-input::placeholder {
++    color: var(--sk-muted);
++  }
++
++  .search-input::-webkit-search-cancel-button,
++  .search-input::-webkit-search-decoration {
++    -webkit-appearance: none;
++    appearance: none;
++  }
++
++  .clear-search {
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    width: 24px;
++    height: 24px;
++    border: 1px solid var(--sk-border-light);
++    border-radius: var(--sk-radius-sm);
++    background: var(--sk-glass-button);
++    backdrop-filter: var(--sk-glass-button-blur);
++    -webkit-backdrop-filter: var(--sk-glass-button-blur);
++    color: var(--sk-muted);
++    cursor: pointer;
++    flex-shrink: 0;
++  }
++
++  .clear-search:hover {
++    color: var(--sk-text);
++    border-color: rgba(0, 169, 165, 0.24);
++  }
++
+   .grid-area {
+     flex: 1;
+     min-height: 0;
+     display: flex;
+-    gap: var(--sk-space-md);
+     padding: var(--sk-space-lg) var(--sk-space-2xl);
+     overflow: hidden;
+     align-items: stretch;
+   }
++
+   .grid-shell {
+     flex: 1;
+     min-width: 0;
+     min-height: 0;
+     position: relative;
+   }
++
+   .loading-overlay {
+     opacity: 0.5;
+     pointer-events: none;
+   }
++
+   .grid-loading {
+     position: absolute;
+     inset: 0;
+@@ -355,6 +682,7 @@
+     justify-content: center;
+     background: rgba(245, 240, 235, 0.28);
+   }
++
+   .loading-state {
+     flex: 1;
+     display: flex;
+@@ -366,6 +694,7 @@
+     font-family: var(--sk-font-ui);
+     font-size: var(--sk-font-size-body);
+   }
++
+   .loading-spinner {
+     width: 24px;
+     height: 24px;
+@@ -374,9 +703,13 @@
+     border-radius: 50%;
+     animation: spin 0.6s linear infinite;
+   }
++
+   @keyframes spin {
+-    to { transform: rotate(360deg); }
++    to {
++      transform: rotate(360deg);
++    }
+   }
++
+   .table-error-banner {
+     display: flex;
+     align-items: center;
+@@ -388,6 +721,7 @@
+     color: var(--sk-text);
+     font-size: var(--sk-font-size-body);
+   }
++
+   .dismiss-btn {
+     background: none;
+     border: 1px solid rgba(220, 38, 38, 0.4);
+@@ -398,6 +732,7 @@
+     color: var(--sk-text);
+     cursor: pointer;
+   }
++
+   .error-state {
+     flex: 1;
+     display: flex;
+@@ -405,6 +740,7 @@
+     justify-content: center;
+     padding: var(--sk-space-2xl);
+   }
++
+   .error-card {
+     background: var(--sk-glass-grid);
+     backdrop-filter: var(--sk-glass-grid-blur);
+@@ -416,16 +752,19 @@
+     text-align: center;
+     max-width: 420px;
+   }
++
+   .error-card h2 {
+     font-size: var(--sk-font-size-xl);
+     color: var(--sk-text);
+     margin-bottom: var(--sk-space-sm);
+   }
++
+   .error-card p {
+     font-size: var(--sk-font-size-body);
+     color: var(--sk-muted);
+     margin-bottom: var(--sk-space-lg);
+   }
++
+   .retry-btn {
+     background: var(--sk-accent);
+     color: white;
+diff --git a/frontend/src/components/ColumnDropdown.svelte b/frontend/src/components/ColumnDropdown.svelte
+new file mode 100644
+index 0000000..3da8dc2
+--- /dev/null
++++ b/frontend/src/components/ColumnDropdown.svelte
+@@ -0,0 +1,171 @@
++<script lang="ts">
++  import { Check, Square } from 'lucide-svelte';
++  import type { ColumnInfo } from '../lib/types';
++
++  let {
++    columns = [],
++    columnVisibility = {},
++    onToggleColumnVisibility,
++    onShowAllColumns,
++  }: {
++    columns: ColumnInfo[];
++    columnVisibility: Record<string, boolean>;
++    onToggleColumnVisibility?: (columnName: string, visible: boolean) => void;
++    onShowAllColumns?: () => void;
++  } = $props();
++
++  let panel: HTMLDivElement | null = null;
++
++  function isVisible(column: ColumnInfo): boolean {
++    return columnVisibility[column.name] !== false;
++  }
++
++  function toggleColumn(column: ColumnInfo) {
++    onToggleColumnVisibility?.(column.name, !isVisible(column));
++  }
++
++  let hiddenCount = $derived(
++    columns.filter((column) => !isVisible(column)).length
++  );
++</script>
++
++<div class="dropdown" bind:this={panel} role="dialog" aria-label="Column visibility">
++  <div class="dropdown-header">
++    <div>
++      <div class="title">Columns</div>
++      <div class="subtitle">
++        {hiddenCount > 0 ? `${hiddenCount} hidden` : 'All visible'}
++      </div>
++    </div>
++
++    <button type="button" class="show-all" onclick={() => onShowAllColumns?.()}>
++      Show All
++    </button>
++  </div>
++
++  <div class="list">
++    {#each columns as column}
++      <button
++        type="button"
++        aria-pressed={isVisible(column)}
++        class="column-row"
++        class:hidden={!isVisible(column)}
++        onclick={() => toggleColumn(column)}
++      >
++        <span class="checkbox" aria-hidden="true">
++          {#if isVisible(column)}
++            <Check size={12} />
++          {:else}
++            <Square size={12} />
++          {/if}
++        </span>
++        <span class="column-label">{column.display_name || column.name}</span>
++      </button>
++    {/each}
++  </div>
++</div>
++
++<style>
++  .dropdown {
++    position: absolute;
++    top: 0;
++    left: calc(100% + var(--sk-space-md));
++    z-index: 20;
++    width: 240px;
++    max-height: min(70vh, 560px);
++    display: flex;
++    flex-direction: column;
++    border: 1px solid var(--sk-border-light);
++    border-radius: var(--sk-radius-lg);
++    background: rgba(255, 255, 255, 0.92);
++    backdrop-filter: blur(14px);
++    -webkit-backdrop-filter: blur(14px);
++    box-shadow: var(--sk-shadow-card);
++    overflow: hidden;
++  }
++
++  .dropdown-header {
++    display: flex;
++    align-items: flex-start;
++    justify-content: space-between;
++    gap: var(--sk-space-sm);
++    padding: var(--sk-space-md);
++    border-bottom: 1px solid var(--sk-border-light);
++  }
++
++  .title {
++    font-size: var(--sk-font-size-md);
++    font-weight: 600;
++    color: var(--sk-text);
++  }
++
++  .subtitle {
++    margin-top: 2px;
++    font-size: var(--sk-font-size-sm);
++    color: var(--sk-secondary);
++  }
++
++  .show-all {
++    border: 1px solid var(--sk-border-light);
++    border-radius: var(--sk-radius-sm);
++    background: var(--sk-glass-button);
++    color: var(--sk-secondary-strong);
++    font-family: var(--sk-font-ui);
++    font-size: var(--sk-font-size-sm);
++    padding: 4px 8px;
++    cursor: pointer;
++    flex-shrink: 0;
++  }
++
++  .show-all:hover {
++    color: var(--sk-text);
++    border-color: rgba(0, 169, 165, 0.28);
++  }
++
++  .list {
++    padding: var(--sk-space-xs);
++    overflow-y: auto;
++  }
++
++  .column-row {
++    width: 100%;
++    display: flex;
++    align-items: center;
++    gap: var(--sk-space-sm);
++    padding: 8px 10px;
++    border: none;
++    border-radius: var(--sk-radius-sm);
++    background: transparent;
++    color: var(--sk-text);
++    text-align: left;
++    font-family: var(--sk-font-ui);
++    font-size: var(--sk-font-size-body);
++    cursor: pointer;
++  }
++
++  .column-row:hover {
++    background: rgba(0, 169, 165, 0.08);
++  }
++
++  .column-row.hidden .column-label {
++    text-decoration: line-through;
++    color: var(--sk-muted);
++  }
++
++  .checkbox {
++    width: 14px;
++    height: 14px;
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    flex-shrink: 0;
++    color: var(--sk-accent);
++  }
++
++  .column-label {
++    min-width: 0;
++    overflow: hidden;
++    text-overflow: ellipsis;
++    white-space: nowrap;
++  }
++</style>
+diff --git a/frontend/src/components/TableHeader.svelte b/frontend/src/components/TableHeader.svelte
+new file mode 100644
+index 0000000..3c0f987
+--- /dev/null
++++ b/frontend/src/components/TableHeader.svelte
+@@ -0,0 +1,53 @@
++<script lang="ts">
++  let {
++    tableName = '',
++    rowCount = 0,
++  }: {
++    tableName: string;
++    rowCount: number;
++  } = $props();
++</script>
++
++<header class="table-header">
++  <div class="table-info">
++    <span class="table-name">{tableName}</span>
++    <span class="row-count">{rowCount.toLocaleString()} rows</span>
++  </div>
++</header>
++
++<style>
++  .table-header {
++    display: flex;
++    align-items: center;
++    justify-content: space-between;
++    gap: var(--sk-space-md);
++    padding: 0 var(--sk-space-2xl);
++    min-height: 52px;
++    border-bottom: 1px solid var(--sk-border-light);
++    background: rgba(255, 255, 255, 0.18);
++    backdrop-filter: blur(10px);
++    -webkit-backdrop-filter: blur(10px);
++  }
++
++  .table-info {
++    display: flex;
++    align-items: baseline;
++    gap: var(--sk-space-sm);
++    min-width: 0;
++  }
++
++  .table-name {
++    font-size: var(--sk-font-size-xl);
++    font-weight: 600;
++    color: var(--sk-text);
++    white-space: nowrap;
++    overflow: hidden;
++    text-overflow: ellipsis;
++  }
++
++  .row-count {
++    font-size: var(--sk-font-size-sm);
++    color: var(--sk-secondary);
++    white-space: nowrap;
++  }
++</style>
+diff --git a/frontend/src/components/ToolStrip.svelte b/frontend/src/components/ToolStrip.svelte
+deleted file mode 100644
+index 524710e..0000000
+--- a/frontend/src/components/ToolStrip.svelte
++++ /dev/null
+@@ -1,192 +0,0 @@
+-<script lang="ts">
+-  import {
+-    ArrowUpDown,
+-    ChevronDown,
+-    ChevronUp,
+-    Download,
+-    Filter,
+-    LayoutGrid,
+-  } from 'lucide-svelte';
+-  import type { SortState } from '../lib/types';
+-
+-  let {
+-    sortState,
+-    sortDescription,
+-    filtersVisible = false,
+-    activeFilterCount = 0,
+-    onToggleFilters,
+-  }: {
+-    sortState: SortState;
+-    sortDescription?: string;
+-    filtersVisible?: boolean;
+-    activeFilterCount?: number;
+-    onToggleFilters?: () => void;
+-  } = $props();
+-
+-  let computedSortLabel = $derived.by(() => {
+-    if (sortDescription) {
+-      return sortDescription;
+-    }
+-
+-    if (!sortState.column || !sortState.direction) {
+-      return 'No active sort';
+-    }
+-
+-    return `${sortState.column} ${sortState.direction}`;
+-  });
+-</script>
+-
+-<aside class="tool-strip" aria-label="Data tools">
+-  <div class="tool-section">
+-    <button
+-      class="tool-button"
+-      class:active={filtersVisible || activeFilterCount > 0}
+-      aria-label="Toggle filters"
+-      title="Toggle filters"
+-      onclick={() => onToggleFilters?.()}
+-      type="button"
+-    >
+-      <span class="icon-stack">
+-        <Filter size={16} />
+-        {#if !filtersVisible && activeFilterCount > 0}
+-          <span class="badge">{activeFilterCount}</span>
+-        {/if}
+-      </span>
+-    </button>
+-
+-    <div class="tool-indicator" aria-label={computedSortLabel} title={computedSortLabel}>
+-      {#if sortState.direction === 'asc'}
+-        <ChevronUp size={16} />
+-      {:else if sortState.direction === 'desc'}
+-        <ChevronDown size={16} />
+-      {:else}
+-        <ArrowUpDown size={16} />
+-      {/if}
+-    </div>
+-  </div>
+-
+-  <div class="separator"></div>
+-
+-  <div class="tool-section tool-section-bottom">
+-    <button
+-      class="tool-button tool-button-disabled"
+-      disabled
+-      aria-label="Column visibility coming later"
+-      title="Column visibility coming later"
+-      type="button"
+-    >
+-      <LayoutGrid size={16} />
+-    </button>
+-
+-    <button
+-      class="tool-button tool-button-disabled"
+-      disabled
+-      aria-label="More export options coming soon"
+-      title="More export options coming soon"
+-      type="button"
+-    >
+-      <Download size={16} />
+-    </button>
+-  </div>
+-</aside>
+-
+-<style>
+-  .tool-strip {
+-    width: var(--sk-toolstrip-width);
+-    min-width: var(--sk-toolstrip-width);
+-    display: flex;
+-    flex-direction: column;
+-    align-items: center;
+-    gap: var(--sk-space-md);
+-    padding: var(--sk-space-md) 0;
+-    background: var(--sk-glass-sidebar);
+-    backdrop-filter: var(--sk-glass-sidebar-blur);
+-    -webkit-backdrop-filter: var(--sk-glass-sidebar-blur);
+-    border: 1px solid var(--sk-border-light);
+-    border-radius: var(--sk-radius-lg);
+-    box-shadow: var(--sk-shadow-card);
+-  }
+-
+-  .tool-section {
+-    display: flex;
+-    flex-direction: column;
+-    align-items: center;
+-    gap: var(--sk-space-sm);
+-    width: 100%;
+-  }
+-
+-  .tool-section-bottom {
+-    margin-top: auto;
+-  }
+-
+-  .separator {
+-    width: 20px;
+-    height: 1px;
+-    background: var(--sk-border);
+-  }
+-
+-  .tool-button,
+-  .tool-indicator {
+-    position: relative;
+-    display: inline-flex;
+-    align-items: center;
+-    justify-content: center;
+-    width: 32px;
+-    height: 32px;
+-    border: 1px solid var(--sk-border-light);
+-    border-radius: var(--sk-radius-md);
+-    background: var(--sk-glass-button);
+-    backdrop-filter: var(--sk-glass-button-blur);
+-    -webkit-backdrop-filter: var(--sk-glass-button-blur);
+-    color: var(--sk-muted);
+-  }
+-
+-  .tool-button {
+-    cursor: pointer;
+-  }
+-
+-  .tool-button:hover:not(:disabled),
+-  .tool-button.active {
+-    color: var(--sk-text);
+-    border-color: rgba(0, 169, 165, 0.3);
+-    box-shadow: var(--sk-shadow-accent);
+-  }
+-
+-  .tool-button.active {
+-    background: rgba(0, 169, 165, 0.14);
+-  }
+-
+-  .tool-button-disabled {
+-    cursor: not-allowed;
+-    opacity: 0.55;
+-  }
+-
+-  .tool-indicator {
+-    pointer-events: none;
+-  }
+-
+-  .icon-stack {
+-    position: relative;
+-    display: inline-flex;
+-    align-items: center;
+-    justify-content: center;
+-  }
+-
+-  .badge {
+-    position: absolute;
+-    top: -7px;
+-    right: -10px;
+-    min-width: 16px;
+-    height: 16px;
+-    padding: 0 4px;
+-    display: inline-flex;
+-    align-items: center;
+-    justify-content: center;
+-    border-radius: 999px;
+-    background: var(--sk-accent);
+-    color: white;
+-    font-size: var(--sk-font-size-xs);
+-    font-weight: 700;
+-    line-height: 1;
+-  }
+-</style>
+diff --git a/frontend/src/components/Toolbar.svelte b/frontend/src/components/Toolbar.svelte
+index f3df0a7..8cea1f6 100644
+--- a/frontend/src/components/Toolbar.svelte
++++ b/frontend/src/components/Toolbar.svelte
+@@ -1,149 +1,268 @@
+ <script lang="ts">
+-  import { Search, LayoutGrid, Download } from 'lucide-svelte';
++  import { onMount } from 'svelte';
++  import {
++    ArrowUpDown,
++    ChevronDown,
++    ChevronUp,
++    Download,
++    Filter,
++    LayoutGrid,
++    Search,
++  } from 'lucide-svelte';
++  import ColumnDropdown from './ColumnDropdown.svelte';
++  import type { ColumnInfo, SortState } from '../lib/types';
+ 
+   let {
+-    tableName = '',
+-    rowCount = 0,
++    sortState,
++    sortDescription,
++    filtersVisible = false,
++    activeFilterCount = 0,
++    searchActive = false,
++    columnsOpen = false,
++    columns = [],
++    columnVisibility = {},
++    hiddenColumnCount = 0,
++    onToggleSearch,
++    onToggleFilters,
++    onToggleColumns,
++    onToggleColumnVisibility,
++    onShowAllColumns,
++    onCloseColumns,
+     onExport,
+   }: {
+-    tableName: string;
+-    rowCount: number;
++    sortState: SortState;
++    sortDescription?: string;
++    filtersVisible?: boolean;
++    activeFilterCount?: number;
++    searchActive?: boolean;
++    columnsOpen?: boolean;
++    columns: ColumnInfo[];
++    columnVisibility: Record<string, boolean>;
++    hiddenColumnCount?: number;
++    onToggleSearch?: () => void;
++    onToggleFilters?: () => void;
++    onToggleColumns?: () => void;
++    onToggleColumnVisibility?: (columnName: string, visible: boolean) => void;
++    onShowAllColumns?: () => void;
++    onCloseColumns?: () => void;
+     onExport?: () => void;
+   } = $props();
++
++  let sortLabel = $derived.by(() => {
++    if (sortDescription) return sortDescription;
++    if (!sortState.column || !sortState.direction) return 'No active sort';
++    return `${sortState.column} ${sortState.direction}`;
++  });
++
++  let searchTitle = $derived(searchActive ? 'Close search (Ctrl+K)' : 'Open search (Ctrl+K)');
++  let filterTitle = $derived(
++    filtersVisible || activeFilterCount > 0
++      ? `Filters active (${activeFilterCount}) (Ctrl+F)`
++      : 'Toggle filters (Ctrl+F)'
++  );
++  let columnsTitle = $derived(
++    columnsOpen
++      ? `Close columns panel${hiddenColumnCount > 0 ? ` - ${hiddenColumnCount} hidden` : ''}`
++      : `Manage columns${hiddenColumnCount > 0 ? ` - ${hiddenColumnCount} hidden` : ''}`
++  );
++
++  let shell: HTMLDivElement | null = null;
++
++  function handleOutsidePointerDown(event: PointerEvent) {
++    const target = event.target as Node | null;
++    if (!columnsOpen || !shell || !target || shell.contains(target)) return;
++    onCloseColumns?.();
++  }
++
++  onMount(() => {
++    window.addEventListener('pointerdown', handleOutsidePointerDown, true);
++    return () => window.removeEventListener('pointerdown', handleOutsidePointerDown, true);
++  });
+ </script>
+ 
+-<div class="toolbar">
+-  <div class="table-info">
+-    <span class="table-name">{tableName}</span>
+-    <span class="row-count">{rowCount.toLocaleString()} rows</span>
+-  </div>
+-
+-  <div class="actions">
+-    <div class="search-wrapper">
+-      <Search size={14} />
+-      <input
+-        type="text"
+-        placeholder="Search all columns..."
+-        disabled
+-        class="search-input"
+-      />
++<div class="toolbar-shell" bind:this={shell}>
++  <aside class="toolbar" aria-label="Data tools">
++    <button
++      type="button"
++      class="tool-button"
++      class:active={searchActive}
++      aria-label="Search"
++      title={searchTitle}
++      onclick={() => onToggleSearch?.()}
++    >
++      <Search size={16} />
++    </button>
++
++    <button
++      type="button"
++      class="tool-button"
++      class:active={filtersVisible || activeFilterCount > 0}
++      aria-label="Toggle filters"
++      title={filterTitle}
++      onclick={() => onToggleFilters?.()}
++    >
++      <span class="icon-stack">
++        <Filter size={16} />
++        {#if activeFilterCount > 0}
++          <span class="badge">{activeFilterCount}</span>
++        {/if}
++      </span>
++    </button>
++
++    <div class="tool-indicator" aria-label={sortLabel} title={sortLabel}>
++      {#if sortState.direction === 'asc'}
++        <ChevronUp size={16} />
++      {:else if sortState.direction === 'desc'}
++        <ChevronDown size={16} />
++      {:else}
++        <ArrowUpDown size={16} />
++      {/if}
+     </div>
+ 
+-    <button class="btn btn-default" disabled>
+-      <LayoutGrid size={14} />
+-      <span>Columns</span>
++    <div class="separator" aria-hidden="true"></div>
++
++    <button
++      type="button"
++      class="tool-button"
++      class:active={columnsOpen}
++      aria-expanded={columnsOpen}
++      aria-haspopup="dialog"
++      aria-label="Manage columns"
++      title={columnsTitle}
++      onclick={() => onToggleColumns?.()}
++    >
++      <span class="icon-stack">
++        <LayoutGrid size={16} />
++        {#if hiddenColumnCount > 0}
++          <span class="badge badge--neutral">{hiddenColumnCount}</span>
++        {/if}
++      </span>
+     </button>
+ 
+     <button
+-      class="btn btn-accent"
+-      disabled={!onExport || !tableName}
++      type="button"
++      class="tool-button tool-button--export"
++      aria-label="Export CSV"
++      title="Export CSV"
+       onclick={() => onExport?.()}
+     >
+-      <Download size={14} />
+-      <span>Export</span>
++      <Download size={16} />
+     </button>
+-  </div>
++  </aside>
++
++  {#if columnsOpen}
++    <ColumnDropdown
++      {columns}
++      {columnVisibility}
++      onToggleColumnVisibility={onToggleColumnVisibility}
++      onShowAllColumns={onShowAllColumns}
++      onClose={onCloseColumns}
++    />
++  {/if}
+ </div>
+ 
+ <style>
+-  .toolbar {
++  .toolbar-shell {
++    position: relative;
++    flex: 0 0 auto;
++    align-self: stretch;
+     display: flex;
+-    align-items: center;
+-    justify-content: space-between;
+-    padding: var(--sk-space-md) var(--sk-space-2xl);
+-    background: var(--sk-glass-toolbar);
+-    backdrop-filter: var(--sk-glass-toolbar-blur);
+-    -webkit-backdrop-filter: var(--sk-glass-toolbar-blur);
+-    border-bottom: 1px solid var(--sk-border-light);
+-    gap: var(--sk-space-lg);
+-  }
+-
+-  .table-info {
+-    display: flex;
+-    align-items: baseline;
+-    gap: var(--sk-space-sm);
+-    min-width: 0;
+-  }
+-
+-  .table-name {
+-    font-size: var(--sk-font-size-xl);
+-    font-weight: 600;
+-    color: var(--sk-text);
+-    white-space: nowrap;
++    align-items: stretch;
+   }
+ 
+-  .row-count {
+-    font-size: 11px;
+-    color: var(--sk-secondary);
+-    white-space: nowrap;
+-  }
+-
+-  .actions {
++  .toolbar {
++    position: relative;
++    z-index: 2;
++    width: var(--sk-toolstrip-width);
++    min-width: var(--sk-toolstrip-width);
+     display: flex;
++    flex-direction: column;
+     align-items: center;
+     gap: var(--sk-space-sm);
++    padding: var(--sk-space-md) 0;
++    background: var(--sk-glass-sidebar);
++    backdrop-filter: var(--sk-glass-sidebar-blur);
++    -webkit-backdrop-filter: var(--sk-glass-sidebar-blur);
++    border: 1px solid var(--sk-border-light);
++    border-radius: var(--sk-radius-lg);
++    box-shadow: var(--sk-shadow-card);
+   }
+ 
+-  .search-wrapper {
+-    display: flex;
++  .tool-button,
++  .tool-indicator {
++    position: relative;
++    display: inline-flex;
+     align-items: center;
+-    gap: var(--sk-space-sm);
+-    padding: var(--sk-space-xs) var(--sk-space-md);
+-    background: var(--sk-glass-input);
+-    backdrop-filter: var(--sk-glass-input-blur);
+-    -webkit-backdrop-filter: var(--sk-glass-input-blur);
++    justify-content: center;
++    width: 32px;
++    height: 32px;
+     border: 1px solid var(--sk-border-light);
+     border-radius: var(--sk-radius-md);
++    background: var(--sk-glass-button);
++    backdrop-filter: var(--sk-glass-button-blur);
++    -webkit-backdrop-filter: var(--sk-glass-button-blur);
+     color: var(--sk-muted);
+   }
+ 
+-  .search-input {
+-    border: none;
+-    background: none;
+-    outline: none;
+-    font-family: var(--sk-font-ui);
+-    font-size: var(--sk-font-size-body);
++  .tool-button {
++    cursor: pointer;
++  }
++
++  .tool-button:hover,
++  .tool-button.active {
+     color: var(--sk-text);
+-    width: 160px;
++    border-color: rgba(0, 169, 165, 0.3);
++    box-shadow: var(--sk-shadow-accent);
+   }
+ 
+-  .search-input::placeholder {
+-    color: var(--sk-muted);
++  .tool-button.active {
++    background: rgba(0, 169, 165, 0.14);
+   }
+ 
+-  .search-input:disabled {
+-    cursor: not-allowed;
+-    opacity: 0.6;
++  .tool-button--export {
++    margin-top: auto;
+   }
+ 
+-  .btn {
+-    display: flex;
+-    align-items: center;
+-    gap: var(--sk-space-xs);
+-    padding: var(--sk-space-xs) var(--sk-space-md);
+-    border: 1px solid var(--sk-border-light);
+-    border-radius: var(--sk-radius-md);
+-    font-family: var(--sk-font-ui);
+-    font-size: var(--sk-font-size-body);
+-    cursor: pointer;
+-    white-space: nowrap;
++  .tool-indicator {
++    pointer-events: none;
++    color: var(--sk-secondary-strong);
++    background: rgba(255, 255, 255, 0.35);
+   }
+ 
+-  .btn:disabled {
+-    cursor: not-allowed;
+-    opacity: 0.6;
++  .separator {
++    width: 18px;
++    height: 1px;
++    background: var(--sk-border);
++    margin: var(--sk-space-xs) 0;
+   }
+ 
+-  .btn-default {
+-    background: var(--sk-glass-button);
+-    backdrop-filter: var(--sk-glass-button-blur);
+-    -webkit-backdrop-filter: var(--sk-glass-button-blur);
+-    color: var(--sk-text);
++  .icon-stack {
++    position: relative;
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
+   }
+ 
+-  .btn-accent {
++  .badge {
++    position: absolute;
++    top: -7px;
++    right: -10px;
++    min-width: 16px;
++    height: 16px;
++    padding: 0 4px;
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    border-radius: 999px;
+     background: var(--sk-accent);
+     color: white;
+-    border-color: transparent;
++    font-size: var(--sk-font-size-xs);
++    font-weight: 700;
++    line-height: 1;
+   }
++
++  .badge--neutral {
++    min-width: 18px;
++  }
++
+ </style>
+diff --git a/frontend/src/lib/constants.ts b/frontend/src/lib/constants.ts
+index c0ea52f..a045527 100644
+--- a/frontend/src/lib/constants.ts
++++ b/frontend/src/lib/constants.ts
+@@ -1,2 +1,5 @@
+ /** localStorage key for sidebar collapsed state — used by App.svelte (read) and Sidebar.svelte (write). */
+ export const SIDEBAR_COLLAPSED_KEY = 'sk-sidebar-collapsed';
++
++/** localStorage key prefix for per-table column visibility state. */
++export const COLUMN_VISIBILITY_KEY_PREFIX = 'sk-column-visibility-';

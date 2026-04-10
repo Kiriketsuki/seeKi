@@ -6,7 +6,7 @@
   "date": "2026-04-10",
   "verdict": "CONDITIONAL",
   "rounds": 7,
-  "session": 7,
+  "session": 8,
   "findings": [
     {
       "id": 1,
@@ -168,8 +168,30 @@
       "fix": "Added searchVisible?: boolean = false to Toolbar props; passed searchVisible={searchVisible} from App.svelte; removed dead ::-webkit-search-cancel-button CSS (input is type=text not type=search)",
       "status": "fixed",
       "session": 7
+    },
+    {
+      "id": 15,
+      "description": "Search button aria-label ignored searchActive when panel is closed — AT users could not tell rows were filtered; only 'Open search (Ctrl+K)' was announced regardless of active-filter state",
+      "file": "frontend/src/components/Toolbar.svelte:61",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Three-way derived label: 'Search active — open search bar (Ctrl+K)' when !searchVisible && searchActive; searchActive prop already present at L:20",
+      "status": "fixed",
+      "session": 8
+    },
+    {
+      "id": 16,
+      "description": "Dead CSS: .search-panel transition and .search-panel.active transform never fire — {#if} removes DOM node before transitions can play; translateY(0) was CSS default, opacity never changed",
+      "file": "frontend/src/App.svelte:585",
+      "type": "dead-code",
+      "severity": "low",
+      "verified": true,
+      "fix": "Removed .search-panel transition and .search-panel.active { transform: translateY(0) } rules",
+      "status": "fixed",
+      "session": 8
     }
   ],
-  "merge_conditions": "All 14 findings fixed across 7 sessions. svelte-check passes 0 errors 0 warnings.",
+  "merge_conditions": "All 16 findings fixed across 8 sessions. svelte-check passes 0 errors 0 warnings.",
   "test_command": "cd frontend && npx svelte-check"
 }
