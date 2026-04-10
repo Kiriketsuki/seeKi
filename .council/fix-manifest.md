@@ -1,59 +1,97 @@
-# Fix Manifest — PR #29: epic: Data Grid & Table Navigation (Session 8)
+# Fix Manifest — PR #30: epic: Toolbar, Column Management & Export
 
-Council verdict: **FOR** | 2026-04-10 | Session 8: 4 findings (1 dismissed, 3 tracked, 1 noted) | 1v1 no-questioner | 2 rounds
+Council verdict: CONDITIONAL | 2026-04-10 | 10 findings (10 verified) | All fixed (4 sessions)
 
-Prior sessions: Sessions 1-7 produced 16 findings, all FIXED. Session 8 is a fresh review of the final code state.
+---
 
-## No Pre-Merge Fixes Required
+## Session 1 Fixes (previously applied)
 
-Session 8 found no pre-merge blockers. All findings are post-merge follow-ups.
+### 1. ARIA mismatch — columns dropdown missing role="dialog"
+- **File**: `frontend/src/components/ColumnDropdown.svelte`
+- **Line**: 30
+- **Type**: a11y / **Severity**: high
+- **Fix**: Added `role="dialog"` and `aria-label="Column visibility"` to `.dropdown` div
+- **Citations**: `Toolbar.svelte:128` (aria-haspopup="dialog"), `ColumnDropdown.svelte:30`
 
-## Session 8 Findings
+### 2. Double horizontal padding on TableHeader
+- **File**: `frontend/src/components/TableHeader.svelte`
+- **Line**: 24
+- **Type**: layout / **Severity**: high
+- **Fix**: Changed `.table-header` `padding: 0 var(--sk-space-2xl)` → `padding: 0`
+- **Citations**: `TableHeader.svelte:24`, `App.svelte:576`
 
-### Dismissed: `get_columns_bulk` PK subquery missing `table_schema`
-- **File**: `src/db/postgres.rs:134-140`
-- **Reason**: ARBITER verified both `get_columns` and `get_columns_bulk` exist on `main` since PR #27 (Epic 1) with identical missing `table_schema` pattern. Pre-existing, not introduced by this PR. CRITIC withdrew.
+### 3. Export button always enabled with no table selected
+- **File**: `frontend/src/components/Toolbar.svelte`
+- **Line**: 141
+- **Type**: ux / **Severity**: medium
+- **Fix**: Added `hasTable?: boolean` prop; `disabled={!hasTable}` on export button
+- **Citations**: `Toolbar.svelte:141`, `App.svelte:486`
 
-### Tracked 1: `formatCellValue` has zero unit tests (medium)
-- **File**: `frontend/src/lib/data-grid.ts:100-174`
-- **Type**: improvement
-- **Fix**: Add `data-grid.test.ts` covering null, boolean, date (T00:00:00 suffix), datetime (space→T), numeric passthrough, NaN/Infinity guard.
+### 4. Ctrl+K blocked when search input focused
+- **File**: `frontend/src/App.svelte`
+- **Line**: 110
+- **Type**: ux / **Severity**: medium
+- **Fix**: Added `isSearchField` guard so Ctrl+K works when focus is in the search input
+- **Citations**: `App.svelte:110-111`
 
-### Tracked 2: Content-Disposition non-ASCII filename (low)
-- **File**: `src/api/mod.rs:229-238`
-- **Type**: bug (cosmetic)
-- **Fix**: Add RFC 6266 `filename*=UTF-8''<percent-encoded>` for non-ASCII display names, or strip non-ASCII in sanitizer.
+### 5. "Show All" always enabled when all columns visible
+- **File**: `frontend/src/components/ColumnDropdown.svelte`
+- **Line**: 39
+- **Type**: ux / **Severity**: low
+- **Fix**: Added `disabled={hiddenCount === 0}` to Show All button
+- **Citations**: `ColumnDropdown.svelte:39`
 
-### Tracked 3: Missing `type="button"` (nit)
-- **Files**: `frontend/src/components/TableList.svelte:43`, `frontend/src/components/StatusBar.svelte:33,41`
-- **Fix**: Add `type="button"` to all three `<button>` elements.
+---
 
-### Noted: ToolStrip `role="status"` live region noisiness
-- **File**: `frontend/src/components/ToolStrip.svelte:57`
-- **Type**: accessibility refinement
-- **Fix**: Consider replacing `role="status"` with `aria-label` on a non-live container to avoid announcing every sort change.
+## Session 3 Fixes (this session)
 
-## Cumulative History (sessions 1-7)
+### 6. Static aria-label on filter/columns buttons hides dynamic badge count from AT
+- **File**: `frontend/src/components/Toolbar.svelte`
+- **Lines**: 103, 131
+- **Type**: a11y / **Severity**: medium
+- **Fix**: `aria-label="Toggle filters"` → `aria-label={filterTitle}`; `aria-label="Manage columns"` → `aria-label={columnsTitle}`. Both derived values already existed in the component.
+- **Citations**: `Toolbar.svelte:103`, `Toolbar.svelte:131`, `Toolbar.svelte:60-69`
 
-All 16 findings from sessions 1-7 are FIXED:
-- Session 1: Date off-by-one, timestamp year omission, ToolStrip ARIA role
-- Session 2: Safari Invalid Date, CSV export ignores filters/sort
-- Session 3: numeric/decimal precision loss via Number() cast
-- Session 4: real (float4) OID mismatch, missing aria-sort on headers
-- Session 5: Boolean filter mapping, numeric display classification
-- Session 6: ToolStrip export aria-label misinformation, dead 'decimal' entry, Content-Disposition backslash
-- Session 7: Search ILIKE identifier validation, bigint > 2^53 serialization, dead currentPage arg, + 4 tracked fixes
+### 7. type="search" + custom X button renders two clear controls on Chrome/Safari
+- **File**: `frontend/src/App.svelte`
+- **Line**: 505
+- **Type**: ux / **Severity**: medium
+- **Fix**: Changed `type="search"` → `type="text"`; custom `<button class="clear-search">` is now the sole clear mechanism
+- **Citations**: `App.svelte:504`, `App.svelte:512-519`
 
-## Dismissed Across All Sessions
-- `on:beforesorting` Svelte 5 syntax — correct for Svelte 4 dispatcher
-- Boolean coercion misses 1/yes/on — backend sends JSON booleans only
-- ILIKE performance on 500K rows — pre-existing design choice
-- sortStateToConfig returns undefined — sort indicators driven by per-column `order` prop
-- get_columns_bulk schema filter — pre-existing on main since Epic 1
+### 8. Export button disabled title gives no context
+- **File**: `frontend/src/components/Toolbar.svelte`
+- **Line**: 147
+- **Type**: ux / **Severity**: low
+- **Fix**: `title="Export CSV"` → `title={hasTable ? 'Export CSV' : 'Select a table to export'}`; `aria-label` likewise derived
+- **Citations**: `Toolbar.svelte:143-150`
+
+---
+
+## Session 4 Fixes (this session)
+
+### 9. role="dialog" on ColumnDropdown without dialog keyboard contract
+- **File**: `frontend/src/components/ColumnDropdown.svelte`
+- **Line**: 30
+- **Type**: a11y / **Severity**: high
+- **Fix**: Replaced `role="dialog"` with `role="region"` — matches the Disclosure Button pattern already established by `aria-expanded` on the trigger; `aria-label="Column visibility"` transfers correctly; no focus management required
+- **Citations**: `ColumnDropdown.svelte:30`, `Toolbar.svelte:128-133`
+
+### 10. Search button has static aria-label while filter/columns were updated to dynamic in session 3
+- **File**: `frontend/src/components/Toolbar.svelte`
+- **Line**: 91
+- **Type**: a11y / **Severity**: medium
+- **Fix**: `aria-label="Search"` → `aria-label={searchTitle}`; `searchTitle` derived prop ("Open search (Ctrl+K)" / "Close search (Ctrl+K)") already existed at `Toolbar.svelte:59`
+- **Citations**: `Toolbar.svelte:91`, `Toolbar.svelte:59`
+
+---
+
+## Conditions
+All 10 findings fixed. `svelte-check` passes: 0 errors, 0 warnings.
 
 ## Test Command
-```bash
-cd frontend && npm run check && cd .. && cargo test
+```
+cd frontend && npx svelte-check
 ```
 
 ## Raw Data

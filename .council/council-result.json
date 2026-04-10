@@ -1,358 +1,233 @@
 {
-  "motion": "Merge PR #29: epic: Data Grid & Table Navigation",
-  "verdict": "FOR",
-  "date": "2026-04-09",
-  "council": {
-    "advocates": 1,
-    "critics": 1,
-    "questioner": 0,
-    "rounds": 2,
-    "mode": "1v1-no-questioner",
-    "session": 8,
-    "note": "Session 8: 1v1 no-questioner. Fresh review of current code state. 1 finding dismissed (pre-existing get_columns_bulk schema filter from PR #27). 3 new post-merge follow-ups tracked: formatCellValue test gap, Content-Disposition non-ASCII filenames, missing type=button. 1 noted: ToolStrip role=status live region noisiness. No pre-merge blockers."
-  },
+  "pr": 30,
+  "title": "epic: Toolbar, Column Management & Export",
+  "motion": "Merge PR #30: epic: Toolbar, Column Management & Export",
+  "format": "1v1, no questioner",
+  "date": "2026-04-10",
+  "verdict": "CONDITIONAL",
+  "rounds": 7,
+  "session": 9,
   "findings": [
     {
       "id": 1,
-      "description": "Date off-by-one for non-UTC users: new Date() on bare date string parses as UTC midnight, shows wrong day west of UTC.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 116,
-      "type": "bug",
+      "description": "aria-haspopup=dialog on columns button without role=dialog on dropdown",
+      "file": "frontend/src/components/Toolbar.svelte:128",
+      "also": "frontend/src/components/ColumnDropdown.svelte:30",
+      "type": "a11y",
       "severity": "high",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
+      "fix": "Added role=dialog aria-label=Column visibility to .dropdown div",
+      "status": "fixed",
       "session": 1
     },
     {
       "id": 2,
-      "description": "Timestamp formatter omits year: multi-year records display identically.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 34,
-      "type": "bug",
-      "severity": "medium",
+      "description": "Double horizontal padding: .table-panel + .table-header both apply --sk-space-2xl, misaligning header text vs grid",
+      "file": "frontend/src/components/TableHeader.svelte:24",
+      "also": "frontend/src/App.svelte:576",
+      "type": "layout",
+      "severity": "high",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
+      "fix": "Changed .table-header padding to 0; parent .table-panel provides horizontal padding",
+      "status": "fixed",
       "session": 1
     },
     {
       "id": 3,
-      "description": "ToolStrip sort indicator div has aria-label but no role — invisible to assistive technology.",
-      "file": "frontend/src/components/ToolStrip.svelte",
-      "line": 57,
-      "type": "improvement",
+      "description": "Export button always enabled; silently does nothing when no table is selected",
+      "file": "frontend/src/components/Toolbar.svelte:141",
+      "type": "ux",
       "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
+      "fix": "Added hasTable prop; export button disabled when !hasTable",
+      "status": "fixed",
       "session": 1
     },
     {
       "id": 4,
-      "description": "Safari Invalid Date for timestamp without time zone: postgres.rs sends space-separated datetime, Safari rejects non-ISO format.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 137,
-      "type": "bug",
-      "severity": "high",
+      "description": "Ctrl+K blocked when search input focused — no non-destructive keyboard close from field",
+      "file": "frontend/src/App.svelte:110",
+      "type": "ux",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 2,
-      "fix_description": "Replace space with T before new Date() for cross-browser ISO 8601 compliance.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:137",
-        "src/db/postgres.rs:401-403"
-      ]
+      "fix": "Added isSearchField check; Ctrl+K passes when target is the search input",
+      "status": "fixed",
+      "session": 1
     },
     {
       "id": 5,
-      "description": "CSV export ignores active filters and sort state — user sees filtered view but exports full table.",
-      "file": "frontend/src/App.svelte",
-      "line": 207,
-      "type": "bug",
-      "severity": "medium",
+      "description": "Show All button fires redundant persist when all columns already visible",
+      "file": "frontend/src/components/ColumnDropdown.svelte:39",
+      "type": "ux",
+      "severity": "low",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 2,
-      "fix_description": "Pass sortState and filters as query params to the export URL via buildRowsParams.",
-      "citations": [
-        "frontend/src/App.svelte:207-219",
-        "src/api/mod.rs:204-211"
-      ]
+      "fix": "Added disabled={hiddenCount === 0}",
+      "status": "fixed",
+      "session": 1
     },
     {
       "id": 6,
-      "description": "numeric/decimal columns lose precision: NUMBER_TYPES includes 'numeric' and 'decimal', causing Number() cast on backend string values — float64 rounds beyond 15 significant digits.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 14,
-      "type": "bug",
-      "severity": "high",
+      "description": "Static aria-label on filter/columns buttons overrides dynamic badge count — AT users cannot hear active filter or hidden-column count",
+      "file": "frontend/src/components/Toolbar.svelte:103",
+      "also": "frontend/src/components/Toolbar.svelte:131",
+      "type": "a11y",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 3,
-      "fix_description": "Removed 'numeric' and 'decimal' from NUMBER_TYPES so they fall through to the text formatter, preserving the backend's full-precision string.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:14-15",
-        "src/db/postgres.rs:390-393"
-      ]
+      "fix": "aria-label='Toggle filters' → aria-label={filterTitle}; aria-label='Manage columns' → aria-label={columnsTitle}",
+      "status": "fixed",
+      "session": 3
     },
     {
       "id": 7,
-      "description": "bigint values > 2^53 lose precision in JSON transport: postgres.rs serializes i64 as JSON number, JavaScript JSON.parse converts to float64.",
-      "file": "src/db/postgres.rs",
-      "line": 382,
-      "type": "bug",
-      "severity": "low",
+      "description": "type=search + custom X button renders two clear controls on Chrome/Safari simultaneously",
+      "file": "frontend/src/App.svelte:505",
+      "type": "ux",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 3,
-      "note": "Both agents agreed post-merge is defensible — 2^53 threshold rarely hit in practice. Fix requires API-level decision (string-encode large bigints).",
-      "fix_description": "Serialize bigint as string when unsigned_abs() > 2^53. Values within safe JS range remain JSON numbers.",
-      "fixed_session": 7
+      "fix": "Changed type='search' to type='text'; custom clear button is sole mechanism",
+      "status": "fixed",
+      "session": 3
     },
     {
       "id": 8,
-      "description": "real (float4) columns silently null out: try_get::<f64> fails OID check against FLOAT4 (OID 700 vs 701), every real value rendered as NULL.",
-      "file": "src/db/postgres.rs",
-      "line": 386,
-      "related_files": ["src/api/mod.rs:378-381"],
-      "type": "bug",
-      "severity": "high",
+      "description": "Export button disabled title says 'Export CSV' with no explanation why disabled",
+      "file": "frontend/src/components/Toolbar.svelte:147",
+      "type": "ux",
+      "severity": "low",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 4,
-      "fix_description": "Split 'real' | 'double precision' arm: use try_get::<f32> for real, try_get::<f64> for double precision. Applied in both pg_value_to_json and pg_value_to_csv_string.",
-      "citations": [
-        "src/db/postgres.rs:386-389",
-        "src/api/mod.rs:378-381",
-        "sqlx-postgres-0.8.6/src/types/float.rs:9-13,38-42",
-        "sqlx-postgres-0.8.6/src/type_info.rs:1053-1058"
-      ]
+      "fix": "Derived title and aria-label from hasTable: 'Select a table to export' when !hasTable",
+      "status": "fixed",
+      "session": 3
     },
     {
       "id": 9,
-      "description": "Missing aria-sort on sorted column headers: renderHeader sets aria-hidden on sort arrow but no aria-sort attribute on header div. WCAG 1.3.1 Level A violation.",
-      "file": "frontend/src/components/DataGrid.svelte",
-      "line": 66,
-      "type": "accessibility",
-      "severity": "medium",
+      "description": "role=\"dialog\" on ColumnDropdown without dialog keyboard contract — Disclosure trigger uses aria-expanded (Disclosure pattern) while container used role=\"dialog\" (Dialog pattern); WAI-ARIA §6.6 MUST behaviors not implemented",
+      "file": "frontend/src/components/ColumnDropdown.svelte:30",
+      "also": "frontend/src/components/Toolbar.svelte:128-133",
+      "type": "a11y",
+      "severity": "high",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 4,
-      "note": "Post-merge. RevoGrid's hyperscript layer may require DOM inspection to place aria-sort on the actual <th> element.",
-      "fix_description": "Added aria-sort='ascending'/'descending' to header wrapper div in renderHeader via conditional spread.",
-      "fixed_session": 7
+      "fix": "Replaced role=\"dialog\" with role=\"region\"; Disclosure Button pattern now consistent end-to-end",
+      "status": "fixed",
+      "session": 4
     },
     {
       "id": 10,
-      "description": "Boolean filter broken: users see Yes/No badges but must type 'true'/'false' to filter — ::text ILIKE casts boolean to 'true'/'false', not 'yes'/'no'.",
-      "file": "src/db/postgres.rs",
-      "line": 226,
-      "related_files": ["frontend/src/lib/data-grid.ts:106-111"],
-      "type": "bug",
-      "severity": "high",
+      "description": "Search button static aria-label=\"Search\" not updated when filter/columns were given dynamic labels in session 3",
+      "file": "frontend/src/components/Toolbar.svelte:91",
+      "type": "a11y",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 5,
-      "fix_description": "Boolean columns now use = TRUE/FALSE comparison instead of ::text ILIKE. Filter input mapped: yes/true/t/1 → TRUE, no/false/f/0 → FALSE. Non-matching input yields no rows.",
-      "citations": [
-        "src/db/postgres.rs:221-248",
-        "frontend/src/lib/data-grid.ts:106-111"
-      ]
+      "fix": "aria-label=\"Search\" → aria-label={searchTitle}; searchTitle derived prop already existed",
+      "status": "fixed",
+      "session": 4
     },
     {
       "id": 11,
-      "description": "numeric/decimal columns display as left-aligned plain text — no tabular-nums, no right-alignment. Session 3 precision fix removed from NUMBER_TYPES but display classification was never updated.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 10,
-      "type": "bug",
+      "description": "aria-label on role-less <div class=\"tool-indicator\"> is invisible to screen readers — lucide SVG children are aria-hidden by default, leaving AT with no way to read current sort state",
+      "file": "frontend/src/components/Toolbar.svelte:114",
+      "type": "a11y",
       "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 5,
-      "fix_description": "Added NUMERIC_TEXT_TYPES set for 'numeric'/'decimal'. Returns kind: 'number' with raw string display (no Number() cast), giving right-alignment and tabular-nums without precision loss.",
-      "citations": [
-        "frontend/src/lib/data-grid.ts:16-21",
-        "frontend/src/lib/data-grid.ts:152-157"
-      ]
+      "fix": "Added role=\"img\" to the sort indicator div; aria-label is now effective on a named graphic element",
+      "status": "fixed",
+      "session": 5
     },
     {
       "id": 12,
-      "description": "real (float4) grid vs CSV serialization inconsistency: f32 as f64 widening in JSON produces artifacts (3.140000104904175) while f32.to_string() in CSV is clean (3.14).",
-      "file": "src/db/postgres.rs",
-      "line": 388,
-      "related_files": ["src/api/mod.rs:380"],
-      "type": "bug",
+      "description": "Missing aria-controls on columns disclosure trigger — no programmatic link from trigger to ColumnDropdown region; AT users cannot jump directly from button to panel",
+      "file": "frontend/src/components/Toolbar.svelte:130",
+      "also": "frontend/src/components/ColumnDropdown.svelte:30",
+      "type": "a11y",
       "severity": "low",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 5,
-      "note": "Both agents agreed toLocaleString() masks the artifact in the UI. Only raw API shows inconsistency — invisible to target non-technical users.",
-      "fix_description": "Parse f32 via to_string().parse::<f64>() to avoid widening artifacts in JSON serialization.",
-      "fixed_session": 7
+      "fix": "Added id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button",
+      "status": "fixed",
+      "session": 5
     },
     {
       "id": 13,
-      "description": "Dead 'decimal' entry in NUMERIC_TEXT_TYPES — PostgreSQL normalizes DECIMAL to 'numeric', so this Set entry can never match.",
-      "file": "frontend/src/lib/data-grid.ts",
-      "line": 20,
-      "type": "improvement",
-      "severity": "nit",
+      "description": "searchTitle derived from searchActive (searchVisible || searchQuery.length > 0) rather than searchVisible — when bar is collapsed but search term is active, label says 'Close search' but clicking opens the bar",
+      "file": "frontend/src/components/Toolbar.svelte:59",
+      "also": "frontend/src/App.svelte:227-234",
+      "type": "a11y",
+      "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 6,
-      "note": "Both agents agreed: dead code, zero runtime impact, post-merge cleanup.",
-      "fix_description": "Removed 'decimal' from NUMERIC_TEXT_TYPES — PostgreSQL normalizes DECIMAL to 'numeric'.",
-      "fixed_session": 7
+      "fix": "Changed derivation basis from searchActive to searchVisible; label now matches the action toggleSearch() will perform",
+      "status": "fixed",
+      "session": 6
     },
     {
       "id": 14,
-      "description": "Content-Disposition filename sanitizer missing backslash escape — RFC 2183 compliance gap for admin-configured display names containing backslash.",
-      "file": "src/api/mod.rs",
-      "line": 235,
-      "type": "improvement",
-      "severity": "nit",
+      "description": "searchTitle in Toolbar.svelte derived from searchVisible which was never added as a prop — S6 fix changed the variable name in the derivation but did not wire searchVisible as a Toolbar prop; searchTitle permanently evaluated to 'Open search (Ctrl+K)' at runtime",
+      "file": "frontend/src/components/Toolbar.svelte:59",
+      "also": "frontend/src/App.svelte:481",
+      "type": "a11y",
+      "severity": "high",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 6,
-      "note": "CRITIC downgraded from Low to Nit. Display names are admin-configured, not user-exploitable. One-line fix: .replace('\\\\', \"\").",
-      "fix_description": "Added .replace('\\\\', \"\") to Content-Disposition filename sanitizer chain.",
-      "fixed_session": 7
+      "fix": "Added searchVisible?: boolean = false to Toolbar props; passed searchVisible={searchVisible} from App.svelte; removed dead ::-webkit-search-cancel-button CSS (input is type=text not type=search)",
+      "status": "fixed",
+      "session": 7
     },
     {
       "id": 15,
-      "description": "ToolStrip export button aria-label says 'Export tools coming later' but CSV export already works via Toolbar — misinforms screen reader users.",
-      "file": "frontend/src/components/ToolStrip.svelte",
-      "line": 83,
-      "type": "accessibility",
+      "description": "Search button aria-label ignored searchActive when panel is closed — AT users could not tell rows were filtered; only 'Open search (Ctrl+K)' was announced regardless of active-filter state",
+      "file": "frontend/src/components/Toolbar.svelte:61",
+      "type": "a11y",
       "severity": "medium",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 6,
-      "fix_description": "Changed aria-label and title to 'More export options coming soon' to disambiguate from the existing Toolbar CSV export.",
-      "citations": [
-        "frontend/src/components/ToolStrip.svelte:83-85",
-        "frontend/src/App.svelte:271"
-      ]
+      "fix": "Three-way derived label: 'Search active — open search bar (Ctrl+K)' when !searchVisible && searchActive; searchActive prop already present at L:20",
+      "status": "fixed",
+      "session": 8
     },
     {
       "id": 16,
-      "description": "Search ILIKE path interpolates schema-derived column names into SQL without is_valid_identifier guard — asymmetric with filter/sort paths which both validate. Column with embedded double-quote would produce broken SQL (500 error, not injection).",
-      "file": "src/db/postgres.rs",
-      "line": 211,
-      "type": "improvement",
+      "description": "Dead CSS: .search-panel transition and .search-panel.active transform never fire — {#if} removes DOM node before transitions can play; translateY(0) was CSS default, opacity never changed",
+      "file": "frontend/src/App.svelte:585",
+      "type": "dead-code",
       "severity": "low",
       "verified": true,
-      "conceded_by": ["advocate-1"],
-      "status": "FIXED",
-      "session": 7,
-      "note": "CRITIC initially recommended CONDITIONAL. ADVOCATE rebutted: c.name is schema metadata from information_schema, not user input; failure mode is 500 not injection; precondition (embedded double-quote in column name) is exotic. CRITIC conceded to TRACKED but correctly disputed ADVOCATE's Point 4 — pg_value_to_json uses try_get() as row key, not SQL interpolation. Trust boundary argument (points 1-3) was sufficient.",
-      "fix_description": "Added is_valid_identifier guard to search text_cols filter: .filter(|c| is_text_type(&c.data_type) && is_valid_identifier(&c.name))",
-      "fixed_session": 7
+      "fix": "Removed .search-panel transition and .search-panel.active { transform: translateY(0) } rules",
+      "status": "fixed",
+      "session": 8
+    },
+    {
+      "id": 17,
+      "description": "Search button missing aria-expanded and aria-controls — columns button was fixed in sessions 1/5 but search button controlling <div class=search-panel> had no ARIA disclosure linkage; AT users could not determine if search panel was open",
+      "file": "frontend/src/components/Toolbar.svelte:86",
+      "also": "frontend/src/App.svelte:500",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added aria-expanded={searchVisible} and aria-controls='search-panel' to search button; added id='search-panel' to .search-panel div",
+      "status": "fixed",
+      "session": 9
+    },
+    {
+      "id": 18,
+      "description": "filterTitle says 'Filters active (0)' when filter panel is open but no filters are entered — self-contradictory label, button glows teal while label implies zero activity",
+      "file": "frontend/src/components/Toolbar.svelte:68",
+      "type": "ux",
+      "severity": "low",
+      "verified": true,
+      "fix": "Four-way derivation: open+active → 'Close filters — N active'; open+empty → 'Close filters'; closed+active → 'Filters active (N) — open panel'; closed+empty → 'Toggle filters'",
+      "status": "fixed",
+      "session": 9
+    },
+    {
+      "id": 19,
+      "description": "Filter button missing aria-expanded — search button (F17) and columns button both carry aria-expanded; filter button at Toolbar.svelte:112-126 toggles filtersVisible but exposes no programmatic expanded/collapsed state; carry-forward miss from session 9",
+      "file": "frontend/src/components/Toolbar.svelte:115",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added aria-expanded={filtersVisible} to filter button; aria-controls waived (no id target exists — filter inputs render inline in RevoGrid column headers)",
+      "status": "fixed",
+      "session": 10
     }
   ],
-  "dismissed": [
-    {
-      "claim": "on:beforesorting is wrong Svelte 5 syntax",
-      "reason": "QUESTIONER verified @revolist/svelte-datagrid v4.21.4 uses createEventDispatcher (Svelte 4), so on: syntax is correct from Svelte 5 consumers."
-    },
-    {
-      "claim": "Boolean coercion misses 1/yes/on",
-      "reason": "QUESTIONER verified postgres.rs:394-396 sends JSON booleans. Non-boolean representations cannot arrive from current backend."
-    },
-    {
-      "claim": "ILIKE performance on 500K rows",
-      "reason": "Pre-existing design choice from prior epic, not introduced by this PR."
-    },
-    {
-      "claim": "sortStateToConfig returns undefined breaks RevoGrid sort indicators",
-      "reason": "ADVOCATE rebutted: sort indicators are driven by per-column order prop (DataGrid.svelte:198-199), not the sorting prop. Clearing sortState sets all columns to order: undefined, which correctly removes arrows."
-    },
-    {
-      "claim": "get_columns_bulk PK subquery missing table_schema filter",
-      "reason": "Session 8: ARBITER verified both get_columns and get_columns_bulk exist on main since PR #27 (Epic 1) with identical missing table_schema pattern. Pre-existing code, not introduced by this PR. CRITIC withdrew."
-    }
-  ],
-  "follow_ups": [
-    "Add unit tests for data-grid.ts pure functions (formatCellValue, columnWidth, sortStateToConfig) — session 8 F2",
-    "Add RFC 6266 filename*=UTF-8'' encoding for non-ASCII Content-Disposition filenames — session 8 F3",
-    "Add type='button' to TableList.svelte:43, StatusBar.svelte:33,41 — session 8 F4",
-    "Consider replacing role='status' on ToolStrip sort indicator with non-live aria-label — session 8 noted",
-    "Tighten sortStateToConfig return type to Record<string, 'asc' | 'desc'>",
-    "Expand boolean coercion for future SQLite support"
-  ],
-  "conditions_met": true,
-  "prior_sessions": [
-    {
-      "session": 1,
-      "findings": 3,
-      "fixed": 3,
-      "dismissed": 3
-    },
-    {
-      "session": 2,
-      "findings": 4,
-      "fixed": 2,
-      "tracked": 1,
-      "dismissed": 1
-    },
-    {
-      "session": 3,
-      "findings": 2,
-      "fixed": 1,
-      "tracked": 1,
-      "dismissed": 0
-    },
-    {
-      "session": 4,
-      "findings": 2,
-      "fixed": 1,
-      "tracked": 1,
-      "dismissed": 0
-    },
-    {
-      "session": 5,
-      "findings": 3,
-      "fixed": 2,
-      "tracked": 1,
-      "dismissed": 0
-    },
-    {
-      "session": 6,
-      "findings": 3,
-      "fixed": 1,
-      "tracked": 2,
-      "dismissed": 0
-    },
-    {
-      "session": 7,
-      "findings": 1,
-      "fixed": 7,
-      "tracked": 0,
-      "dismissed": 0,
-      "note": "1 new finding (#16) + 6 previously tracked findings all fixed"
-    },
-    {
-      "session": 8,
-      "findings": 4,
-      "fixed": 0,
-      "tracked": 3,
-      "noted": 1,
-      "dismissed": 1,
-      "note": "Fresh review. 1 dismissed (pre-existing). 3 tracked post-merge (test gap, non-ASCII filename, type=button). 1 noted (role=status noisiness). No pre-merge blockers."
-    }
-  ],
-  "critical_discoveries": []
+  "merge_conditions": "All 19 findings fixed across 10 sessions. svelte-check passes 0 errors 0 warnings.",
+  "test_command": "cd frontend && npx svelte-check",
+  "session": 10,
+  "rounds": 9
 }
