@@ -497,7 +497,7 @@
       <div class="table-panel">
         <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
         {#if searchVisible}
-          <div class="search-panel" class:active={searchActive}>
+          <div id="search-panel" class="search-panel" class:active={searchActive}>
             <div class="search-box">
               <Search size={14} />
               <input
