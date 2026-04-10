@@ -66,9 +66,13 @@
         : 'Open search (Ctrl+K)'
   );
   let filterTitle = $derived(
-    filtersVisible || activeFilterCount > 0
-      ? `Filters active (${activeFilterCount}) (Ctrl+F)`
-      : 'Toggle filters (Ctrl+F)'
+    filtersVisible && activeFilterCount > 0
+      ? `Close filters — ${activeFilterCount} active (Ctrl+F)`
+      : filtersVisible
+        ? 'Close filters (Ctrl+F)'
+        : activeFilterCount > 0
+          ? `Filters active (${activeFilterCount}) — open panel (Ctrl+F)`
+          : 'Toggle filters (Ctrl+F)'
   );
   let columnsTitle = $derived(
     columnsOpen
@@ -96,6 +100,8 @@
       type="button"
       class="tool-button"
       class:active={searchActive}
+      aria-expanded={searchVisible}
+      aria-controls="search-panel"
       aria-label={searchTitle}
       title={searchTitle}
       onclick={() => onToggleSearch?.()}
@@ -107,6 +113,7 @@
       type="button"
       class="tool-button"
       class:active={filtersVisible || activeFilterCount > 0}
+      aria-expanded={filtersVisible}
       aria-label={filterTitle}
       title={filterTitle}
       onclick={() => onToggleFilters?.()}

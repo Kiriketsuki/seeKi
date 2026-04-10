@@ -6,7 +6,7 @@
   "date": "2026-04-10",
   "verdict": "CONDITIONAL",
   "rounds": 7,
-  "session": 8,
+  "session": 9,
   "findings": [
     {
       "id": 1,
@@ -190,8 +190,44 @@
       "fix": "Removed .search-panel transition and .search-panel.active { transform: translateY(0) } rules",
       "status": "fixed",
       "session": 8
+    },
+    {
+      "id": 17,
+      "description": "Search button missing aria-expanded and aria-controls — columns button was fixed in sessions 1/5 but search button controlling <div class=search-panel> had no ARIA disclosure linkage; AT users could not determine if search panel was open",
+      "file": "frontend/src/components/Toolbar.svelte:86",
+      "also": "frontend/src/App.svelte:500",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added aria-expanded={searchVisible} and aria-controls='search-panel' to search button; added id='search-panel' to .search-panel div",
+      "status": "fixed",
+      "session": 9
+    },
+    {
+      "id": 18,
+      "description": "filterTitle says 'Filters active (0)' when filter panel is open but no filters are entered — self-contradictory label, button glows teal while label implies zero activity",
+      "file": "frontend/src/components/Toolbar.svelte:68",
+      "type": "ux",
+      "severity": "low",
+      "verified": true,
+      "fix": "Four-way derivation: open+active → 'Close filters — N active'; open+empty → 'Close filters'; closed+active → 'Filters active (N) — open panel'; closed+empty → 'Toggle filters'",
+      "status": "fixed",
+      "session": 9
+    },
+    {
+      "id": 19,
+      "description": "Filter button missing aria-expanded — search button (F17) and columns button both carry aria-expanded; filter button at Toolbar.svelte:112-126 toggles filtersVisible but exposes no programmatic expanded/collapsed state; carry-forward miss from session 9",
+      "file": "frontend/src/components/Toolbar.svelte:115",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added aria-expanded={filtersVisible} to filter button; aria-controls waived (no id target exists — filter inputs render inline in RevoGrid column headers)",
+      "status": "fixed",
+      "session": 10
     }
   ],
-  "merge_conditions": "All 16 findings fixed across 8 sessions. svelte-check passes 0 errors 0 warnings.",
-  "test_command": "cd frontend && npx svelte-check"
+  "merge_conditions": "All 19 findings fixed across 10 sessions. svelte-check passes 0 errors 0 warnings.",
+  "test_command": "cd frontend && npx svelte-check",
+  "session": 10,
+  "rounds": 9
 }
