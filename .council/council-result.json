@@ -5,8 +5,8 @@
   "format": "1v1, no questioner",
   "date": "2026-04-10",
   "verdict": "CONDITIONAL",
-  "rounds": 4,
-  "session": 4,
+  "rounds": 5,
+  "session": 5,
   "findings": [
     {
       "id": 1,
@@ -123,6 +123,30 @@
       "session": 4
     }
   ],
-  "merge_conditions": "All 10 findings fixed across 4 sessions. svelte-check passes 0 errors 0 warnings.",
+    {
+      "id": 11,
+      "description": "aria-label on role-less <div class=\"tool-indicator\"> is invisible to screen readers — lucide SVG children are aria-hidden by default, leaving AT with no way to read current sort state",
+      "file": "frontend/src/components/Toolbar.svelte:114",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added role=\"img\" to the sort indicator div; aria-label is now effective on a named graphic element",
+      "status": "fixed",
+      "session": 5
+    },
+    {
+      "id": 12,
+      "description": "Missing aria-controls on columns disclosure trigger — no programmatic link from trigger to ColumnDropdown region; AT users cannot jump directly from button to panel",
+      "file": "frontend/src/components/Toolbar.svelte:130",
+      "also": "frontend/src/components/ColumnDropdown.svelte:30",
+      "type": "a11y",
+      "severity": "low",
+      "verified": true,
+      "fix": "Follow-up: add id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button (WAI-ARIA APG SHOULD, not MUST; keyboard navigation not broken without it)",
+      "status": "open",
+      "session": 5
+    }
+  ],
+  "merge_conditions": "Finding 11 fixed (session 5). Finding 12 is a low-priority follow-up (SHOULD per APG, not blocking). svelte-check passes 0 errors 0 warnings.",
   "test_command": "cd frontend && npx svelte-check"
 }

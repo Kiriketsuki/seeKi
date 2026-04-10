@@ -111,7 +111,7 @@
       </span>
     </button>
 
-    <div class="tool-indicator" aria-label={sortLabel} title={sortLabel}>
+    <div class="tool-indicator" role="img" aria-label={sortLabel} title={sortLabel}>
       {#if sortState.direction === 'asc'}
         <ChevronUp size={16} />
       {:else if sortState.direction === 'desc'}
