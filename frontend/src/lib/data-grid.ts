@@ -17,7 +17,6 @@ const NUMBER_TYPES = new Set([
 // Display as right-aligned numbers with tabular-nums but skip Number() casting.
 const NUMERIC_TEXT_TYPES = new Set([
   'numeric',
-  'decimal',
 ]);
 
 const DATE_ONLY_TYPES = new Set([

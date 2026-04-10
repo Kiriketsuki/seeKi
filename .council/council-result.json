@@ -8,8 +8,8 @@
     "questioner": 0,
     "rounds": 2,
     "mode": "1v1-no-questioner",
-    "session": 6,
-    "note": "Session 6: 1v1 no-questioner. Finding 15 (ToolStrip export aria-label misinformation) fixed pre-merge. Findings 13 (dead decimal entry) and 14 (backslash in Content-Disposition) tracked as nits."
+    "session": 7,
+    "note": "Session 7: 1v1 no-questioner. One new low-severity finding (#16, search ILIKE identifier validation). All 6 previously tracked findings + finding #16 + dead currentPage arg fixed in this session. 16/16 findings now FIXED. PR clean."
   },
   "findings": [
     {
@@ -108,9 +108,11 @@
       "severity": "low",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "status": "TRACKED",
+      "status": "FIXED",
       "session": 3,
-      "note": "Both agents agreed post-merge is defensible — 2^53 threshold rarely hit in practice. Fix requires API-level decision (string-encode large bigints)."
+      "note": "Both agents agreed post-merge is defensible — 2^53 threshold rarely hit in practice. Fix requires API-level decision (string-encode large bigints).",
+      "fix_description": "Serialize bigint as string when unsigned_abs() > 2^53. Values within safe JS range remain JSON numbers.",
+      "fixed_session": 7
     },
     {
       "id": 8,
@@ -141,9 +143,11 @@
       "severity": "medium",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "status": "TRACKED",
+      "status": "FIXED",
       "session": 4,
-      "note": "Post-merge. RevoGrid's hyperscript layer may require DOM inspection to place aria-sort on the actual <th> element."
+      "note": "Post-merge. RevoGrid's hyperscript layer may require DOM inspection to place aria-sort on the actual <th> element.",
+      "fix_description": "Added aria-sort='ascending'/'descending' to header wrapper div in renderHeader via conditional spread.",
+      "fixed_session": 7
     },
     {
       "id": 10,
@@ -190,9 +194,11 @@
       "severity": "low",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "status": "TRACKED",
+      "status": "FIXED",
       "session": 5,
-      "note": "Both agents agreed toLocaleString() masks the artifact in the UI. Only raw API shows inconsistency — invisible to target non-technical users."
+      "note": "Both agents agreed toLocaleString() masks the artifact in the UI. Only raw API shows inconsistency — invisible to target non-technical users.",
+      "fix_description": "Parse f32 via to_string().parse::<f64>() to avoid widening artifacts in JSON serialization.",
+      "fixed_session": 7
     },
     {
       "id": 13,
@@ -203,9 +209,11 @@
       "severity": "nit",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "status": "TRACKED",
+      "status": "FIXED",
       "session": 6,
-      "note": "Both agents agreed: dead code, zero runtime impact, post-merge cleanup."
+      "note": "Both agents agreed: dead code, zero runtime impact, post-merge cleanup.",
+      "fix_description": "Removed 'decimal' from NUMERIC_TEXT_TYPES — PostgreSQL normalizes DECIMAL to 'numeric'.",
+      "fixed_session": 7
     },
     {
       "id": 14,
@@ -216,9 +224,11 @@
       "severity": "nit",
       "verified": true,
       "conceded_by": ["advocate-1"],
-      "status": "TRACKED",
+      "status": "FIXED",
       "session": 6,
-      "note": "CRITIC downgraded from Low to Nit. Display names are admin-configured, not user-exploitable. One-line fix: .replace('\\\\', \"\")."
+      "note": "CRITIC downgraded from Low to Nit. Display names are admin-configured, not user-exploitable. One-line fix: .replace('\\\\', \"\").",
+      "fix_description": "Added .replace('\\\\', \"\") to Content-Disposition filename sanitizer chain.",
+      "fixed_session": 7
     },
     {
       "id": 15,
@@ -236,6 +246,21 @@
         "frontend/src/components/ToolStrip.svelte:83-85",
         "frontend/src/App.svelte:271"
       ]
+    },
+    {
+      "id": 16,
+      "description": "Search ILIKE path interpolates schema-derived column names into SQL without is_valid_identifier guard — asymmetric with filter/sort paths which both validate. Column with embedded double-quote would produce broken SQL (500 error, not injection).",
+      "file": "src/db/postgres.rs",
+      "line": 211,
+      "type": "improvement",
+      "severity": "low",
+      "verified": true,
+      "conceded_by": ["advocate-1"],
+      "status": "FIXED",
+      "session": 7,
+      "note": "CRITIC initially recommended CONDITIONAL. ADVOCATE rebutted: c.name is schema metadata from information_schema, not user input; failure mode is 500 not injection; precondition (embedded double-quote in column name) is exotic. CRITIC conceded to TRACKED but correctly disputed ADVOCATE's Point 4 — pg_value_to_json uses try_get() as row key, not SQL interpolation. Trust boundary argument (points 1-3) was sufficient.",
+      "fix_description": "Added is_valid_identifier guard to search text_cols filter: .filter(|c| is_text_type(&c.data_type) && is_valid_identifier(&c.name))",
+      "fixed_session": 7
     }
   ],
   "dismissed": [
@@ -265,7 +290,8 @@
     "Add aria-sort attribute to RevoGrid column headers (WCAG 1.3.1)",
     "Normalize real (float4) JSON serialization to match CSV (use f32.to_string() instead of f32 as f64)",
     "Remove dead 'decimal' entry from NUMERIC_TEXT_TYPES (data-grid.ts:20)",
-    "Add backslash to Content-Disposition filename sanitizer (api/mod.rs:235)"
+    "Add backslash to Content-Disposition filename sanitizer (api/mod.rs:235)",
+    "Add is_valid_identifier guard to search ILIKE text_cols filter (postgres.rs:211)"
   ],
   "conditions_met": true,
   "prior_sessions": [
@@ -309,6 +335,14 @@
       "fixed": 1,
       "tracked": 2,
       "dismissed": 0
+    },
+    {
+      "session": 7,
+      "findings": 1,
+      "fixed": 7,
+      "tracked": 0,
+      "dismissed": 0,
+      "note": "1 new finding (#16) + 6 previously tracked findings all fixed"
     }
   ],
   "critical_discoveries": []

@@ -206,7 +206,7 @@
 
   function exportCsv() {
     if (!selectedTable) return;
-    const params = buildRowsParams(currentPage);
+    const params = buildRowsParams(1);
     const searchParams = new URLSearchParams();
     if (params.sort_column) searchParams.set('sort_column', params.sort_column);
     if (params.sort_direction) searchParams.set('sort_direction', params.sort_direction);

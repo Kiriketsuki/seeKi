@@ -63,6 +63,12 @@
     );
     const isSorted = props.order != null;
 
+    const ariaSortValue = props.order === 'asc'
+      ? 'ascending'
+      : props.order === 'desc'
+        ? 'descending'
+        : undefined;
+
     return h(
       'div',
       {
@@ -71,6 +77,7 @@
           'has-filters': showFilters,
           'is-sorted': isSorted,
         },
+        ...(ariaSortValue ? { 'aria-sort': ariaSortValue } : {}),
       },
       [
         h(

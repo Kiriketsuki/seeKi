@@ -231,6 +231,7 @@ async fn export_csv(
         .to_lowercase();
     let sanitized = display_table
         .replace('"', "")
+        .replace('\\', "")
         .replace(';', "")
         .replace('\r', "")
         .replace('\n', "");

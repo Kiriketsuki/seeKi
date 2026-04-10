@@ -207,7 +207,7 @@ fn build_query_clauses(
     if has_search {
         let text_cols: Vec<String> = columns
             .iter()
-            .filter(|c| is_text_type(&c.data_type))
+            .filter(|c| is_text_type(&c.data_type) && is_valid_identifier(&c.name))
             .map(|c| format!("\"{}\"::text ILIKE '%' || ${param_idx} || '%'", c.name))
             .collect();
 
@@ -404,11 +404,24 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .unwrap_or(Value::Null),
         "bigint" => row
             .try_get::<i64, _>(col)
-            .map(Value::from)
+            .map(|v| {
+                // Values beyond ±2^53 lose precision in JavaScript's float64 JSON.parse.
+                // Serialize as string to preserve full i64 range.
+                if v.unsigned_abs() > (1u64 << 53) {
+                    Value::String(v.to_string())
+                } else {
+                    Value::from(v)
+                }
+            })
             .unwrap_or(Value::Null),
         "real" => row
             .try_get::<f32, _>(col)
-            .map(|v| Value::from(v as f64))
+            .map(|v| {
+                // Parse via f32's string repr to avoid f64 widening artifacts
+                // (e.g., 3.14f32 as f64 → 3.140000104904175)
+                let clean: f64 = v.to_string().parse().unwrap_or(v as f64);
+                Value::from(clean)
+            })
             .unwrap_or(Value::Null),
         "double precision" => row
             .try_get::<f64, _>(col)
