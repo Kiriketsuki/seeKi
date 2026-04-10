@@ -229,13 +229,20 @@ async fn export_csv(
     let display_table = display_name_table(&table, &state.config.display)
         .replace(' ', "_")
         .to_lowercase();
-    let sanitized = display_table
+    let sanitized: String = display_table
         .replace('"', "")
         .replace('\\', "")
         .replace(';', "")
         .replace('\r', "")
-        .replace('\n', "");
-    let filename = format!("{sanitized}.csv");
+        .replace('\n', "")
+        .chars()
+        .filter(|c| c.is_ascii())
+        .collect();
+    let filename = if sanitized.is_empty() {
+        "export.csv".to_string()
+    } else {
+        format!("{sanitized}.csv")
+    };
 
     // Owned values for the spawned task
     let sort_column = params.sort_column.clone();

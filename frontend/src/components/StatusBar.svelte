@@ -30,6 +30,7 @@
 
   <div class="pagination">
     <button
+      type="button"
       class="page-btn"
       disabled={!canPrev}
       aria-label="Previous page"
@@ -39,6 +40,7 @@
     </button>
     <span class="page-info">{page} of {totalPages}</span>
     <button
+      type="button"
       class="page-btn"
       disabled={!canNext}
       aria-label="Next page"

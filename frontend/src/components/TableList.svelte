@@ -41,6 +41,7 @@
   {#if filteredTables.length > 0}
     {#each filteredTables as table}
       <button
+        type="button"
         class="table-item"
         class:active={selectedTable === table.name}
         onclick={() => onSelect(table.name)}
