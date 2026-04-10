@@ -244,6 +244,7 @@
     filtersVisible = false;
     filters = resetFilters;
     columnsOpen = false;
+    clearFilterDebounce();
     resetSearchState();
     try {
       const [cols, result] = await Promise.all([
@@ -323,6 +324,7 @@
 
   function handleSortChange(column: string, direction: SortDirection | null) {
     clearFilterDebounce();
+    clearSearchDebounce();
     const nextSortState: SortState = direction
       ? { column, direction }
       : { column: null, direction: null };
@@ -338,6 +340,7 @@
     filters = nextFilters;
 
     clearFilterDebounce();
+    clearSearchDebounce();
     filterDebounceId = setTimeout(() => {
       void loadRows(1, sortState, nextFilters);
       filterDebounceId = null;
@@ -346,6 +349,7 @@
 
   function scheduleSearchReload() {
     clearSearchDebounce();
+    clearFilterDebounce();
     if (!selectedTable) return;
 
     searchDebounceId = setTimeout(() => {
@@ -360,6 +364,7 @@
   }
 
   function handleSearchClear() {
+    clearFilterDebounce();
     resetSearchState();
     if (!selectedTable) {
       return;
