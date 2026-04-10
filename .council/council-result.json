@@ -1,72 +1,105 @@
 {
-  "motion": "Merge PR #30: epic: Toolbar, Column Management & Export -- ROUND 2 post-fix audit (commit 5a9e382 applied round-1 fixes D1, D2, D3, C6)",
-  "motion_type": "CODE",
-  "timestamp": "2026-04-10T14:00:00Z",
-  "pr_number": 30,
+  "pr": 30,
+  "title": "epic: Toolbar, Column Management & Export",
+  "motion": "Merge PR #30: epic: Toolbar, Column Management & Export",
+  "format": "1v1, no questioner",
+  "date": "2026-04-10",
   "verdict": "CONDITIONAL",
-  "confidence": "high",
-  "round_generation": 2,
-  "prior_council": ".council/2026-04-10-council-recommendation-round1.md",
-  "rounds_completed": 1,
-  "rounds_max": 4,
-  "early_convergence": true,
-  "fallback": false,
-  "questioner_enabled": false,
-  "agents": {
-    "ADVOCATE-1": { "status": "completed", "model": "sonnet" },
-    "CRITIC-1":   { "status": "completed", "model": "sonnet" },
-    "ARBITER":    { "status": "completed", "model": "sonnet" }
-  },
-  "round1_fix_audit": {
-    "D1": { "status": "verified", "note": "role=\"list\" removed from ColumnDropdown.svelte:46" },
-    "D2": { "status": "verified-with-phantom-note", "note": "aria-pressed added at ColumnDropdown.svelte:50. Round-1 D2 cited role=\"checkbox\"/aria-checked which were never present in any commit; fix is a valid improvement regardless." },
-    "D3": { "status": "verified", "note": "::-webkit-search-cancel-button suppression added at App.svelte:629-633" },
-    "C6": { "status": "verified", "note": "try/catch around localStorage.setItem added at App.svelte:203-210" }
-  },
+  "rounds": 4,
+  "session": 3,
   "findings": [
     {
       "id": 1,
-      "code": "R2-1",
-      "type": "bug",
+      "description": "aria-haspopup=dialog on columns button without role=dialog on dropdown",
+      "file": "frontend/src/components/Toolbar.svelte:128",
+      "also": "frontend/src/components/ColumnDropdown.svelte:30",
+      "type": "a11y",
       "severity": "high",
-      "description": "role=\"dialog\" declared on ColumnDropdown outer container without any of the three mandatory dialog keyboard behaviors (WAI-ARIA 1.2 § 6.6): no focus-on-open (no tick()+.focus() call when columnsOpen becomes true), no Tab containment (no focus trap), and no focus-return-on-close (Escape and outside-click both set columnsOpen=false without restoring focus to the trigger). Toolbar.svelte:129 declares aria-haspopup=\"dialog\" making an AT promise the implementation does not keep.",
-      "file": "frontend/src/components/ColumnDropdown.svelte",
-      "line": 32,
-      "fix_description": "Replace role=\"dialog\" with no role (Disclosure pattern) on ColumnDropdown.svelte:32, and change aria-haspopup=\"dialog\" to aria-haspopup=\"true\" on Toolbar.svelte:129. The column panel is a non-modal disclosure widget -- users can Tab out naturally, the trigger already carries aria-expanded, and WAI-ARIA APG Disclosure pattern has no focus-trap requirement. ~4 lines total across two files. Alternative (not recommended): keep role=\"dialog\" and implement all three behaviors (~15-20 lines).",
-      "verification": "verified",
-      "citations": [
-        "frontend/src/components/ColumnDropdown.svelte:32",
-        "frontend/src/components/Toolbar.svelte:129"
-      ]
+      "verified": true,
+      "fix": "Added role=dialog aria-label=Column visibility to .dropdown div",
+      "status": "fixed",
+      "session": 1
     },
     {
       "id": 2,
-      "code": "R2-2",
-      "type": "improvement",
+      "description": "Double horizontal padding: .table-panel + .table-header both apply --sk-space-2xl, misaligning header text vs grid",
+      "file": "frontend/src/components/TableHeader.svelte:24",
+      "also": "frontend/src/App.svelte:576",
+      "type": "layout",
+      "severity": "high",
+      "verified": true,
+      "fix": "Changed .table-header padding to 0; parent .table-panel provides horizontal padding",
+      "status": "fixed",
+      "session": 1
+    },
+    {
+      "id": 3,
+      "description": "Export button always enabled; silently does nothing when no table is selected",
+      "file": "frontend/src/components/Toolbar.svelte:141",
+      "type": "ux",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added hasTable prop; export button disabled when !hasTable",
+      "status": "fixed",
+      "session": 1
+    },
+    {
+      "id": 4,
+      "description": "Ctrl+K blocked when search input focused — no non-destructive keyboard close from field",
+      "file": "frontend/src/App.svelte:110",
+      "type": "ux",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Added isSearchField check; Ctrl+K passes when target is the search input",
+      "status": "fixed",
+      "session": 1
+    },
+    {
+      "id": 5,
+      "description": "Show All button fires redundant persist when all columns already visible",
+      "file": "frontend/src/components/ColumnDropdown.svelte:39",
+      "type": "ux",
       "severity": "low",
-      "description": "Dead `panel` binding left behind by the fix commit (5a9e382). `let panel: HTMLDivElement | null = null;` is declared at ColumnDropdown.svelte:17 and bound via bind:this at line 32, but nothing reads it -- the onMount block that would have consumed it was removed by the fix commit. Grep confirms no read access to `panel` anywhere in the script block.",
-      "file": "frontend/src/components/ColumnDropdown.svelte",
-      "line": 17,
-      "fix_description": "Remove `let panel: HTMLDivElement | null = null;` declaration at line 17 and remove `bind:this={panel}` from the outer div at line 32. ~2 lines removed, no behavior change.",
-      "verification": "verified",
-      "citations": [
-        "frontend/src/components/ColumnDropdown.svelte:17",
-        "frontend/src/components/ColumnDropdown.svelte:32"
-      ]
+      "verified": true,
+      "fix": "Added disabled={hiddenCount === 0}",
+      "status": "fixed",
+      "session": 1
+    },
+    {
+      "id": 6,
+      "description": "Static aria-label on filter/columns buttons overrides dynamic badge count — AT users cannot hear active filter or hidden-column count",
+      "file": "frontend/src/components/Toolbar.svelte:103",
+      "also": "frontend/src/components/Toolbar.svelte:131",
+      "type": "a11y",
+      "severity": "medium",
+      "verified": true,
+      "fix": "aria-label='Toggle filters' → aria-label={filterTitle}; aria-label='Manage columns' → aria-label={columnsTitle}",
+      "status": "fixed",
+      "session": 3
+    },
+    {
+      "id": 7,
+      "description": "type=search + custom X button renders two clear controls on Chrome/Safari simultaneously",
+      "file": "frontend/src/App.svelte:505",
+      "type": "ux",
+      "severity": "medium",
+      "verified": true,
+      "fix": "Changed type='search' to type='text'; custom clear button is sole mechanism",
+      "status": "fixed",
+      "session": 3
+    },
+    {
+      "id": 8,
+      "description": "Export button disabled title says 'Export CSV' with no explanation why disabled",
+      "file": "frontend/src/components/Toolbar.svelte:147",
+      "type": "ux",
+      "severity": "low",
+      "verified": true,
+      "fix": "Derived title and aria-label from hasTable: 'Select a table to export' when !hasTable",
+      "status": "fixed",
+      "session": 3
     }
   ],
-  "concessions": [
-    { "agent": "ADVOCATE-1", "conceded_to": "CRITIC-1", "point": "D2 phantom: round-1 cited role=\"checkbox\" and aria-checked which were never present in any commit of ColumnDropdown.svelte. aria-pressed addition is a valid improvement regardless.", "round": 1 },
-    { "agent": "ADVOCATE-1", "conceded_to": "CRITIC-1", "point": "R2-1: role=\"dialog\" without focus management is a real ARIA defect introduced by the PR and missed by round 1.", "round": 1 },
-    { "agent": "ADVOCATE-1", "conceded_to": "CRITIC-1", "point": "R2-2: dead `panel` binding is real dead code.", "round": 1 },
-    { "agent": "CRITIC-1", "conceded_to": "ADVOCATE-1", "point": "BLOCKING label withdrawn; CONDITIONAL is the correct treatment given the surgical fix surface (~4 lines total).", "round": 1 }
-  ],
-  "conditions": [
-    "Apply Fix R2-1 on this branch before merging.",
-    "Apply Fix R2-2 on this branch before merging.",
-    "Verify in a screen reader or Lighthouse accessibility audit that the ColumnDropdown announces as a region/disclosure (not a dialog) and no 'dialog opened but focus did not move' error is reported."
-  ],
-  "summary": "Round 2 post-fix audit verified that all 4 round-1 fixes (D1, D2, D3, C6) are correctly applied in commit 5a9e382, and the PR's core features (debounce coordination, race guard, localStorage resilience, spec Must-Haves) remain sound and untouched. Two new defects surfaced that round 1 missed: (1) role=\"dialog\" on ColumnDropdown is declared with none of the three WAI-ARIA 1.2 § 6.6 mandatory dialog keyboard behaviors, and (2) the panel variable is dead code left behind by the fix commit. Both debaters converged quickly on CONDITIONAL with surgical fixes (~4 lines total across two files). Also on the record: round-1 D2 cited role=\"checkbox\" code that was never present -- a phantom defect -- though the aria-pressed improvement it produced is still correct and stands.",
-  "recommendation_file": ".council/council-recommendation.md",
-  "test_command": "cd frontend && npm run build"
+  "merge_conditions": "All 8 findings fixed across 3 sessions. svelte-check passes 0 errors 0 warnings.",
+  "test_command": "cd frontend && npx svelte-check"
 }

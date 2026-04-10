@@ -27,7 +27,7 @@
   );
 </script>
 
-<div class="dropdown">
+<div class="dropdown" role="dialog" aria-label="Column visibility">
   <div class="dropdown-header">
     <div>
       <div class="title">Columns</div>
@@ -36,7 +36,7 @@
       </div>
     </div>
 
-    <button type="button" class="show-all" onclick={() => onShowAllColumns?.()}>
+    <button type="button" class="show-all" disabled={hiddenCount === 0} onclick={() => onShowAllColumns?.()}>
       Show All
     </button>
   </div>
@@ -115,9 +115,14 @@
     flex-shrink: 0;
   }
 
-  .show-all:hover {
+  .show-all:hover:not(:disabled) {
     color: var(--sk-text);
     border-color: rgba(0, 169, 165, 0.28);
+  }
+
+  .show-all:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .list {

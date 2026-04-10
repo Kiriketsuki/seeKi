@@ -22,6 +22,7 @@
     columns = [],
     columnVisibility = {},
     hiddenColumnCount = 0,
+    hasTable = false,
     onToggleSearch,
     onToggleFilters,
     onToggleColumns,
@@ -39,6 +40,7 @@
     columns: ColumnInfo[];
     columnVisibility: Record<string, boolean>;
     hiddenColumnCount?: number;
+    hasTable?: boolean;
     onToggleSearch?: () => void;
     onToggleFilters?: () => void;
     onToggleColumns?: () => void;
@@ -97,7 +99,7 @@
       type="button"
       class="tool-button"
       class:active={filtersVisible || activeFilterCount > 0}
-      aria-label="Toggle filters"
+      aria-label={filterTitle}
       title={filterTitle}
       onclick={() => onToggleFilters?.()}
     >
@@ -126,7 +128,7 @@
       class="tool-button"
       class:active={columnsOpen}
       aria-expanded={columnsOpen}
-      aria-label="Manage columns"
+      aria-label={columnsTitle}
       title={columnsTitle}
       onclick={() => onToggleColumns?.()}
     >
@@ -141,8 +143,9 @@
     <button
       type="button"
       class="tool-button tool-button--export"
-      aria-label="Export CSV"
-      title="Export CSV"
+      aria-label={hasTable ? 'Export CSV' : 'Export CSV (select a table first)'}
+      title={hasTable ? 'Export CSV' : 'Select a table to export'}
+      disabled={!hasTable}
       onclick={() => onExport?.()}
     >
       <Download size={16} />
@@ -219,6 +222,12 @@
 
   .tool-button--export {
     margin-top: auto;
+  }
+
+  .tool-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .tool-indicator {

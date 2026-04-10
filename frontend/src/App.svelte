@@ -107,7 +107,8 @@
       const isShortcut = event.ctrlKey || event.metaKey;
       const inTextField = isTextEditingTarget(event.target);
 
-      if (isShortcut && key === 'k' && !inTextField) {
+      const isSearchField = event.target === searchInputEl;
+      if (isShortcut && key === 'k' && (!inTextField || isSearchField)) {
         event.preventDefault();
         toggleSearch();
         return;
@@ -482,6 +483,7 @@
       columns={columns}
       columnVisibility={columnVisibility}
       hiddenColumnCount={hiddenColumnCount}
+      hasTable={!!selectedTable}
       onToggleSearch={toggleSearch}
       onToggleFilters={toggleFilters}
       onToggleColumns={toggleColumns}
@@ -499,7 +501,7 @@
               <Search size={14} />
               <input
                 bind:this={searchInputEl}
-                type="search"
+                type="text"
                 class="search-input"
                 class:has-value={searchQuery.length > 0}
                 placeholder="Search all text columns..."

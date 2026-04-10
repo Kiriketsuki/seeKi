@@ -21,7 +21,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sk-space-md);
-    padding: 0 var(--sk-space-2xl);
+    padding: 0;
     min-height: 52px;
     border-bottom: 1px solid var(--sk-border-light);
     background: rgba(255, 255, 255, 0.18);
