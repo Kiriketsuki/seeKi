@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{Extension, Json};
+use axum::{Extension, Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
@@ -113,15 +113,19 @@ pub struct SaveConfigResponse {
 pub async fn test_connection(
     Extension(mode): Extension<SharedAppMode>,
     Json(req): Json<TestConnectionRequest>,
-) -> Json<TestConnectionResponse> {
+) -> impl IntoResponse {
     // Guard: reject if setup has already been completed.
     if !matches!(*mode.read().await, AppMode::Setup) {
-        return Json(TestConnectionResponse {
-            success: false,
-            tables: None,
-            error: Some("Setup is already complete".to_string()),
-            error_source: None,
-        });
+        return (
+            StatusCode::CONFLICT,
+            Json(TestConnectionResponse {
+                success: false,
+                tables: None,
+                error: Some("Setup is already complete".to_string()),
+                error_source: None,
+            }),
+        )
+            .into_response();
     }
     let kind = match parse_db_kind(&req.kind) {
         Ok(k) => k,
@@ -131,7 +135,8 @@ pub async fn test_connection(
                 tables: None,
                 error: Some(e),
                 error_source: None,
-            });
+            })
+            .into_response();
         }
     };
 
@@ -152,7 +157,8 @@ pub async fn test_connection(
                         tables: None,
                         error: Some(e),
                         error_source: Some("ssh_config".to_string()),
-                    });
+                    })
+                    .into_response();
                 }
             };
 
@@ -176,6 +182,7 @@ pub async fn test_connection(
                         error: None,
                         error_source: None,
                     })
+                    .into_response()
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "test_connection failed");
@@ -192,6 +199,7 @@ pub async fn test_connection(
                         ),
                         error_source,
                     })
+                    .into_response()
                 }
             }
         }
@@ -200,20 +208,25 @@ pub async fn test_connection(
             tables: None,
             error: Some("SQLite support coming in v0.2".to_string()),
             error_source: None,
-        }),
+        })
+        .into_response(),
     }
 }
 
 pub async fn save_config(
     Extension(mode): Extension<SharedAppMode>,
     Json(req): Json<SaveConfigRequest>,
-) -> Json<SaveConfigResponse> {
+) -> impl IntoResponse {
     // Guard: reject if setup has already been completed.
     if !matches!(*mode.read().await, AppMode::Setup) {
-        return Json(SaveConfigResponse {
-            success: false,
-            error: Some("Setup is already complete".to_string()),
-        });
+        return (
+            StatusCode::CONFLICT,
+            Json(SaveConfigResponse {
+                success: false,
+                error: Some("Setup is already complete".to_string()),
+            }),
+        )
+            .into_response();
     }
     // 1. Validate DB kind
     let kind = match parse_db_kind(&req.database.kind) {
@@ -222,7 +235,8 @@ pub async fn save_config(
             return Json(SaveConfigResponse {
                 success: false,
                 error: Some(e),
-            });
+            })
+            .into_response();
         }
     };
 
@@ -234,7 +248,8 @@ pub async fn save_config(
             return Json(SaveConfigResponse {
                 success: false,
                 error: Some(e),
-            });
+            })
+            .into_response();
         }
     };
 
@@ -249,14 +264,16 @@ pub async fn save_config(
                     error: Some(
                         "Cannot connect to the database. Check your connection URL and ensure the database is running.".to_string(),
                     ),
-                });
+                })
+                .into_response();
             }
         }
         DatabaseKind::Sqlite => {
             return Json(SaveConfigResponse {
                 success: false,
                 error: Some("SQLite support coming in v0.2".to_string()),
-            });
+            })
+            .into_response();
         }
     }
 
@@ -267,7 +284,8 @@ pub async fn save_config(
             return Json(SaveConfigResponse {
                 success: false,
                 error: Some(e),
-            });
+            })
+            .into_response();
         }
     };
 
@@ -280,14 +298,16 @@ pub async fn save_config(
         return Json(SaveConfigResponse {
             success: false,
             error: Some(format!("Failed to write seeki.toml.tmp: {e}")),
-        });
+        })
+        .into_response();
     }
     if let Err(e) = std::fs::rename(tmp_path, "seeki.toml") {
         let _ = std::fs::remove_file(tmp_path);
         return Json(SaveConfigResponse {
             success: false,
             error: Some(format!("Failed to rename seeki.toml.tmp → seeki.toml: {e}")),
-        });
+        })
+        .into_response();
     }
 
     // 7. Write .seeki.secrets if needed
@@ -298,7 +318,8 @@ pub async fn save_config(
         return Json(SaveConfigResponse {
             success: false,
             error: Some(format!("Failed to write .seeki.secrets: {e}")),
-        });
+        })
+        .into_response();
     }
 
     // 8. Connect DatabasePool and build AppState
@@ -306,10 +327,12 @@ pub async fn save_config(
         Ok(c) => c,
         Err(e) => {
             let _ = std::fs::remove_file("seeki.toml");
+            let _ = std::fs::remove_file(".seeki.secrets");
             return Json(SaveConfigResponse {
                 success: false,
                 error: Some(format!("Generated config is invalid: {e}")),
-            });
+            })
+            .into_response();
         }
     };
 
@@ -318,10 +341,12 @@ pub async fn save_config(
         Ok(d) => d,
         Err(e) => {
             let _ = std::fs::remove_file("seeki.toml");
+            let _ = std::fs::remove_file(".seeki.secrets");
             return Json(SaveConfigResponse {
                 success: false,
                 error: Some(format!("Failed to connect after saving config: {e}")),
-            });
+            })
+            .into_response();
         }
     };
 
@@ -336,6 +361,7 @@ pub async fn save_config(
         success: true,
         error: None,
     })
+    .into_response()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -797,5 +823,69 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["success"], false);
         assert!(json["error"].as_str().unwrap().contains("Unsupported"));
+    }
+
+    fn normal_mode() -> SharedAppMode {
+        let pool =
+            sqlx::PgPool::connect_lazy("postgres://test:test@localhost/test").unwrap();
+        let db = crate::db::DatabasePool::Postgres(pool, None);
+        let config = AppConfig::parse(
+            "[server]\nhost = \"127.0.0.1\"\nport = 3141\n\
+             [database]\nkind = \"postgres\"\nurl = \"postgres://u:p@localhost/db\"\n",
+        )
+        .expect("minimal config should parse");
+        let state = Arc::new(crate::AppState { db, config });
+        Arc::new(tokio::sync::RwLock::new(AppMode::Normal(state)))
+    }
+
+    #[tokio::test]
+    async fn test_connection_rejects_when_not_in_setup_mode() {
+        let app = test_router_with_mode(normal_mode());
+        let body = serde_json::json!({ "kind": "postgres", "url": "postgres://u:p@localhost/db" });
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/setup/test-connection")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 409);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["success"], false);
+        assert!(json["error"].as_str().unwrap().contains("already complete"));
+    }
+
+    #[tokio::test]
+    async fn save_config_rejects_when_not_in_setup_mode() {
+        let app = test_router_with_mode(normal_mode());
+        let body = serde_json::json!({
+            "server": { "host": "127.0.0.1", "port": 3141 },
+            "database": { "kind": "postgres", "url": "postgres://u:p@localhost/db", "max_connections": 5 }
+        });
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/setup/save")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 409);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["success"], false);
+        assert!(json["error"].as_str().unwrap().contains("already complete"));
     }
 }
