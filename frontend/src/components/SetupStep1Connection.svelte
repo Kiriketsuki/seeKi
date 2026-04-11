@@ -187,7 +187,7 @@
           <div class="fields-grid">
             <div class="field span-3">
               <label for="ssh-pw">SSH Password</label>
-              <input id="ssh-pw" type="password" bind:value={wizardData.ssh.key_passphrase} oninput={() => testState = 'idle'} autocomplete="current-password" />
+              <input id="ssh-pw" type="password" bind:value={wizardData.ssh.password} oninput={() => testState = 'idle'} autocomplete="current-password" />
             </div>
           </div>
           <div class="info-banner warning">

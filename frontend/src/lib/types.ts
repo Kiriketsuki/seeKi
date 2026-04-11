@@ -65,6 +65,7 @@ export interface SshWizardConfig {
   auth_method: 'key' | 'password' | 'agent';
   key_path?: string;
   key_passphrase?: string; // only in memory, never persisted to seeki.toml
+  password?: string; // ssh password auth (not yet implemented backend-side)
 }
 
 export interface TablePreview {
@@ -102,7 +103,7 @@ export interface WizardData {
 }
 
 export interface SetupSaveRequest {
-  server: { host: string; port: number };
+  server?: { host: string; port: number };
   database: { kind: string; url: string; max_connections: number };
   ssh?: SshWizardConfig;
   tables?: { include: string[] };

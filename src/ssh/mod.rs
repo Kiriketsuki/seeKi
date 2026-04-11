@@ -78,7 +78,7 @@ impl SshTunnel {
 
 impl Drop for SshTunnel {
     fn drop(&mut self) {
-        // Dropping `session` closes the SSH ControlMaster connection.
-        let _ = &self.session;
+        // openssh::Session's own Drop closes the ControlMaster connection.
+        // No explicit action needed here.
     }
 }

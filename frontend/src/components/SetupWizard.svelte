@@ -31,6 +31,7 @@
       auth_method: 'key',
       key_path: '',
       key_passphrase: '',
+      password: '',
     },
     tables: [],
     selected_tables: [],

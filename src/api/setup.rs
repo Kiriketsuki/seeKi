@@ -29,6 +29,7 @@ pub struct SshWizardConfig {
     auth_method: String,
     key_path: Option<String>,
     key_passphrase: Option<String>,
+    password: Option<String>,
 }
 
 fn default_ssh_port() -> u16 {
@@ -55,6 +56,7 @@ pub struct TestConnectionResponse {
 
 #[derive(Deserialize)]
 pub struct SaveConfigRequest {
+    #[serde(default)]
     server: SaveServerConfig,
     database: SaveDatabaseConfig,
     ssh: Option<SshWizardConfig>,
@@ -62,7 +64,7 @@ pub struct SaveConfigRequest {
     branding: Option<SaveBrandingConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct SaveServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
@@ -391,7 +393,7 @@ fn wizard_to_ssh(w: &SshWizardConfig) -> Result<(SshConfig, SecretsConfig), Stri
     };
     let secrets = SecretsConfig {
         ssh_key_passphrase: w.key_passphrase.clone(),
-        ssh_password: None,
+        ssh_password: w.password.clone(),
     };
     Ok((ssh_config, secrets))
 }
@@ -824,6 +826,42 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["success"], false);
         assert!(json["error"].as_str().unwrap().contains("Unsupported"));
+    }
+
+    #[tokio::test]
+    async fn save_config_accepts_request_without_server_field() {
+        // Regression test: SaveConfigRequest.server has #[serde(default)] so omitting the
+        // `server` key entirely must NOT cause a 422 deserialization failure.
+        // The handler will still error (unsupported DB kind), but that proves serde succeeded.
+        let app = test_router();
+        let body = serde_json::json!({
+            "database": { "kind": "mysql", "url": "mysql://localhost/db" }
+            // `server` key intentionally absent
+        });
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/setup/save")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // 200 with {success:false} means deserialization succeeded and the handler ran.
+        // A 422 would mean serde rejected the payload due to the missing `server` field.
+        assert_eq!(resp.status(), 200, "should not be a 422 deserialization error");
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["success"], false);
+        assert!(
+            json["error"].as_str().unwrap().contains("Unsupported"),
+            "expected Unsupported kind error, got: {:?}",
+            json["error"]
+        );
     }
 
     fn normal_mode() -> SharedAppMode {
