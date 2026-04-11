@@ -111,8 +111,18 @@ pub struct SaveConfigResponse {
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 pub async fn test_connection(
+    Extension(mode): Extension<SharedAppMode>,
     Json(req): Json<TestConnectionRequest>,
 ) -> Json<TestConnectionResponse> {
+    // Guard: reject if setup has already been completed.
+    if !matches!(*mode.read().await, AppMode::Setup) {
+        return Json(TestConnectionResponse {
+            success: false,
+            tables: None,
+            error: Some("Setup is already complete".to_string()),
+            error_source: None,
+        });
+    }
     let kind = match parse_db_kind(&req.kind) {
         Ok(k) => k,
         Err(e) => {
@@ -198,6 +208,13 @@ pub async fn save_config(
     Extension(mode): Extension<SharedAppMode>,
     Json(req): Json<SaveConfigRequest>,
 ) -> Json<SaveConfigResponse> {
+    // Guard: reject if setup has already been completed.
+    if !matches!(*mode.read().await, AppMode::Setup) {
+        return Json(SaveConfigResponse {
+            success: false,
+            error: Some("Setup is already complete".to_string()),
+        });
+    }
     // 1. Validate DB kind
     let kind = match parse_db_kind(&req.database.kind) {
         Ok(k) => k,

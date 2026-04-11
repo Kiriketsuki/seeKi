@@ -12,21 +12,28 @@ pub struct SshTunnel {
 impl SshTunnel {
     pub async fn connect(
         ssh_config: &SshConfig,
-        _secrets: &SecretsConfig,
+        secrets: &SecretsConfig,
         db_host: &str,
         db_port: u16,
     ) -> anyhow::Result<Self> {
         // Find a free local port by binding to :0, then releasing it.
+        // TOCTOU: Brief window before SSH reuses the port, but failure is immediate if taken.
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_port = listener.local_addr()?.port();
         drop(listener);
 
         let mut builder = openssh::SessionBuilder::default();
-        builder.known_hosts_check(openssh::KnownHosts::Accept);
+        builder.known_hosts_check(openssh::KnownHosts::Add);
 
         match ssh_config.auth_method {
             SshAuthMethod::Key => {
                 if let Some(key_path) = &ssh_config.key_path {
+                    if secrets.ssh_key_passphrase.is_some() {
+                        anyhow::bail!(
+                            "Passphrase-protected SSH keys are not supported in server mode. \
+                             Please add your key to your SSH agent using: ssh-add {key_path}"
+                        );
+                    }
                     builder.keyfile(key_path);
                 }
             }
