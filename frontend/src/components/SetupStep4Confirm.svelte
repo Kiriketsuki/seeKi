@@ -42,7 +42,6 @@
     saveError = '';
     try {
       const result = await setupSaveConfig({
-        server: { host: 'localhost', port: 8080 },
         database: {
           kind: 'postgres',
           url: buildUrl(),

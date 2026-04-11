@@ -314,6 +314,7 @@ pub async fn save_config(
     if let Some(secrets_str) = secrets_content
         && let Err(e) = write_secrets_file(&secrets_str)
     {
+        let _ = std::fs::remove_file(".seeki.secrets");
         let _ = std::fs::remove_file("seeki.toml");
         return Json(SaveConfigResponse {
             success: false,
