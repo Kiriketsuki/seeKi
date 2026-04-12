@@ -29,6 +29,7 @@ frontend/dist/
 .brainstorm/
 .gitnexus
 .claude/
+.playwright-mcp/
 
 # E2E test artifacts
 .env.test
