@@ -55,3 +55,62 @@ export interface DisplayConfig {
     }
   >;
 }
+
+// ── Setup Wizard Types ──────────────────────────────────────────────────────
+
+export interface SshWizardConfig {
+  host: string;
+  port: number;
+  username: string;
+  auth_method: 'key' | 'password' | 'agent';
+  key_path?: string;
+  key_passphrase?: string; // only in memory, never persisted to seeki.toml
+  password?: string; // ssh password auth (not yet implemented backend-side)
+}
+
+export interface TablePreview {
+  name: string;
+  estimated_rows: number;
+  is_system: boolean;
+}
+
+export interface TestConnectionResult {
+  success: boolean;
+  tables?: TablePreview[];
+  error?: string;
+  error_source?: 'ssh' | 'db' | 'ssh_config';
+}
+
+export interface WizardData {
+  // Step 1
+  connection_mode: 'url' | 'fields';
+  url: string;
+  // fields mode
+  host: string;
+  port: number;
+  database: string;
+  db_user: string;
+  db_password: string;
+  // SSH
+  use_ssh: boolean;
+  ssh: SshWizardConfig;
+  // Step 2
+  tables: TablePreview[]; // from test-connection response
+  selected_tables: string[];
+  // Step 3
+  title: string;
+  subtitle: string;
+}
+
+export interface SetupSaveRequest {
+  server?: { host: string; port: number };
+  database: { kind: string; url: string; max_connections: number };
+  ssh?: SshWizardConfig;
+  tables?: { include: string[] };
+  branding?: { title: string; subtitle?: string };
+}
+
+export interface SetupSaveResponse {
+  success: boolean;
+  error?: string;
+}

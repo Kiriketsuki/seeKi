@@ -45,6 +45,8 @@ mime_guess = "2"
 # Utilities
 anyhow = "1"
 dirs-next = "2"
+openssh = { version = "0.10", features = ["native-mux"] }
+url = "2"
 
 [dev-dependencies]
 http-body-util = "0.1.3"

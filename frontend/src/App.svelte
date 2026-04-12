@@ -19,6 +19,7 @@
     SortDirection,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
+  import SetupWizard from './components/SetupWizard.svelte';
 
   let tables: TableInfo[] = $state([]);
   let selectedTable: string = $state('');
@@ -430,8 +431,7 @@
 </script>
 
 {#if isSetup}
-  <!-- Setup wizard placeholder — Epic 5 -->
-  <div>Setup wizard will go here</div>
+  <SetupWizard />
 {:else if loading}
   <div class="layout">
     <div class="loading-state">

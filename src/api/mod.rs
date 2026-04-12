@@ -4,31 +4,51 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     body::Body,
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     http::header,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
+use crate::app_mode::{AppMode, SharedAppMode};
 use crate::config::{display_name_column, display_name_table};
 use crate::db::{ExportQueryParams, RowQueryParams, ValidationError};
 
-pub fn router() -> Router<Arc<AppState>> {
+pub fn router(mode: SharedAppMode) -> Router {
     Router::new()
         .route("/tables", get(list_tables))
         .route("/tables/{table}/columns", get(get_columns))
         .route("/tables/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
         .route("/export/{table}/csv", get(export_csv))
-        .route("/status", get(status_normal))
+        .route("/status", get(status))
+        .route("/setup/test-connection", post(setup::test_connection))
+        .route("/setup/save", post(setup::save_config))
+        .layer(Extension(mode))
 }
 
-async fn status_normal() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "mode": "normal" }))
+async fn status(Extension(mode): Extension<SharedAppMode>) -> Json<serde_json::Value> {
+    let guard = mode.read().await;
+    let mode_str = match &*guard {
+        AppMode::Normal(_) => "normal",
+        AppMode::Setup => "setup",
+    };
+    Json(serde_json::json!({ "mode": mode_str }))
+}
+
+/// Extract `Arc<AppState>` from the shared mode, returning 503 if in setup mode.
+async fn require_state(mode: &SharedAppMode) -> Result<Arc<AppState>, AppError> {
+    let guard = mode.read().await;
+    match &*guard {
+        AppMode::Normal(s) => Ok(Arc::clone(s)),
+        AppMode::Setup => Err(AppError::service_unavailable(
+            "This endpoint is not available in setup mode",
+        )),
+    }
 }
 
 #[derive(Serialize)]
@@ -55,8 +75,9 @@ struct ColumnDisplayConfig {
 }
 
 async fn get_display_config(
-    State(state): State<Arc<AppState>>,
+    Extension(mode): Extension<SharedAppMode>,
 ) -> Result<Json<DisplayConfigResponse>, AppError> {
+    let state = require_state(&mode).await?;
     let all_tables = state.db.list_tables().await?;
     let allowed_tables: Vec<_> = all_tables
         .into_iter()
@@ -99,8 +120,9 @@ async fn get_display_config(
 }
 
 async fn list_tables(
-    State(state): State<Arc<AppState>>,
+    Extension(mode): Extension<SharedAppMode>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
     let all_tables = state.db.list_tables().await?;
     let tables: Vec<serde_json::Value> = all_tables
         .into_iter()
@@ -118,9 +140,10 @@ async fn list_tables(
 }
 
 async fn get_columns(
-    State(state): State<Arc<AppState>>,
+    Extension(mode): Extension<SharedAppMode>,
     Path(table): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
@@ -175,11 +198,12 @@ fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String
 }
 
 async fn get_rows(
-    State(state): State<Arc<AppState>>,
+    Extension(mode): Extension<SharedAppMode>,
     Path(table): Path<String>,
     Query(params): Query<RowsQuery>,
     Query(all_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
@@ -202,11 +226,12 @@ async fn get_rows(
 }
 
 async fn export_csv(
-    State(state): State<Arc<AppState>>,
+    Extension(mode): Extension<SharedAppMode>,
     Path(table): Path<String>,
     Query(params): Query<RowsQuery>,
     Query(all_params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, AppError> {
+    let state = require_state(&mode).await?;
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
@@ -230,11 +255,7 @@ async fn export_csv(
         .replace(' ', "_")
         .to_lowercase();
     let sanitized: String = display_table
-        .replace('"', "")
-        .replace('\\', "")
-        .replace(';', "")
-        .replace('\r', "")
-        .replace('\n', "")
+        .replace(['"', '\\', ';', '\r', '\n'], "")
         .chars()
         .filter(|c| c.is_ascii())
         .collect();
@@ -329,12 +350,12 @@ async fn export_csv(
         }
 
         // Flush any remaining buffered rows
-        if !stream_error {
-            if wtr.flush().is_ok() {
-                let remaining = wtr.into_inner().unwrap_or_default();
-                if !remaining.is_empty() {
-                    let _ = tx.send(Ok(bytes::Bytes::from(remaining))).await;
-                }
+        if !stream_error
+            && wtr.flush().is_ok()
+        {
+            let remaining = wtr.into_inner().unwrap_or_default();
+            if !remaining.is_empty() {
+                let _ = tx.send(Ok(bytes::Bytes::from(remaining))).await;
             }
         }
 
@@ -445,6 +466,13 @@ impl AppError {
     fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn service_unavailable(message: impl Into<String>) -> Self {
+        Self {
+            status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
         }
     }
