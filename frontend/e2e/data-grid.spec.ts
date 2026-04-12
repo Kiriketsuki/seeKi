@@ -99,9 +99,12 @@ test.describe('Data Grid — Filtering', () => {
     await firstFilter.fill('1');
     await rowsLoaded;
 
-    // Verify the status bar updated
+    // Verify the status bar updated and filter actually narrowed results
     const statusText = await seeki.getStatusBarText();
     expect(statusText).toMatch(/Showing \d+ - \d+ of \d+/);
+
+    const filteredTotal = await seeki.getTotalRows();
+    expect(filteredTotal).toBeLessThanOrEqual(initialTotal);
   });
 
   test('multiple filters AND together', async ({ page, seeki }) => {

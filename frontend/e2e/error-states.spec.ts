@@ -40,10 +40,10 @@ test.describe('Error States — API Errors', () => {
 });
 
 test.describe('Error States — SQL Injection Prevention', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, seeki }) => {
     await page.goto('/');
-    // Wait for the grid to load
-    await expect(page.locator('revo-grid')).toBeVisible({ timeout: 10000 });
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
   });
 
   test('SQL injection in filter input is handled safely', async ({ page, seeki }) => {
@@ -154,10 +154,10 @@ test.describe('Error States — SQL Injection Prevention', () => {
 });
 
 test.describe('Error States — Edge Cases', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, seeki }) => {
     await page.goto('/');
-    // Wait for the grid to load
-    await expect(page.locator('revo-grid')).toBeVisible({ timeout: 10000 });
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
   });
 
   test('very long filter value does not crash', async ({ page, seeki }) => {
