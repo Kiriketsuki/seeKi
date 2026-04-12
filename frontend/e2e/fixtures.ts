@@ -61,9 +61,11 @@ export class SeekiHelpers {
     await this.waitForGridLoaded();
   }
 
-  /** Get visible column headers from the RevoGrid. */
+  /** Get visible column header labels from the RevoGrid (light DOM). */
   async getVisibleColumnHeaders(): Promise<string[]> {
-    return await this.page.locator('.sk-grid-header .header-label').allTextContents();
+    const labels = this.page.locator('.sk-grid-header__label');
+    await labels.first().waitFor({ state: 'attached', timeout: 5_000 });
+    return await labels.allTextContents();
   }
 
   /** Click the toolbar search button. */

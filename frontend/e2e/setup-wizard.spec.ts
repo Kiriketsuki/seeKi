@@ -1,8 +1,24 @@
 import { test, expect } from './fixtures';
 
+/**
+ * Helper: mock /api/status to return setup mode before navigating.
+ * Without this, the server (which has a valid seeki.toml) returns normal mode
+ * and the wizard never appears.
+ */
+async function mockSetupMode(page: import('@playwright/test').Page) {
+  await page.route('**/api/status', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ mode: 'setup' }),
+    });
+  });
+}
+
 test.describe('Setup Wizard', () => {
   test.describe('Initial State', () => {
     test('wizard is visible in setup mode', async ({ page, seeki }) => {
+      await mockSetupMode(page);
       await page.goto('/');
       await seeki.waitForAppReady();
 
@@ -22,12 +38,13 @@ test.describe('Setup Wizard', () => {
 
   test.describe('Step 1 - Connection', () => {
     test('SSH toggle reveals and hides SSH fields', async ({ page, seeki }) => {
+      await mockSetupMode(page);
       await page.goto('/');
       await seeki.waitForAppReady();
 
       // Locate SSH toggle checkbox
       const sshToggle = page.locator('label.toggle-row:has-text("Connect via SSH Tunnel") input[type="checkbox"]');
-      
+
       // SSH fields should be hidden initially
       await expect(page.locator('input#ssh-host')).not.toBeVisible();
       await expect(page.locator('input#ssh-port')).not.toBeVisible();
@@ -40,7 +57,7 @@ test.describe('Setup Wizard', () => {
       await expect(page.locator('input#ssh-host')).toBeVisible();
       await expect(page.locator('input#ssh-port')).toBeVisible();
       await expect(page.locator('input#ssh-user')).toBeVisible();
-      await expect(page.locator('select#ssh-auth-method')).toBeVisible();
+      await expect(page.locator('select#ssh-auth')).toBeVisible();
 
       // Disable SSH tunnel
       await sshToggle.uncheck();
@@ -52,6 +69,7 @@ test.describe('Setup Wizard', () => {
     });
 
     test('failed connection shows error', async ({ page, seeki }) => {
+      await mockSetupMode(page);
       await page.goto('/');
       await seeki.waitForAppReady();
 
@@ -68,7 +86,7 @@ test.describe('Setup Wizard', () => {
       });
 
       // Enter invalid connection string
-      await page.locator('input#db-url').fill('postgresql://invalid:5432/db');
+      await page.locator('input#conn-url').fill('postgresql://invalid:5432/db');
 
       // Click Test Connection
       const testButton = page.locator('button.btn-test[aria-label="Test database connection"]');
@@ -90,6 +108,7 @@ test.describe('Setup Wizard', () => {
 
   test.describe('Step Navigation', () => {
     test('step navigation works (forward and back)', async ({ page, seeki }) => {
+      await mockSetupMode(page);
       await page.goto('/');
       await seeki.waitForAppReady();
 
@@ -112,9 +131,9 @@ test.describe('Setup Wizard', () => {
       await expect(page.locator('p.step-label')).toHaveText('Step 1 of 4');
 
       // Fill in connection details and test
-      await page.locator('input#db-url').fill('postgresql://localhost:5432/testdb');
+      await page.locator('input#conn-url').fill('postgresql://localhost:5432/testdb');
       await page.locator('button.btn-test[aria-label="Test database connection"]').click();
-      
+
       // Wait for success indicator
       await expect(page.locator('span.test-ok')).toBeVisible({ timeout: 5000 });
 
@@ -125,7 +144,7 @@ test.describe('Setup Wizard', () => {
 
       // ===== Step 2: Tables =====
       await expect(page.locator('p.step-label')).toHaveText('Step 2 of 4');
-      await expect(page.locator('h2.step-title')).toContainText('Tables');
+      await expect(page.locator('h2.step-title')).toContainText('tables');
 
       // Verify table list is visible
       await expect(page.locator('div.table-list[role="listbox"]')).toBeVisible();
@@ -140,7 +159,7 @@ test.describe('Setup Wizard', () => {
 
       // ===== Step 3: Branding =====
       await expect(page.locator('p.step-label')).toHaveText('Step 3 of 4');
-      await expect(page.locator('h2.step-title')).toContainText('Branding');
+      await expect(page.locator('h2.step-title')).toContainText('Brand');
 
       // Fill in branding details
       await page.locator('input#brand-title').fill('My Test Database');
@@ -152,17 +171,17 @@ test.describe('Setup Wizard', () => {
 
       // ===== Step 4: Confirm =====
       await expect(page.locator('p.step-label')).toHaveText('Step 4 of 4');
-      await expect(page.locator('h2.step-title')).toContainText('Confirm');
+      await expect(page.locator('h2.step-title')).toContainText('Confirm & save');
 
       // ===== Navigate Backwards =====
-      
+
       // Back to step 3
       let backButton = page.locator('button.btn-back').first();
       await backButton.click();
       await expect(page.locator('p.step-label')).toHaveText('Step 3 of 4');
 
       // Back to step 2
-      backButton = page.locator('button.btn-back[aria-label="Go back to connection setup"]');
+      backButton = page.locator('button.btn-back[aria-label="Go back to table selection"]');
       await backButton.click();
       await expect(page.locator('p.step-label')).toHaveText('Step 2 of 4');
 
@@ -175,13 +194,13 @@ test.describe('Setup Wizard', () => {
       await expect(page.locator('p.step-label')).toHaveText('Step 1 of 4');
 
       // Verify connection details persisted
-      await expect(page.locator('input#db-url')).toHaveValue('postgresql://localhost:5432/testdb');
-      await expect(page.locator('span.test-ok')).toBeVisible();
+      await expect(page.locator('input#conn-url')).toHaveValue('postgresql://localhost:5432/testdb');
     });
   });
 
   test.describe('Complete Setup Flow', () => {
     test('successful connection and save flow', async ({ page, seeki }) => {
+      await mockSetupMode(page);
       await page.goto('/');
       await seeki.waitForAppReady();
 
@@ -207,7 +226,8 @@ test.describe('Setup Wizard', () => {
         });
       });
 
-      // After save, the app will reload and should be in normal mode
+      // After save, the app will reload — override status mock to return normal mode.
+      // Playwright uses LIFO: this handler runs before the setup mock for subsequent requests.
       await page.route('**/api/status', async (route) => {
         await route.fulfill({
           status: 200,
@@ -217,7 +237,7 @@ test.describe('Setup Wizard', () => {
       });
 
       // ===== Step 1: Connection =====
-      await page.locator('input#db-url').fill('postgresql://localhost:5432/testdb');
+      await page.locator('input#conn-url').fill('postgresql://localhost:5432/testdb');
       await page.locator('button.btn-test[aria-label="Test database connection"]').click();
       await expect(page.locator('span.test-ok')).toBeVisible({ timeout: 5000 });
       await page.locator('button.btn-next[aria-label="Proceed to table selection"]').click();

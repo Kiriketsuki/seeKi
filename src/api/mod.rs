@@ -147,7 +147,11 @@ async fn get_columns(
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
-    let raw_columns = state.db.get_columns(&table).await?;
+    let raw_columns = state.db.get_columns(&table).await
+        .map_err(|e| map_table_query_error(e, &table))?;
+    if raw_columns.is_empty() {
+        return Err(AppError::not_found(format!("Table '{table}' not found")));
+    }
     let columns: Vec<serde_json::Value> = raw_columns
         .into_iter()
         .map(|c| {
@@ -221,7 +225,8 @@ async fn get_rows(
             search: params.search.as_deref(),
             filters: &filters,
         })
-        .await?;
+        .await
+        .map_err(|e| map_table_query_error(e, &table))?;
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -491,6 +496,19 @@ impl From<anyhow::Error> for AppError {
             message: "Internal server error".to_string(),
         }
     }
+}
+
+/// Map a DB query error to an AppError, converting PostgreSQL "undefined_table"
+/// (error code 42P01) into a 404 that includes the table name.
+fn map_table_query_error(err: anyhow::Error, table: &str) -> AppError {
+    if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
+        if let sqlx::Error::Database(db_err) = sqlx_err {
+            if db_err.code().as_deref() == Some("42P01") {
+                return AppError::not_found(format!("Table '{table}' not found"));
+            }
+        }
+    }
+    AppError::from(err)
 }
 
 impl axum::response::IntoResponse for AppError {

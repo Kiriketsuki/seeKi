@@ -94,7 +94,7 @@ test.describe('Error States — SQL Injection Prevention', () => {
     // Open global search with Ctrl+K
     await page.keyboard.press('Control+k');
     
-    const searchInput = page.locator('input.search-input[placeholder="Search all columns…"]');
+    const searchInput = page.locator('input.search-input');
     await expect(searchInput).toBeVisible();
     
     // Type SQL injection payload
@@ -211,7 +211,7 @@ test.describe('Error States — Edge Cases', () => {
       // Open global search with Ctrl+K
       await page.keyboard.press('Control+k');
       
-      const searchInput = page.locator('input.search-input[placeholder="Search all columns…"]');
+      const searchInput = page.locator('input.search-input');
       await expect(searchInput).toBeVisible();
       
       // Clear and type the test input

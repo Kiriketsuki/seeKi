@@ -9,7 +9,9 @@ import { execSync, spawn, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import net from 'net';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const CONFIG_SRC = path.join(PROJECT_ROOT, 'seeki.toml.test');
 const CONFIG_DST = path.join(PROJECT_ROOT, 'seeki.toml');

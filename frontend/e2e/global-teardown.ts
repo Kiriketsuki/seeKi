@@ -6,7 +6,9 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const CONFIG_DST = path.join(PROJECT_ROOT, 'seeki.toml');
 const PID_FILE = path.join(PROJECT_ROOT, '.e2e-server.pid');
