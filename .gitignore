@@ -22,6 +22,9 @@ Thumbs.db
 
 # Project-specific
 seeki.toml
+.seeki.secrets
 node_modules/
 frontend/dist/
 .brainstorm/
+.gitnexus
+.claude/

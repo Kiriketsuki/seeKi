@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub display: DisplayConfig,
     #[serde(default)]
     pub branding: BrandingConfig,
+    #[serde(default)]
+    pub ssh: Option<SshConfig>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -214,6 +216,66 @@ impl AppConfig {
         }
 
         Err(ConfigLoadError::NotFound)
+    }
+}
+
+// ── SSH tunnel configuration ──────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SshConfig {
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    pub username: String,
+    pub auth_method: SshAuthMethod,
+    pub key_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SshAuthMethod {
+    Key,
+    Password,
+    Agent,
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+/// Runtime secrets loaded from `.seeki.secrets` (never written to seeki.toml).
+#[derive(Default)]
+pub struct SecretsConfig {
+    pub ssh_key_passphrase: Option<String>,
+    pub ssh_password: Option<String>,
+}
+
+impl SecretsConfig {
+    /// Load secrets from `.seeki.secrets` in the current working directory.
+    /// Returns all-`None` defaults if the file is absent or unparseable.
+    pub fn load_from_cwd() -> Self {
+        let Ok(content) = std::fs::read_to_string(".seeki.secrets") else {
+            return Self::default();
+        };
+
+        #[derive(serde::Deserialize, Default)]
+        struct SshSection {
+            key_passphrase: Option<String>,
+            password: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Secrets {
+            #[serde(default)]
+            ssh: SshSection,
+        }
+
+        match toml::from_str::<Secrets>(&content) {
+            Ok(s) => Self {
+                ssh_key_passphrase: s.ssh.key_passphrase,
+                ssh_password: s.ssh.password,
+            },
+            Err(_) => Self::default(),
+        }
     }
 }
 
@@ -533,5 +595,41 @@ subtitle = "Fleet Telemetry"
             std::env::set_current_dir(&self.original_dir).expect("cwd should be restored");
             fs::remove_dir_all(&self.temp_dir).expect("temp dir should be removed");
         }
+    }
+
+    #[test]
+    fn config_without_ssh_section_parses_fine() {
+        let config = AppConfig::parse(MINIMAL_CONFIG).expect("minimal config should parse");
+        assert!(config.ssh.is_none(), "ssh should default to None");
+    }
+
+    #[test]
+    fn config_with_ssh_section_parses() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://localhost/db"
+[ssh]
+host = "bastion.example.com"
+username = "admin"
+auth_method = "key"
+key_path = "/home/user/.ssh/id_rsa"
+"#;
+        let config = AppConfig::parse(toml).expect("config with ssh should parse");
+        let ssh = config.ssh.expect("ssh should be present");
+        assert_eq!(ssh.host, "bastion.example.com");
+        assert_eq!(ssh.port, 22);
+        assert_eq!(ssh.username, "admin");
+        assert_eq!(ssh.auth_method, SshAuthMethod::Key);
+        assert_eq!(ssh.key_path.as_deref(), Some("/home/user/.ssh/id_rsa"));
+    }
+
+    #[test]
+    fn secrets_config_defaults_when_no_file() {
+        let secrets = SecretsConfig::load_from_cwd();
+        assert!(secrets.ssh_key_passphrase.is_none());
+        assert!(secrets.ssh_password.is_none());
     }
 }
