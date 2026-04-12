@@ -63,18 +63,47 @@ pub struct ExportQueryParams<'a> {
 }
 
 pub enum DatabasePool {
-    Postgres(sqlx::PgPool),
+    Postgres(sqlx::PgPool, Option<crate::ssh::SshTunnel>),
 }
 
 impl DatabasePool {
-    pub async fn connect(config: &DatabaseConfig) -> anyhow::Result<Self> {
+    pub async fn connect(
+        config: &DatabaseConfig,
+        ssh: Option<(&crate::config::SshConfig, &crate::config::SecretsConfig)>,
+    ) -> anyhow::Result<Self> {
         match config.kind {
             DatabaseKind::Postgres => {
+                let (connect_url, tunnel) = if let Some((ssh_config, secrets)) = ssh {
+                    let parsed = url::Url::parse(&config.url)
+                        .map_err(|e| anyhow::anyhow!("Invalid database URL: {e}"))?;
+                    let db_host = parsed
+                        .host_str()
+                        .ok_or_else(|| anyhow::anyhow!("Database URL has no host"))?
+                        .to_string();
+                    let db_port = parsed.port().unwrap_or(5432);
+
+                    let tunnel =
+                        crate::ssh::SshTunnel::connect(ssh_config, secrets, &db_host, db_port)
+                            .await?;
+
+                    let mut new_url = parsed;
+                    new_url
+                        .set_host(Some("127.0.0.1"))
+                        .map_err(|_| anyhow::anyhow!("Failed to rewrite URL host"))?;
+                    new_url
+                        .set_port(Some(tunnel.local_port()))
+                        .map_err(|_| anyhow::anyhow!("Failed to rewrite URL port"))?;
+
+                    (new_url.to_string(), Some(tunnel))
+                } else {
+                    (config.url.clone(), None)
+                };
+
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(config.max_connections)
-                    .connect(&config.url)
+                    .connect(&connect_url)
                     .await?;
-                Ok(Self::Postgres(pool))
+                Ok(Self::Postgres(pool, tunnel))
             }
             DatabaseKind::Sqlite => {
                 anyhow::bail!("SQLite support coming in v0.2")
@@ -84,13 +113,13 @@ impl DatabasePool {
 
     pub async fn list_tables(&self) -> anyhow::Result<Vec<TableInfo>> {
         match self {
-            Self::Postgres(pool) => postgres::list_tables(pool).await,
+            Self::Postgres(pool, _) => postgres::list_tables(pool).await,
         }
     }
 
     pub async fn get_columns(&self, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
         match self {
-            Self::Postgres(pool) => postgres::get_columns(pool, table).await,
+            Self::Postgres(pool, _) => postgres::get_columns(pool, table).await,
         }
     }
 
@@ -99,13 +128,13 @@ impl DatabasePool {
         tables: &[&str],
     ) -> anyhow::Result<std::collections::HashMap<String, Vec<ColumnInfo>>> {
         match self {
-            Self::Postgres(pool) => postgres::get_columns_bulk(pool, tables).await,
+            Self::Postgres(pool, _) => postgres::get_columns_bulk(pool, tables).await,
         }
     }
 
     pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
         match self {
-            Self::Postgres(pool) => postgres::query_rows(pool, params).await,
+            Self::Postgres(pool, _) => postgres::query_rows(pool, params).await,
         }
     }
 
@@ -113,7 +142,7 @@ impl DatabasePool {
     /// Returns None if the pool is not PostgreSQL.
     pub fn pg_pool(&self) -> Option<&sqlx::PgPool> {
         match self {
-            Self::Postgres(pool) => Some(pool),
+            Self::Postgres(pool, _) => Some(pool),
         }
     }
 }

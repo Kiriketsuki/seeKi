@@ -2,26 +2,91 @@ use std::collections::HashMap;
 use std::pin::Pin;
 
 use futures::Stream;
+use serde::Serialize;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 
 use super::{ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError};
 
-/// Test a PostgreSQL connection and return the list of public table names.
-/// Opens a temporary pool, queries table names, then closes it.
-pub async fn test_connection(url: &str) -> anyhow::Result<Vec<String>> {
+/// Result of a connection test — describes a single table visible to the server.
+#[derive(Debug, Serialize)]
+pub struct TablePreview {
+    pub name: String,
+    pub estimated_rows: i64,
+    pub is_system: bool,
+}
+
+/// Test a PostgreSQL connection and return a preview of all visible tables.
+/// If `ssh` is provided, an SSH tunnel is established first.
+pub async fn test_connection(
+    url: &str,
+    ssh: Option<(&crate::config::SshConfig, &crate::config::SecretsConfig)>,
+) -> anyhow::Result<Vec<TablePreview>> {
+    let (connect_url, _tunnel) = if let Some((ssh_config, secrets)) = ssh {
+        let parsed = url::Url::parse(url)
+            .map_err(|e| anyhow::anyhow!("Invalid database URL: {e}"))?;
+        let db_host = parsed
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("Database URL has no host"))?
+            .to_string();
+        let db_port = parsed.port().unwrap_or(5432);
+
+        let tunnel =
+            crate::ssh::SshTunnel::connect(ssh_config, secrets, &db_host, db_port).await?;
+
+        let mut new_url = parsed;
+        new_url
+            .set_host(Some("127.0.0.1"))
+            .map_err(|_| anyhow::anyhow!("Failed to rewrite URL host for SSH tunnel"))?;
+        new_url
+            .set_port(Some(tunnel.local_port()))
+            .map_err(|_| anyhow::anyhow!("Failed to rewrite URL port for SSH tunnel"))?;
+
+        (new_url.to_string(), Some(tunnel))
+    } else {
+        (url.to_string(), None)
+    };
+
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(std::time::Duration::from_secs(10))
-        .connect(url)
+        .connect(&connect_url)
         .await?;
 
     let rows = sqlx::query(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
+        r#"
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            c.reltuples::bigint AS row_estimate
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'r'
+        ORDER BY n.nspname, c.relname
+        "#,
     )
     .fetch_all(&pool)
     .await?;
 
-    let tables: Vec<String> = rows.iter().map(|r| r.get("table_name")).collect();
+    let system_schemas = ["information_schema", "pg_catalog"];
+    let tables: Vec<TablePreview> = rows
+        .iter()
+        .map(|r| {
+            let schema: String = r.get("schema_name");
+            let table_name: String = r.get("table_name");
+            let is_system = system_schemas.contains(&schema.as_str())
+                || table_name.starts_with("pg_");
+            let display_name = if schema == "public" {
+                table_name
+            } else {
+                format!("{schema}.{table_name}")
+            };
+            TablePreview {
+                name: display_name,
+                estimated_rows: r.get("row_estimate"),
+                is_system,
+            }
+        })
+        .collect();
 
     pool.close().await;
 

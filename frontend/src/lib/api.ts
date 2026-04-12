@@ -6,6 +6,10 @@ import type {
   StatusResponse,
   TablesResponse,
   ColumnsResponse,
+  SshWizardConfig,
+  TestConnectionResult,
+  SetupSaveRequest,
+  SetupSaveResponse,
 } from './types';
 import {
   mockFetchTables,
@@ -28,6 +32,7 @@ function assertShape(data: unknown, fields: string[], context: string): void {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const SETUP_TIMEOUT_MS = 60_000;
 
 async function apiFetch<T>(path: string): Promise<T> {
   const controller = new AbortController();
@@ -120,4 +125,86 @@ export async function fetchStatus(): Promise<StatusResponse> {
   const data = await apiFetch<StatusResponse>('/api/status');
   assertShape(data, ['mode'], '/api/status');
   return data;
+}
+
+export async function getStatus(): Promise<StatusResponse> {
+  return fetchStatus();
+}
+
+export async function setupTestConnection(req: {
+  kind: string;
+  url: string;
+  ssh?: SshWizardConfig;
+}): Promise<TestConnectionResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/setup/test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Connection test timed out — SSH tunnel negotiation may be slow. Try again.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Setup test-connection failed (${res.status})`;
+    try {
+      const body = JSON.parse(text);
+      if (body?.error) message = body.error;
+    } catch {
+      if (text) message += `: ${text}`;
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/setup/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      // Server may have completed while we timed out — check before erroring
+      try {
+        const status = await fetch('/api/status').then((r) => r.json());
+        if ((status as { mode?: string })?.mode === 'normal') {
+          window.location.reload();
+          return undefined as unknown as SetupSaveResponse; // unreachable after reload
+        }
+      } catch { /* status check failed — fall through to timeout error */ }
+      throw new Error('Config save timed out — SSH tunnel negotiation may be slow. Try again.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Setup save failed (${res.status})`;
+    try {
+      const body = JSON.parse(text);
+      if (body?.error) message = body.error;
+    } catch {
+      if (text) message += `: ${text}`;
+    }
+    throw new Error(message);
+  }
+  return res.json();
 }

@@ -1,0 +1,52 @@
+{
+  "recommendation_file": "/home/kiriketsuki/dev/Personal/seeKi/2026-04-12-council-pr-31-fifth-council.md",
+  "motion": "PR #31 (epic: First-Run Setup Wizard) — after applying all prior council fixes (four councils total), the implementation is correct, complete, and secure and ready to merge into main",
+  "arbiter_verdict": "CONDITIONAL",
+  "branch": "epic/5-first-run-setup-wizard",
+  "fixes": [
+    {
+      "id": 1,
+      "description": "F1: setupTestConnection uses raw fetch without AbortController — primary wizard action freezes for ~75-120s on unreachable SSH hosts. Add AbortController with 60s timeout, following the apiFetch pattern at lines 36-48.",
+      "file": "frontend/src/lib/api.ts",
+      "line": 133,
+      "severity": "Medium",
+      "citations": [
+        "frontend/src/lib/api.ts L:133-148 (setupTestConnection — raw fetch, no timeout)",
+        "frontend/src/lib/api.ts L:36-48 (apiFetch — AbortController pattern to follow)"
+      ]
+    },
+    {
+      "id": 2,
+      "description": "F2: setupSaveConfig uses raw fetch without AbortController — same timeout omission as F1. save_config also tests the connection before saving, so the same unreachable-host scenario applies. Add AbortController with 60s timeout.",
+      "file": "frontend/src/lib/api.ts",
+      "line": 150,
+      "severity": "Medium",
+      "citations": [
+        "frontend/src/lib/api.ts L:150-161 (setupSaveConfig — raw fetch, no timeout)",
+        "frontend/src/lib/api.ts L:36-48 (apiFetch — AbortController pattern to follow)"
+      ]
+    }
+  ],
+  "non_blocking": [
+    {
+      "id": "S1",
+      "description": "Add 'ssh_config' to error_source union type in frontend types",
+      "file": "frontend/src/lib/types.ts",
+      "line": 81,
+      "severity": "Low"
+    },
+    {
+      "id": "S2",
+      "description": "Address Drop no-op clippy warning — add #[allow(dead_code)] or remove custom Drop impl",
+      "file": "src/ssh/mod.rs",
+      "line": 79,
+      "severity": "Low"
+    }
+  ],
+  "pr_amendments": [
+    "Note that setup API functions now use a 60-second timeout (longer than the 30s default to accommodate SSH tunnel negotiation)"
+  ],
+  "test_command": "cargo test",
+  "frontend_test_command": "cd frontend && npx vitest run",
+  "created": "2026-04-12T08:25:00.000Z"
+}
