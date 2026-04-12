@@ -25,3 +25,15 @@ dev-mock:
 build:
     cd frontend && VITE_MOCK=false npm run build
     cargo build --release
+
+# Run E2E tests (builds release binary, starts server, runs Playwright)
+test-e2e:
+    cd frontend && VITE_MOCK=false npm run build
+    cargo build --release
+    cd frontend && npx playwright test
+
+# Run E2E tests in Playwright UI mode (interactive debugging)
+test-e2e-ui:
+    cd frontend && VITE_MOCK=false npm run build
+    cargo build --release
+    cd frontend && SEEKI_SKIP_BUILD=1 npx playwright test --ui
