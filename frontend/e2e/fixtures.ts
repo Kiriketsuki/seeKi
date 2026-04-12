@@ -24,6 +24,20 @@ export class SeekiHelpers {
       (resp) =>
         resp.url().includes('/api/tables/') &&
         resp.url().includes('/rows') &&
+        resp.ok(),
+      { timeout: 10_000 },
+    );
+  }
+
+  /**
+   * Like pendingRowsResponse but accepts any non-500 status (including 4xx).
+   * Use in error-state tests where 400 is an expected valid response.
+   */
+  pendingRowsResponseAny(): Promise<import('@playwright/test').Response> {
+    return this.page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/tables/') &&
+        resp.url().includes('/rows') &&
         resp.status() < 500,
       { timeout: 10_000 },
     );
@@ -39,11 +53,11 @@ export class SeekiHelpers {
     }, { timeout: 15_000 });
   }
 
-  /** Wait for the data grid to have loaded rows. */
+  /** Wait for the data grid to have finished loading (works for empty tables too). */
   async waitForGridLoaded(): Promise<void> {
     await this.page.waitForFunction(() => {
       const statusBar = document.querySelector('.statusbar .showing');
-      return statusBar && !statusBar.textContent?.includes('Showing 0');
+      return statusBar !== null && (statusBar.textContent?.trim() ?? '') !== '';
     }, { timeout: 15_000 });
   }
 

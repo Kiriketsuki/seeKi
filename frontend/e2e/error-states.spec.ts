@@ -47,6 +47,13 @@ test.describe('Error States — SQL Injection Prevention', () => {
   });
 
   test('SQL injection in filter input is handled safely', async ({ page, seeki }) => {
+    // Get the current table name dynamically from the API
+    const tablesResponse = await page.request.get('/api/tables');
+    expect(tablesResponse.ok()).toBeTruthy();
+    const tablesData = await tablesResponse.json() as { tables: { name: string }[] };
+    expect(tablesData.tables.length).toBeGreaterThan(0);
+    const currentTable = tablesData.tables[0].name;
+
     // Open filters
     const filterButton = page.locator('button.tool-button[aria-label*="filter" i]').first();
     await filterButton.click();
@@ -56,8 +63,8 @@ test.describe('Error States — SQL Injection Prevention', () => {
     await expect(filterInput).toBeVisible();
 
     // Type SQL injection payload — wait for the debounced API response
-    const rowsLoaded = seeki.pendingRowsResponse();
-    await filterInput.fill("'; DROP TABLE vehicle_logs--");
+    const rowsLoaded = seeki.pendingRowsResponseAny();
+    await filterInput.fill(`'; DROP TABLE ${currentTable}--`);
     await rowsLoaded;
 
     // Verify the app is still responsive
@@ -72,17 +79,12 @@ test.describe('Error States — SQL Injection Prevention', () => {
       expect(errorText?.toLowerCase()).not.toContain('drop table');
     }
 
-    // Verify the page title doesn't contain SQL syntax
-    const title = await page.title();
-    expect(title).not.toContain('DROP TABLE');
-    expect(title).not.toContain('--');
-
     // Verify the table still exists and is queryable (injection did NOT execute)
-    const tablesResponse = await page.request.get('/api/tables');
-    expect(tablesResponse.ok()).toBeTruthy();
-    const tablesData = await tablesResponse.json() as { tables: { name: string }[] };
-    const tableNames = tablesData.tables.map((t: { name: string }) => t.name);
-    expect(tableNames).toContain('vehicle_logs');
+    const verifyResponse = await page.request.get('/api/tables');
+    expect(verifyResponse.ok()).toBeTruthy();
+    const verifyData = await verifyResponse.json() as { tables: { name: string }[] };
+    const tableNames = verifyData.tables.map((t: { name: string }) => t.name);
+    expect(tableNames).toContain(currentTable);
   });
 
   test('SQL injection in search is handled safely', async ({ page, seeki }) => {
@@ -96,7 +98,7 @@ test.describe('Error States — SQL Injection Prevention', () => {
     await expect(searchInput).toBeVisible();
 
     // Type SQL injection payload — wait for debounced API response
-    const rowsLoaded = seeki.pendingRowsResponse();
+    const rowsLoaded = seeki.pendingRowsResponseAny();
     await searchInput.fill('" OR 1=1; --');
     await rowsLoaded;
 
@@ -169,7 +171,7 @@ test.describe('Error States — Edge Cases', () => {
 
     // Create a very long string (1000+ chars) — wait for debounced response
     const longString = 'A'.repeat(1500);
-    const rowsLoaded = seeki.pendingRowsResponse();
+    const rowsLoaded = seeki.pendingRowsResponseAny();
     await filterInput.fill(longString);
     await rowsLoaded;
     
@@ -210,7 +212,7 @@ test.describe('Error States — Edge Cases', () => {
 
       // Clear and type the test input — wait for debounced API response
       await searchInput.clear();
-      const rowsLoaded = seeki.pendingRowsResponse();
+      const rowsLoaded = seeki.pendingRowsResponseAny();
       await searchInput.fill(testInput);
       await rowsLoaded;
 

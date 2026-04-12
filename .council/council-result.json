@@ -1,53 +1,146 @@
 {
   "motion": "Merge PR #32: epic: End-to-End QA",
+  "motion_type": "CODE",
+  "timestamp": "2026-04-12T21:35:00Z",
+  "duration_minutes": 8,
   "verdict": "CONDITIONAL",
-  "date": "2026-04-12",
+  "confidence": "high",
+  "agents": {
+    "ADVOCATE-1": { "status": "completed", "messages": 4 },
+    "CRITIC-1": { "status": "completed", "messages": 4 },
+    "CRITIC-2": { "status": "completed", "messages": 3 },
+    "QUESTIONER": { "status": "stalled", "probes": 0 },
+    "ARBITER": { "status": "completed" }
+  },
+  "rounds_completed": 3,
+  "early_convergence": false,
+  "fallback": false,
   "findings": [
     {
       "id": 1,
-      "description": "SQL injection filter test weak assertions",
-      "file": "frontend/e2e/error-states.spec.ts",
-      "line": 49,
+      "type": "bug",
       "severity": "medium",
-      "classification": "MUST_FIX"
+      "description": "waitForGridLoaded permanently times out on empty tables — condition !statusBar.textContent?.includes('Showing 0') returns false for 'Showing 0 - 0 of 0'",
+      "file": "frontend/e2e/fixtures.ts",
+      "line": 44,
+      "fix_description": "Change condition to resolve on any non-empty status bar text: statusBar !== null && (statusBar.textContent?.trim() ?? '') !== ''",
+      "verification": "verified",
+      "citations": ["frontend/e2e/fixtures.ts:44-47"]
     },
     {
       "id": 2,
-      "description": "SQL injection search test no row count verification",
-      "file": "frontend/e2e/error-states.spec.ts",
-      "line": 93,
+      "type": "bug",
       "severity": "medium",
-      "classification": "MUST_FIX"
+      "description": "SQL injection filter test hardcodes 'vehicle_logs' in assertion — fails unconditionally on any DB without that table name",
+      "file": "frontend/e2e/error-states.spec.ts",
+      "line": 85,
+      "fix_description": "Dynamically fetch table name from /api/tables before the injection test (same pattern as URL injection test at line 129)",
+      "verification": "verified",
+      "citations": ["frontend/e2e/error-states.spec.ts:85", "frontend/e2e/error-states.spec.ts:129"]
     },
     {
       "id": 3,
-      "description": "Numeric/DECIMAL columns return null",
-      "file": "src/db/postgres.rs",
-      "line": 495,
-      "severity": "critical",
-      "classification": "MUST_FIX"
+      "type": "improvement",
+      "severity": "medium",
+      "description": "pendingRowsResponse() accepts HTTP 4xx as successful data load — resp.status() < 500 should be resp.ok() for data-correctness tests",
+      "file": "frontend/e2e/fixtures.ts",
+      "line": 28,
+      "fix_description": "Change resp.status() < 500 to resp.ok() in pendingRowsResponse(). For error-state tests that need to accept 4xx, use a separate helper or inline waitForResponse",
+      "verification": "verified",
+      "citations": ["frontend/e2e/fixtures.ts:28"]
     },
     {
       "id": 4,
-      "description": "27 waitForTimeout instances - flakiness risk",
-      "severity": "high",
-      "classification": "SHOULD_FIX"
+      "type": "improvement",
+      "severity": "medium",
+      "description": "Tautological assertions — expect(filteredTotal).toBeGreaterThanOrEqual(0) and expect(searchTotal).toBeGreaterThanOrEqual(0) pass unconditionally on any value",
+      "file": "frontend/e2e/toolbar.spec.ts",
+      "line": 59,
+      "fix_description": "Replace >=0 with expect(filteredTotal).toBeLessThan(initialTotal) for filter tests where data guarantees matches. Remove the vacuous >=0 assertions entirely.",
+      "verification": "verified",
+      "citations": ["frontend/e2e/toolbar.spec.ts:59", "frontend/e2e/data-grid.spec.ts:167"]
     },
     {
       "id": 5,
-      "description": "globalSetup overwrites seeki.toml without backup",
-      "file": "frontend/e2e/global-setup.ts",
-      "line": 89,
-      "severity": "medium",
-      "classification": "SHOULD_FIX"
+      "type": "improvement",
+      "severity": "low",
+      "description": "Sort cycling test verifies UI state only (ARIA label) — no pendingRowsResponse() call, no assertion on actual sorted data order",
+      "file": "frontend/e2e/data-grid.spec.ts",
+      "line": 48,
+      "fix_description": "Add pendingRowsResponse() after each header click and assert that the first visible row's value is correct for the sort direction",
+      "verification": "verified",
+      "citations": ["frontend/e2e/data-grid.spec.ts:48-68"]
     },
     {
       "id": 6,
-      "description": "Empty env var expansion silent",
-      "file": "frontend/e2e/global-setup.ts",
-      "line": 86,
+      "type": "improvement",
       "severity": "low",
-      "classification": "SHOULD_FIX"
+      "description": "Double release build — Justfile test-e2e runs cargo build --release, then global-setup.ts runs it again unless SEEKI_SKIP_BUILD=1",
+      "file": "Justfile",
+      "line": 29,
+      "fix_description": "Pass SEEKI_SKIP_BUILD=1 to the Playwright command in the Justfile test-e2e recipe",
+      "verification": "verified",
+      "citations": ["Justfile:29-33", "frontend/e2e/global-setup.ts:107-114"]
     }
-  ]
+  ],
+  "concessions": [
+    {
+      "agent": "CRITIC-1",
+      "conceded_to": "ADVOCATE-1",
+      "point": "F7 localStorage bleed — Playwright isolates BrowserContext per test",
+      "round": 2
+    },
+    {
+      "agent": "CRITIC-2",
+      "conceded_to": "ADVOCATE-1",
+      "point": "F7 localStorage bleed — confirmed Playwright isolation",
+      "round": 2
+    },
+    {
+      "agent": "CRITIC-1",
+      "conceded_to": "ADVOCATE-1",
+      "point": "F2 wizard mocking — architectural necessity",
+      "round": 2
+    },
+    {
+      "agent": "CRITIC-2",
+      "conceded_to": "ADVOCATE-1",
+      "point": "Finding D config crash recovery — downgraded, backup exists",
+      "round": 3
+    },
+    {
+      "agent": "ADVOCATE-1",
+      "conceded_to": "CRITIC-1",
+      "point": "F1 double build is a real defect",
+      "round": 1
+    },
+    {
+      "agent": "ADVOCATE-1",
+      "conceded_to": "CRITIC-1",
+      "point": "F4 hardcoded vehicle_logs assertion",
+      "round": 1
+    },
+    {
+      "agent": "ADVOCATE-1",
+      "conceded_to": "CRITIC-1",
+      "point": "F6 waitForGridLoaded logic defect",
+      "round": 1
+    },
+    {
+      "agent": "ADVOCATE-1",
+      "conceded_to": "CRITIC-2",
+      "point": "Finding A — >=0 assertions are vacuous",
+      "round": 3
+    },
+    {
+      "agent": "ADVOCATE-1",
+      "conceded_to": "CRITIC-2",
+      "point": "Finding B — sort test verifies UI only",
+      "round": 3
+    }
+  ],
+  "conditions": [
+    "Fix all 6 findings before merge"
+  ],
+  "summary": "The E2E test infrastructure is well-designed with proper credential separation, config backup/restore, and broad coverage across 5 feature areas. The debate substantiated 6 findings: 2 bugs (empty-table timeout, hardcoded table name) and 4 improvements (4xx acceptance, tautological assertions, UI-only sort test, double build). All are fixable in the current PR. CI path (Finding C) is a tracked gap. Cross-browser (F5) and wizard integration (F2) are follow-on enhancements."
 }

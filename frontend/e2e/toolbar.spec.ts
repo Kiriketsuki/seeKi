@@ -57,7 +57,6 @@ test.describe('Toolbar — Search', () => {
     expect(statusText).toMatch(/Showing/);
 
     const filteredTotal = await seeki.getTotalRows();
-    expect(filteredTotal).toBeGreaterThanOrEqual(0);
     expect(filteredTotal).toBeLessThanOrEqual(initialTotal);
   });
 });

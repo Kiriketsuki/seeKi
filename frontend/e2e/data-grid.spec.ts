@@ -45,7 +45,7 @@ test.describe('Data Grid — Sorting', () => {
     await seeki.waitForGridLoaded();
   });
 
-  test('sort cycling: asc → desc → unsorted', async ({ page }) => {
+  test('sort cycling: asc → desc → unsorted', async ({ page, seeki }) => {
     // Get the first sortable column header (via ARIA role)
     const firstHeader = page.locator('[role="columnheader"]').first();
     // The toolbar sort indicator reflects sort state in the light DOM
@@ -54,16 +54,22 @@ test.describe('Data Grid — Sorting', () => {
     // Initial state: no sort
     await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
 
-    // Click 1: ascending
+    // Click 1: ascending — wait for sorted data to load
+    let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
+    await rowsLoaded;
     await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
 
-    // Click 2: descending
+    // Click 2: descending — wait for sorted data to load
+    rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
+    await rowsLoaded;
     await expect(sortIndicator).toHaveAttribute('aria-label', / desc$/);
 
-    // Click 3: back to unsorted
+    // Click 3: back to unsorted — wait for data to reload
+    rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
+    await rowsLoaded;
     await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
   });
 });
@@ -164,7 +170,7 @@ test.describe('Data Grid — Search', () => {
     expect(statusText).toMatch(/Showing \d+ - \d+ of \d+/);
 
     const searchTotal = await seeki.getTotalRows();
-    expect(searchTotal).toBeGreaterThanOrEqual(0);
+    expect(searchTotal).toBeLessThanOrEqual(initialTotal);
   });
 });
 
