@@ -5,6 +5,7 @@ use tokio::net::TcpListener;
 use crate::config::{SecretsConfig, SshAuthMethod, SshConfig};
 
 pub struct SshTunnel {
+    #[allow(dead_code)] // Held for Drop side-effect: openssh::Session closes the tunnel on drop.
     session: openssh::Session,
     local_port: u16,
 }
@@ -73,12 +74,5 @@ impl SshTunnel {
 
     pub fn local_port(&self) -> u16 {
         self.local_port
-    }
-}
-
-impl Drop for SshTunnel {
-    fn drop(&mut self) {
-        // openssh::Session's own Drop closes the ControlMaster connection.
-        // No explicit action needed here.
     }
 }

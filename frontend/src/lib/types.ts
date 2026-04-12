@@ -78,7 +78,7 @@ export interface TestConnectionResult {
   success: boolean;
   tables?: TablePreview[];
   error?: string;
-  error_source?: 'ssh' | 'db';
+  error_source?: 'ssh' | 'db' | 'ssh_config';
 }
 
 export interface WizardData {
