@@ -22,6 +22,7 @@ export default defineConfig({
   },
 
   projects: [
+    // --- Chromium (always runs) ---
     {
       name: 'setup-wizard',
       testMatch: 'setup-wizard.spec.ts',
@@ -32,6 +33,32 @@ export default defineConfig({
       testMatch: ['data-grid.spec.ts', 'toolbar.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
       use: { ...devices['Desktop Chrome'] },
     },
+    // --- Firefox (opt-in: SEEKI_ALL_BROWSERS=1 or --project=normal-firefox) ---
+    ...(process.env.SEEKI_ALL_BROWSERS === '1' ? [
+      {
+        name: 'setup-wizard-firefox',
+        testMatch: 'setup-wizard.spec.ts',
+        use: { ...devices['Desktop Firefox'] },
+      },
+      {
+        name: 'normal-firefox',
+        testMatch: ['data-grid.spec.ts', 'toolbar.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
+        use: { ...devices['Desktop Firefox'] },
+      },
+    ] : []),
+    // --- WebKit / Safari (opt-in: SEEKI_ALL_BROWSERS=1 or --project=normal-webkit) ---
+    ...(process.env.SEEKI_ALL_BROWSERS === '1' ? [
+      {
+        name: 'setup-wizard-webkit',
+        testMatch: 'setup-wizard.spec.ts',
+        use: { ...devices['Desktop Safari'] },
+      },
+      {
+        name: 'normal-webkit',
+        testMatch: ['data-grid.spec.ts', 'toolbar.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
+        use: { ...devices['Desktop Safari'] },
+      },
+    ] : []),
   ],
 
   globalSetup: path.resolve(__dirname, 'e2e/global-setup.ts'),

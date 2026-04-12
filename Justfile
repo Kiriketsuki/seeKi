@@ -32,6 +32,12 @@ test-e2e:
     cargo build --release
     cd frontend && SEEKI_SKIP_BUILD=1 npx playwright test
 
+# Run E2E tests across all browsers (Chrome + Firefox + WebKit)
+test-e2e-all:
+    cd frontend && VITE_MOCK=false npm run build
+    cargo build --release
+    cd frontend && SEEKI_SKIP_BUILD=1 SEEKI_ALL_BROWSERS=1 npx playwright test
+
 # Run E2E tests in Playwright UI mode (interactive debugging)
 test-e2e-ui:
     cd frontend && VITE_MOCK=false npm run build

@@ -226,8 +226,9 @@ test.describe('Setup Wizard', () => {
         });
       });
 
-      // After save, the app will reload — override status mock to return normal mode.
-      // Playwright uses LIFO: this handler runs before the setup mock for subsequent requests.
+      // After save, the app will reload — replace the setup mock with normal mode.
+      // Explicitly unroute the prior handler to avoid relying on LIFO ordering.
+      await page.unroute('**/api/status');
       await page.route('**/api/status', async (route) => {
         await route.fulfill({
           status: 200,

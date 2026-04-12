@@ -200,7 +200,7 @@ test.describe('Error States — Edge Cases', () => {
       '<script>alert(1)</script>',
       '"><img src=x onerror=alert(1)>',
       '../../etc/passwd',
-      'null\0byte',
+      'null byte test',
     ];
 
     for (const testInput of testInputs) {

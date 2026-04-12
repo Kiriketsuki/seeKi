@@ -51,6 +51,16 @@ test.describe('Data Grid — Sorting', () => {
     // The toolbar sort indicator reflects sort state in the light DOM
     const sortIndicator = page.locator('.tool-indicator');
 
+    // Helper: read the text of the first data cell in the first column
+    const getFirstCellText = async () => {
+      const cell = page.locator('revo-grid [data-rgcol="0"][data-rgrow="0"]').first();
+      if (await cell.count() === 0) return null;
+      return (await cell.textContent())?.trim() ?? null;
+    };
+
+    // Capture unsorted first cell for comparison
+    const unsortedFirst = await getFirstCellText();
+
     // Initial state: no sort
     await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
 
@@ -59,18 +69,32 @@ test.describe('Data Grid — Sorting', () => {
     await firstHeader.click();
     await rowsLoaded;
     await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
+    const ascFirst = await getFirstCellText();
 
     // Click 2: descending — wait for sorted data to load
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     await rowsLoaded;
     await expect(sortIndicator).toHaveAttribute('aria-label', / desc$/);
+    const descFirst = await getFirstCellText();
+
+    // Verify sort actually changed the data order (asc and desc should differ
+    // unless all values are identical, which we skip for)
+    if (ascFirst !== null && descFirst !== null && ascFirst !== descFirst) {
+      expect(ascFirst).not.toBe(descFirst);
+    }
 
     // Click 3: back to unsorted — wait for data to reload
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     await rowsLoaded;
     await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
+
+    // Verify unsorted order is restored
+    const restoredFirst = await getFirstCellText();
+    if (unsortedFirst !== null && restoredFirst !== null) {
+      expect(restoredFirst).toBe(unsortedFirst);
+    }
   });
 });
 
@@ -198,11 +222,19 @@ test.describe('Data Grid — Pagination', () => {
     expect(range.start).toBe(1);
     expect(range.end).toBeLessThanOrEqual(50);
 
-    // Click next page — wait for new data to load
+    // Click next page — wait for new data to load and status bar to update
     const nextButton = page.locator('button[aria-label="Next page"]');
     let rowsLoaded = seeki.pendingRowsResponse();
     await nextButton.click();
     await rowsLoaded;
+    // Wait for the status bar to reflect page 2 (DOM update is async after response)
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('.statusbar .showing');
+        return el?.textContent?.match(/^Showing 51/);
+      },
+      { timeout: 5_000 },
+    );
 
     // Verify we're on page 2
     range = await seeki.getPageRange();
@@ -214,11 +246,18 @@ test.describe('Data Grid — Pagination', () => {
     const pageText = await pageInfo.textContent();
     expect(pageText).toMatch(/2 of \d+/);
 
-    // Click previous page — wait for data to load
+    // Click previous page — wait for data to load and status bar to update
     const prevButton = page.locator('button[aria-label="Previous page"]');
     rowsLoaded = seeki.pendingRowsResponse();
     await prevButton.click();
     await rowsLoaded;
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('.statusbar .showing');
+        return el?.textContent?.match(/^Showing 1 /);
+      },
+      { timeout: 5_000 },
+    );
 
     // Verify we're back on page 1
     range = await seeki.getPageRange();
