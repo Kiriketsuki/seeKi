@@ -82,18 +82,16 @@ test.describe('Data Grid — Filtering', () => {
     // Show filters — use partial aria-label match since label is dynamic
     const filterButton = page.locator('button.tool-button[aria-label*="ilters"]');
     await filterButton.click();
-    await page.waitForTimeout(200);
 
     // Filter inputs are inside RevoGrid shadow DOM — query via columnheader ancestor
     const filterInputs = page.locator('[role="columnheader"] input[aria-label^="Filter"]');
     const firstFilter = filterInputs.first();
     await expect(firstFilter).toBeVisible();
 
-    // Type a filter value
+    // Type a filter value — wait for the debounced API response
+    const rowsLoaded = seeki.pendingRowsResponse();
     await firstFilter.fill('1');
-
-    // Wait for debounce and data to load
-    await page.waitForTimeout(400);
+    await rowsLoaded;
 
     // Verify the status bar updated
     const statusText = await seeki.getStatusBarText();
@@ -104,9 +102,11 @@ test.describe('Data Grid — Filtering', () => {
     // Show filters
     const filterButton = page.locator('button.tool-button[aria-label*="ilters"]');
     await filterButton.click();
-    await page.waitForTimeout(200);
 
     const filterInputs = page.locator('[role="columnheader"] input[aria-label^="Filter"]');
+    const firstFilter = filterInputs.first();
+    await expect(firstFilter).toBeVisible();
+
     const filterCount = await filterInputs.count();
 
     // We need at least 2 columns to test multiple filters
@@ -116,15 +116,15 @@ test.describe('Data Grid — Filtering', () => {
     }
 
     // Apply first filter
-    const firstFilter = filterInputs.nth(0);
-    await firstFilter.fill('1');
-    await page.waitForTimeout(400);
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await filterInputs.nth(0).fill('1');
+    await rowsLoaded;
     const firstFilterTotal = await seeki.getTotalRows();
 
     // Apply second filter
-    const secondFilter = filterInputs.nth(1);
-    await secondFilter.fill('2');
-    await page.waitForTimeout(400);
+    rowsLoaded = seeki.pendingRowsResponse();
+    await filterInputs.nth(1).fill('2');
+    await rowsLoaded;
     const bothFiltersTotal = await seeki.getTotalRows();
 
     // With AND logic, both filters should give <= either individual filter
@@ -150,15 +150,14 @@ test.describe('Data Grid — Search', () => {
       await page.keyboard.press('Control+K');
     }
 
-    await page.waitForTimeout(200);
-
     // Find the search input
     const searchInput = page.locator('input.search-input');
     await expect(searchInput.first()).toBeVisible();
 
-    // Type a search term
+    // Type a search term — wait for debounced API response
+    const rowsLoaded = seeki.pendingRowsResponse();
     await searchInput.first().fill('1');
-    await page.waitForTimeout(400);
+    await rowsLoaded;
 
     // Verify status bar shows filtered results
     const statusText = await seeki.getStatusBarText();
@@ -190,10 +189,11 @@ test.describe('Data Grid — Pagination', () => {
     expect(range.start).toBe(1);
     expect(range.end).toBeLessThanOrEqual(50);
 
-    // Click next page
+    // Click next page — wait for new data to load
     const nextButton = page.locator('button[aria-label="Next page"]');
+    let rowsLoaded = seeki.pendingRowsResponse();
     await nextButton.click();
-    await page.waitForTimeout(300);
+    await rowsLoaded;
 
     // Verify we're on page 2
     range = await seeki.getPageRange();
@@ -205,10 +205,11 @@ test.describe('Data Grid — Pagination', () => {
     const pageText = await pageInfo.textContent();
     expect(pageText).toMatch(/2 of \d+/);
 
-    // Click previous page
+    // Click previous page — wait for data to load
     const prevButton = page.locator('button[aria-label="Previous page"]');
+    rowsLoaded = seeki.pendingRowsResponse();
     await prevButton.click();
-    await page.waitForTimeout(300);
+    await rowsLoaded;
 
     // Verify we're back on page 1
     range = await seeki.getPageRange();

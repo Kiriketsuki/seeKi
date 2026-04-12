@@ -54,15 +54,15 @@ test.describe('Navigation — Table Switching', () => {
     const tableNames = await seeki.getSidebarTableNames();
     test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
 
-    // Sort a column on the first table
+    // Sort a column on the first table — wait for sorted data
     const firstHeader = page.locator('[role="columnheader"]').first();
+    const rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
-    await page.waitForTimeout(300);
+    await rowsLoaded;
 
     // Verify sort is active via the toolbar sort indicator (light DOM)
     const sortIndicator = page.locator('.tool-indicator');
-    const labelAfterSort = await sortIndicator.getAttribute('aria-label') ?? '';
-    expect(labelAfterSort).toMatch(/ asc$/);
+    await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
 
     // Switch to the second table
     const secondTableName = tableNames[1];
@@ -92,8 +92,16 @@ test.describe('Navigation — Sidebar Search', () => {
     const searchInput = page.locator('input.table-search-input');
     await searchInput.fill(searchTerm);
 
-    // Wait for filtering to apply
-    await page.waitForTimeout(200);
+    // Wait for sidebar filter to narrow the list
+    await page.waitForFunction(
+      ({ count, term }) => {
+        const items = document.querySelectorAll('.table-item .table-item-name');
+        // Either the count decreased or all visible items contain the term
+        return items.length <= count &&
+          Array.from(items).every(el => el.textContent?.toLowerCase().includes(term));
+      },
+      { count: tableNames.length, term: searchTerm.toLowerCase() },
+    );
 
     // Verify only matching tables remain visible
     const visibleTables = await seeki.getSidebarTableNames();
@@ -114,11 +122,8 @@ test.describe('Navigation — Sidebar Search', () => {
     const nonsenseString = 'xyzabc123nonexistent';
     
     await searchInput.fill(nonsenseString);
-    
-    // Wait for filtering to apply
-    await page.waitForTimeout(200);
 
-    // Verify empty state is visible
+    // Verify empty state appears (auto-retries until visible)
     const emptyState = page.locator('div.empty-state');
     await expect(emptyState).toBeVisible();
     await expect(emptyState).toContainText(nonsenseString);
@@ -140,33 +145,21 @@ test.describe('Navigation — Sidebar Collapse', () => {
     const toggleButton = page.locator('button.toggle');
     await expect(toggleButton).toHaveAttribute('aria-label', 'Collapse sidebar');
 
-    // Click to collapse
+    // Click to collapse — expect() auto-retries until class appears
     await seeki.toggleSidebar();
-    
-    // Wait for animation to complete
-    await page.waitForTimeout(250);
-
-    // Verify sidebar has .collapsed class
     await expect(sidebar).toHaveClass(/collapsed/);
     await expect(toggleButton).toHaveAttribute('aria-label', 'Expand sidebar');
 
-    // Click to expand
+    // Click to expand — expect() auto-retries until class is removed
     await seeki.toggleSidebar();
-    
-    // Wait for animation to complete
-    await page.waitForTimeout(250);
-
-    // Verify .collapsed is removed
     await expect(sidebar).not.toHaveClass(/collapsed/);
     await expect(toggleButton).toHaveAttribute('aria-label', 'Collapse sidebar');
   });
 
   test('sidebar collapse state persists across reload', async ({ page, seeki }) => {
-    // Collapse the sidebar
+    // Collapse the sidebar — wait for localStorage to be written
     await seeki.toggleSidebar();
-    
-    // Wait for animation and localStorage write
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => localStorage.getItem('sk-sidebar-collapsed') === 'true');
 
     // Verify it's collapsed
     const isCollapsed = await seeki.isSidebarCollapsed();

@@ -15,6 +15,20 @@ export { expect };
 export class SeekiHelpers {
   constructor(public readonly page: Page) {}
 
+  /**
+   * Returns a promise that resolves when the next /api/tables/.../rows response arrives.
+   * Must be called BEFORE the action that triggers the request.
+   */
+  pendingRowsResponse(): Promise<import('@playwright/test').Response> {
+    return this.page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/tables/') &&
+        resp.url().includes('/rows') &&
+        resp.status() < 500,
+      { timeout: 10_000 },
+    );
+  }
+
   /** Wait for the app to finish loading (spinner gone, grid or wizard visible). */
   async waitForAppReady(): Promise<void> {
     // Wait for either the grid layout or the setup wizard to be visible

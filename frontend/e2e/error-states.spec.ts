@@ -46,23 +46,19 @@ test.describe('Error States — SQL Injection Prevention', () => {
     await expect(page.locator('revo-grid')).toBeVisible({ timeout: 10000 });
   });
 
-  test('SQL injection in filter input is handled safely', async ({ page }) => {
+  test('SQL injection in filter input is handled safely', async ({ page, seeki }) => {
     // Open filters
     const filterButton = page.locator('button.tool-button[aria-label*="filter" i]').first();
     await filterButton.click();
-
-    // Wait for filter inputs to appear
-    await page.waitForTimeout(200);
 
     // Find the first filter input
     const filterInput = page.locator('input[aria-label^="Filter "]').first();
     await expect(filterInput).toBeVisible();
 
-    // Type SQL injection payload
+    // Type SQL injection payload — wait for the debounced API response
+    const rowsLoaded = seeki.pendingRowsResponse();
     await filterInput.fill("'; DROP TABLE vehicle_logs--");
-
-    // Wait for debounce + network response
-    await page.waitForTimeout(500);
+    await rowsLoaded;
 
     // Verify the app is still responsive
     await expect(page.locator('revo-grid')).toBeVisible();
@@ -99,11 +95,10 @@ test.describe('Error States — SQL Injection Prevention', () => {
     const searchInput = page.locator('input.search-input');
     await expect(searchInput).toBeVisible();
 
-    // Type SQL injection payload
+    // Type SQL injection payload — wait for debounced API response
+    const rowsLoaded = seeki.pendingRowsResponse();
     await searchInput.fill('" OR 1=1; --');
-
-    // Wait for debounce + network response
-    await page.waitForTimeout(500);
+    await rowsLoaded;
 
     // Verify the app is still responsive
     await expect(page.locator('revo-grid')).toBeVisible();
@@ -163,24 +158,20 @@ test.describe('Error States — Edge Cases', () => {
     await expect(page.locator('revo-grid')).toBeVisible({ timeout: 10000 });
   });
 
-  test('very long filter value does not crash', async ({ page }) => {
+  test('very long filter value does not crash', async ({ page, seeki }) => {
     // Open filters
     const filterButton = page.locator('button.tool-button[aria-label*="filter" i]').first();
     await filterButton.click();
-    
-    // Wait for filter inputs to appear
-    await page.waitForTimeout(200);
-    
+
     // Find the first filter input
     const filterInput = page.locator('input[aria-label^="Filter "]').first();
     await expect(filterInput).toBeVisible();
-    
-    // Create a very long string (1000+ chars)
+
+    // Create a very long string (1000+ chars) — wait for debounced response
     const longString = 'A'.repeat(1500);
+    const rowsLoaded = seeki.pendingRowsResponse();
     await filterInput.fill(longString);
-    
-    // Wait for debounce + network response
-    await page.waitForTimeout(500);
+    await rowsLoaded;
     
     // Verify the app is still responsive
     await expect(page.locator('revo-grid')).toBeVisible();
@@ -199,7 +190,7 @@ test.describe('Error States — Edge Cases', () => {
     await expect(page.locator('revo-grid')).toBeVisible();
   });
 
-  test('special characters in search do not crash', async ({ page }) => {
+  test('special characters in search do not crash', async ({ page, seeki }) => {
     // Test various special characters and potentially dangerous strings
     const testInputs = [
       'unicode: 你好世界 🚀 ñ ü',
@@ -213,20 +204,19 @@ test.describe('Error States — Edge Cases', () => {
     for (const testInput of testInputs) {
       // Open global search with Ctrl+K
       await page.keyboard.press('Control+k');
-      
+
       const searchInput = page.locator('input.search-input');
       await expect(searchInput).toBeVisible();
-      
-      // Clear and type the test input
+
+      // Clear and type the test input — wait for debounced API response
       await searchInput.clear();
+      const rowsLoaded = seeki.pendingRowsResponse();
       await searchInput.fill(testInput);
-      
-      // Wait for debounce + network response
-      await page.waitForTimeout(500);
-      
+      await rowsLoaded;
+
       // Verify the app is still responsive
       await expect(page.locator('revo-grid')).toBeVisible();
-      
+
       // No XSS or dangerous errors
       const errorBanner = page.locator('div.error-banner');
       if (await errorBanner.isVisible()) {
@@ -234,10 +224,10 @@ test.describe('Error States — Edge Cases', () => {
         expect(errorText?.toLowerCase()).not.toContain('script');
         expect(errorText?.toLowerCase()).not.toContain('onerror');
       }
-      
-      // Close search for next iteration
+
+      // Close search for next iteration — wait for panel to disappear
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(100);
+      await expect(page.locator('div#search-panel')).not.toBeVisible();
     }
     
     // Final check: app is still functional

@@ -46,12 +46,11 @@ test.describe('Toolbar — Search', () => {
     // Get initial row count from status bar
     const initialTotal = await seeki.getTotalRows();
 
-    // Type a search term
+    // Type a search term — wait for debounced API response
     const searchInput = page.locator('input.search-input');
+    const rowsLoaded = seeki.pendingRowsResponse();
     await searchInput.fill('1');
-
-    // Wait for debounce (300ms) + API response
-    await page.waitForTimeout(500);
+    await rowsLoaded;
 
     // Verify status bar shows results
     const statusText = await seeki.getStatusBarText();
@@ -114,11 +113,12 @@ test.describe('Toolbar — Column Visibility', () => {
     // Verify column is visible (aria-pressed="true")
     await expect(firstColumnRow).toHaveAttribute('aria-pressed', 'true');
 
-    // Click to hide the column
+    // Click to hide the column — wait for header count to change
     await firstColumnRow.click();
-
-    // Wait for grid to update
-    await page.waitForTimeout(200);
+    await page.waitForFunction(
+      (expected) => document.querySelectorAll('.sk-grid-header__label').length === expected,
+      initialHeaders.length - 1,
+    );
 
     // Get visible headers after hiding
     const updatedHeaders = await seeki.getVisibleColumnHeaders();
@@ -136,11 +136,11 @@ test.describe('Toolbar — Column Visibility', () => {
     const firstColumnRow = page.locator('button.column-row').first();
     const columnName = await firstColumnRow.locator('.column-label').textContent();
 
-    // Hide the column
+    // Hide the column — wait for localStorage to be written
     await firstColumnRow.click();
-
-    // Wait for change to be saved to localStorage
-    await page.waitForTimeout(200);
+    await page.waitForFunction(() => {
+      return Object.keys(localStorage).some(k => k.startsWith('sk-column-visibility-'));
+    });
 
     // Verify a column visibility key was written to localStorage
     const storageValue = await page.evaluate(() => {
@@ -165,22 +165,27 @@ test.describe('Toolbar — Column Visibility', () => {
     // Open column dropdown
     await seeki.clickColumnsToggle();
 
-    // Hide the first column
+    // Get initial column count so we can wait for changes
+    const initialHeaders = await seeki.getVisibleColumnHeaders();
+
+    // Hide the first column — wait for header count to decrease
     const firstColumnRow = page.locator('button.column-row').first();
     await firstColumnRow.click();
-
-    // Wait for update
-    await page.waitForTimeout(200);
+    await page.waitForFunction(
+      (expected) => document.querySelectorAll('.sk-grid-header__label').length === expected,
+      initialHeaders.length - 1,
+    );
 
     // Get column count after hiding
     const headersAfterHiding = await seeki.getVisibleColumnHeaders();
 
-    // Click "Show All" button
+    // Click "Show All" button — wait for all columns to restore
     const showAllButton = page.locator('button.show-all');
     await showAllButton.click();
-
-    // Wait for update
-    await page.waitForTimeout(200);
+    await page.waitForFunction(
+      (expected) => document.querySelectorAll('.sk-grid-header__label').length === expected,
+      initialHeaders.length,
+    );
 
     // Get column count after show all
     const headersAfterShowAll = await seeki.getVisibleColumnHeaders();
