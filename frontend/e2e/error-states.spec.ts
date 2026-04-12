@@ -50,23 +50,23 @@ test.describe('Error States — SQL Injection Prevention', () => {
     // Open filters
     const filterButton = page.locator('button.tool-button[aria-label*="filter" i]').first();
     await filterButton.click();
-    
+
     // Wait for filter inputs to appear
     await page.waitForTimeout(200);
-    
+
     // Find the first filter input
     const filterInput = page.locator('input[aria-label^="Filter "]').first();
     await expect(filterInput).toBeVisible();
-    
+
     // Type SQL injection payload
     await filterInput.fill("'; DROP TABLE vehicle_logs--");
-    
+
     // Wait for debounce + network response
     await page.waitForTimeout(500);
-    
+
     // Verify the app is still responsive
     await expect(page.locator('revo-grid')).toBeVisible();
-    
+
     // Check that no SQL error is shown to the user
     const errorBanner = page.locator('div.error-banner');
     if (await errorBanner.isVisible()) {
@@ -75,37 +75,39 @@ test.describe('Error States — SQL Injection Prevention', () => {
       expect(errorText?.toLowerCase()).not.toContain('syntax');
       expect(errorText?.toLowerCase()).not.toContain('drop table');
     }
-    
+
     // Verify the page title doesn't contain SQL syntax
     const title = await page.title();
     expect(title).not.toContain('DROP TABLE');
     expect(title).not.toContain('--');
-    
-    // The grid should show zero results or be empty
-    const statusBar = page.locator('span.showing');
-    if (await statusBar.isVisible()) {
-      const statusText = await statusBar.textContent();
-      // Should show 0 results
-      expect(statusText).toMatch(/showing 0/i);
-    }
+
+    // Verify the table still exists and is queryable (injection did NOT execute)
+    const tablesResponse = await page.request.get('/api/tables');
+    expect(tablesResponse.ok()).toBeTruthy();
+    const tablesData = await tablesResponse.json() as { tables: { name: string }[] };
+    const tableNames = tablesData.tables.map((t: { name: string }) => t.name);
+    expect(tableNames).toContain('vehicle_logs');
   });
 
-  test('SQL injection in search is handled safely', async ({ page }) => {
+  test('SQL injection in search is handled safely', async ({ page, seeki }) => {
+    // Capture initial row count before injection attempt
+    const initialTotal = await seeki.getTotalRows();
+
     // Open global search with Ctrl+K
     await page.keyboard.press('Control+k');
-    
+
     const searchInput = page.locator('input.search-input');
     await expect(searchInput).toBeVisible();
-    
+
     // Type SQL injection payload
     await searchInput.fill('" OR 1=1; --');
-    
+
     // Wait for debounce + network response
     await page.waitForTimeout(500);
-    
+
     // Verify the app is still responsive
     await expect(page.locator('revo-grid')).toBeVisible();
-    
+
     // Check that no SQL error is shown
     const errorBanner = page.locator('div.error-banner');
     if (await errorBanner.isVisible()) {
@@ -114,10 +116,11 @@ test.describe('Error States — SQL Injection Prevention', () => {
       expect(errorText?.toLowerCase()).not.toContain('syntax');
       expect(errorText?.toLowerCase()).not.toContain('or 1=1');
     }
-    
-    // No crash or SQL error in the console
-    const title = await page.title();
-    expect(title).toBeDefined();
+
+    // A successful OR 1=1 injection would return MORE rows than the initial count.
+    // The search should return <= initial rows (it's a filter, not an expander).
+    const searchTotal = await seeki.getTotalRows();
+    expect(searchTotal).toBeLessThanOrEqual(initialTotal);
   });
 
   test('SQL injection in URL params is handled safely', async ({ page }) => {

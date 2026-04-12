@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const CONFIG_DST = path.join(PROJECT_ROOT, 'seeki.toml');
+const CONFIG_BACKUP = path.join(PROJECT_ROOT, 'seeki.toml.user-backup');
 const PID_FILE = path.join(PROJECT_ROOT, '.e2e-server.pid');
 
 async function globalTeardown(): Promise<void> {
@@ -37,8 +38,11 @@ async function globalTeardown(): Promise<void> {
     fs.unlinkSync(PID_FILE);
   }
 
-  // 2. Remove copied config
-  if (fs.existsSync(CONFIG_DST)) {
+  // 2. Restore user config or remove test config
+  if (fs.existsSync(CONFIG_BACKUP)) {
+    fs.renameSync(CONFIG_BACKUP, CONFIG_DST);
+    console.log(`[global-teardown] Restored user config from ${CONFIG_BACKUP}`);
+  } else if (fs.existsSync(CONFIG_DST)) {
     fs.unlinkSync(CONFIG_DST);
     console.log(`[global-teardown] Removed ${CONFIG_DST}`);
   }

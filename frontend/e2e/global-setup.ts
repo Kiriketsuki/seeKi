@@ -15,6 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const CONFIG_SRC = path.join(PROJECT_ROOT, 'seeki.toml.test');
 const CONFIG_DST = path.join(PROJECT_ROOT, 'seeki.toml');
+const CONFIG_BACKUP = path.join(PROJECT_ROOT, 'seeki.toml.user-backup');
 const BASE_URL = 'http://127.0.0.1:3141';
 const HEALTH_TIMEOUT_MS = 30_000;
 const HEALTH_POLL_MS = 500;
@@ -83,9 +84,22 @@ async function globalSetup(): Promise<void> {
 
   // Expand env vars in the test config
   let configContent = fs.readFileSync(CONFIG_SRC, 'utf-8');
+  const emptyVars: string[] = [];
   configContent = configContent.replace(/\$\{(\w+)\}/g, (_, varName) => {
-    return process.env[varName] ?? '';
+    const val = process.env[varName] ?? '';
+    if (!val) emptyVars.push(varName);
+    return val;
   });
+  if (emptyVars.length > 0) {
+    console.warn(`[global-setup] WARNING: empty env vars in config: ${emptyVars.join(', ')}. Check .env.test.`);
+  }
+
+  // Back up existing user config before overwriting
+  if (fs.existsSync(CONFIG_DST)) {
+    fs.copyFileSync(CONFIG_DST, CONFIG_BACKUP);
+    console.log(`[global-setup] Backed up existing ${CONFIG_DST} → ${CONFIG_BACKUP}`);
+  }
+
   fs.writeFileSync(CONFIG_DST, configContent);
   console.log(`[global-setup] Copied ${CONFIG_SRC} → ${CONFIG_DST}`);
 

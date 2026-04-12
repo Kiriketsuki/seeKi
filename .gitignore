@@ -22,6 +22,7 @@ Thumbs.db
 
 # Project-specific
 seeki.toml
+seeki.toml.user-backup
 .seeki.secrets
 node_modules/
 frontend/dist/

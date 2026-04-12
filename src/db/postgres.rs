@@ -493,8 +493,8 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .map(Value::from)
             .unwrap_or(Value::Null),
         "numeric" => row
-            .try_get::<String, _>(col)
-            .map(Value::from)
+            .try_get::<rust_decimal::Decimal, _>(col)
+            .map(|v| Value::String(v.to_string()))
             .unwrap_or(Value::Null),
         "boolean" => row
             .try_get::<bool, _>(col)

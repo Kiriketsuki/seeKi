@@ -418,7 +418,8 @@ fn pg_value_to_csv_string(
             .map(|v| v.to_string())
             .unwrap_or_default(),
         "numeric" => row
-            .try_get::<String, _>(col)
+            .try_get::<rust_decimal::Decimal, _>(col)
+            .map(|v| v.to_string())
             .unwrap_or_default(),
         "boolean" => row
             .try_get::<bool, _>(col)
