@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use tokio::net::TcpListener;
 
-use crate::config::{SecretsConfig, SshAuthMethod, SshConfig};
+use crate::config::{KnownHostsPolicy, SecretsConfig, SshAuthMethod, SshConfig};
 
 pub struct SshTunnel {
     #[allow(dead_code)] // Held for Drop side-effect: openssh::Session closes the tunnel on drop.
@@ -30,7 +30,11 @@ impl SshTunnel {
         drop(listener);
 
         let mut builder = openssh::SessionBuilder::default();
-        builder.known_hosts_check(openssh::KnownHosts::Add);
+        builder.known_hosts_check(match ssh_config.known_hosts {
+            KnownHostsPolicy::Strict => openssh::KnownHosts::Strict,
+            KnownHostsPolicy::Add => openssh::KnownHosts::Add,
+            KnownHostsPolicy::Accept => openssh::KnownHosts::Accept,
+        });
 
         let mut decrypted_key: Option<tempfile::NamedTempFile> = None;
 
