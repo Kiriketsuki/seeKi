@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install · SeeKi</title>
+    <meta name="description" content="Install SeeKi — download a single binary, or build from source with Rust 1.85+ (edition 2024)." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/get-started/install.html" aria-current="page">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Install</h1>
+          <p>SeeKi ships as a single binary. Download a release for your platform, or build from source if you prefer. Both paths produce the same program &mdash; one executable, no runtime to install alongside it.</p>
+
+          <h2>System requirements</h2>
+          <ul>
+            <li>macOS, Linux, or Windows on a 64-bit machine</li>
+            <li>Network access to the database you want to browse</li>
+            <li>A modern browser (Chrome, Firefox, Safari, Edge) for the SeeKi window</li>
+          </ul>
+          <p>Building from source adds one more: <strong>Rust 1.85 or newer</strong> (Rust edition 2024). Nothing else &mdash; no Node, no Docker, no system libraries beyond what your OS already ships.</p>
+
+          <h2>Option 1 &middot; Download the binary</h2>
+          <p>The fastest path. Grab the release for your platform from GitHub, make it executable, and move it somewhere on your <code>PATH</code>.</p>
+          <pre><code># macOS / Linux
+curl -L -o seeki https://github.com/kiriketsuki/seeKi/releases/latest/download/seeki-$(uname -s)-$(uname -m)
+chmod +x seeki
+./seeki --help</code></pre>
+          <p>On Windows, download the <code>.exe</code> from the <a href="https://github.com/kiriketsuki/seeKi/releases" rel="noopener">releases page</a> and run it from a PowerShell window.</p>
+          <aside class="sk-callout sk-callout--tip">
+            <p class="sk-callout__title">Tip</p>
+            <p>Put the binary in a folder that is already on your <code>PATH</code> (for example <code>~/.local/bin</code> on Linux, <code>/usr/local/bin</code> on macOS) so you can run it from anywhere as <code>seeki</code>.</p>
+          </aside>
+
+          <h2>Option 2 &middot; Install with Cargo</h2>
+          <p>If you already have Rust set up, one command installs SeeKi straight from crates.io:</p>
+          <pre><code>cargo install seeki</code></pre>
+          <p>Cargo will place the binary in <code>~/.cargo/bin/seeki</code>. If that folder is on your <code>PATH</code>, you are done.</p>
+
+          <h2>Option 3 &middot; Build from source</h2>
+          <p>Clone the repository and build a release binary. Use this path if you want to track the <code>main</code> branch, audit the code, or contribute a change.</p>
+          <pre><code>git clone https://github.com/kiriketsuki/seeKi.git
+cd seeKi
+cargo build --release
+./target/release/seeki --help</code></pre>
+          <p>The release build produces a self-contained binary at <code>target/release/seeki</code>. Copy it anywhere you like.</p>
+
+          <h2>Check the Rust toolchain</h2>
+          <p>If you do not yet have Rust, install it with <a href="https://rustup.rs/" rel="noopener">rustup</a>. Then confirm the version:</p>
+          <pre><code>rustc --version
+# rustc 1.85.0 (or newer)</code></pre>
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Why 1.85+?</p>
+            <p>SeeKi uses Rust edition 2024, which requires toolchain 1.85 or later. Older toolchains will fail the build with a clear error message; run <code>rustup update stable</code> to move forward.</p>
+          </aside>
+
+          <h2>Verify the install</h2>
+          <p>Run the binary with no arguments. If it prints a startup line and a URL, you are ready for the <a href="/get-started/quickstart.html">Quickstart</a>.</p>
+          <pre><code>seeki
+# SeeKi listening on http://127.0.0.1:3141</code></pre>
+
+          <h2>What&rsquo;s next</h2>
+          <ul>
+            <li><a href="/get-started/quickstart.html">Quickstart</a> &mdash; open your first database in five minutes.</li>
+            <li><a href="/get-started/connections.html">Connections</a> &mdash; point SeeKi at your PostgreSQL database.</li>
+            <li><a href="/get-started/config-reference.html">Config reference</a> &mdash; every field in <code>seeki.toml</code>.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

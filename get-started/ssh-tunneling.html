@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SSH tunneling · SeeKi</title>
+    <meta name="description" content="Reach a database through an SSH bastion — when to use it, how to configure it, and what to try when it won't connect." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/get-started/ssh-tunneling.html" aria-current="page">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>SSH tunneling</h1>
+          <p>Some databases are not directly reachable from your laptop &mdash; they sit inside a private network, and the only way in is through an SSH bastion host. SeeKi can open that tunnel for you and route the database connection through it. You still write a single connection string; SeeKi handles the middle.</p>
+
+          <h2>When you need this</h2>
+          <p>Turn on tunneling if any of the following is true:</p>
+          <ul>
+            <li>The database host is an internal address you cannot ping from your laptop (<code>10.x.x.x</code>, <code>172.16.x.x</code>, a private VPC endpoint).</li>
+            <li>The database is only accessible from a specific jump box your team already SSHs into.</li>
+            <li>Your security policy forbids opening database ports to the outside world.</li>
+          </ul>
+          <p>If you can already reach the database directly with <code>psql</code> from your laptop, you do not need a tunnel. Skip this page and use <a href="/get-started/connections.html">Connections</a>.</p>
+
+          <h2>How it works</h2>
+          <p>When <code>[ssh]</code> is present in <code>seeki.toml</code>, SeeKi does this on startup:</p>
+          <ol>
+            <li>Picks an unused local port.</li>
+            <li>Opens an SSH session to the bastion you named.</li>
+            <li>Forwards that local port through the session to the database host and port.</li>
+            <li>Connects to the database using the forwarded local port.</li>
+          </ol>
+          <p>The tunnel stays open for the life of the SeeKi process and closes automatically when you stop it.</p>
+
+          <h2>Authenticating to the bastion</h2>
+          <p>SeeKi supports two practical choices: a private key on disk, or your running SSH agent. Password auth is defined in the schema but not yet implemented &mdash; stick to keys.</p>
+
+          <h3>Option A &middot; Private key file</h3>
+          <p>Use when the key is unencrypted and sits at a known path.</p>
+          <pre><code>[database]
+kind = "postgres"
+url = "postgres://reporting:s3cret@10.0.12.7:5432/autoconnect"
+
+[ssh]
+host = "bastion.example.com"
+port = 22
+username = "jlim"
+auth_method = "key"
+key_path = "/home/jlim/.ssh/id_ed25519"</code></pre>
+
+          <h3>Option B &middot; SSH agent</h3>
+          <p>Use when your key has a passphrase, or you already load keys into <code>ssh-agent</code> at login. This is the recommended choice for most teams.</p>
+          <pre><code>[ssh]
+host = "bastion.example.com"
+port = 22
+username = "jlim"
+auth_method = "agent"</code></pre>
+          <p>Before starting SeeKi, add the key to the agent:</p>
+          <pre><code>ssh-add ~/.ssh/id_ed25519</code></pre>
+          <aside class="sk-callout sk-callout--tip">
+            <p class="sk-callout__title">Why the agent is preferred</p>
+            <p>SeeKi deliberately does not read key passphrases from <code>seeki.toml</code>. Letting <code>ssh-agent</code> hold the unlocked key means nothing sensitive touches the config file, and you unlock once per login rather than once per SeeKi launch.</p>
+          </aside>
+
+          <h2>The database URL in a tunnel</h2>
+          <p>Write the URL as if SeeKi were running on the bastion itself. The host and port point at the database&rsquo;s private address &mdash; the address the bastion uses, not your laptop. SeeKi rewrites the connection through the forwarded local port for you.</p>
+          <pre><code># "10.0.12.7" is the private address of the database,
+# reachable from the bastion but not from your laptop.
+url = "postgres://reporting:s3cret@10.0.12.7:5432/autoconnect"</code></pre>
+
+          <h2>First-time host check</h2>
+          <p>The first time SeeKi connects to a new bastion, it adds that host&rsquo;s fingerprint to your <code>~/.ssh/known_hosts</code>. If the fingerprint changes later, SeeKi refuses to connect until you review and update the entry &mdash; the same behaviour as the regular <code>ssh</code> command.</p>
+
+          <h2>Troubleshooting</h2>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Symptom</th><th>Likely cause</th><th>What to try</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><em>SSH connection failed</em> on startup</td>
+                <td>Wrong username, host unreachable, or firewall between you and the bastion.</td>
+                <td>Run <code>ssh username@host</code> in a separate terminal. Fix that first; SeeKi uses the same rules.</td>
+              </tr>
+              <tr>
+                <td><em>Passphrase-protected SSH keys are not supported</em></td>
+                <td>You set <code>auth_method = "key"</code> on a key that needs a passphrase.</td>
+                <td>Load the key into the agent with <code>ssh-add</code> and switch to <code>auth_method = "agent"</code>.</td>
+              </tr>
+              <tr>
+                <td><em>Port forward failed</em></td>
+                <td>The bastion can reach the database host, but the database is refusing the connection, or the address is wrong.</td>
+                <td>SSH into the bastion and try <code>psql -h 10.0.12.7 -U reporting autoconnect</code>. Fix the address or credentials.</td>
+              </tr>
+              <tr>
+                <td><em>Password-based SSH auth is not supported yet</em></td>
+                <td>You set <code>auth_method = "password"</code>.</td>
+                <td>Generate a key (<code>ssh-keygen</code>), install its public half on the bastion, and switch to <code>auth_method = "key"</code> or <code>"agent"</code>.</td>
+              </tr>
+              <tr>
+                <td>Host key verification complains about a changed fingerprint</td>
+                <td>The bastion was rebuilt, or someone is intercepting the connection.</td>
+                <td>Check with your ops team before editing <code>~/.ssh/known_hosts</code>. Do not ignore the warning.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2>What&rsquo;s next</h2>
+          <ul>
+            <li><a href="/get-started/connections.html">Connections</a> &mdash; full shape of the PostgreSQL URL.</li>
+            <li><a href="/get-started/config-reference.html#ssh">Config reference: <code>[ssh]</code></a> &mdash; every field in the tunnel block.</li>
+            <li><a href="/operate/troubleshooting.html">Troubleshooting</a> &mdash; when SeeKi starts but the grid stays empty.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

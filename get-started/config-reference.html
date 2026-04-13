@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Config reference · SeeKi</title>
+    <meta name="description" content="Every field in seeki.toml — type, default, and an example drawn directly from the source." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/get-started/config-reference.html" aria-current="page">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Config reference</h1>
+          <p>SeeKi reads a single TOML file at startup. This page walks every field group in the order the parser expects them: <code>[server]</code>, <code>[database]</code>, <code>[tables]</code>, <code>[display]</code>, <code>[branding]</code>, and the optional <code>[ssh]</code> block. Every type and default is drawn from the source.</p>
+          <p>For where the file needs to live on disk, see <a href="/operate/config-locations.html">Config locations</a>.</p>
+
+          <h2>A full example</h2>
+          <pre><code>[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://user:password@localhost:5432/mydb"
+max_connections = 5
+
+[tables]
+include = ["vehicles_log", "drivers", "audit_log"]
+exclude = ["audit_log"]
+
+[display.tables]
+vehicles_log = "Fleet Log"
+
+[display.columns.vehicles_log]
+posn_lat = "Latitude"
+supervisor_id = "Supervisor"
+
+[branding]
+title = "My Database"
+subtitle = "Fleet Telemetry"</code></pre>
+
+          <h2><code>[server]</code></h2>
+          <p>Where SeeKi listens for browser traffic.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>host</code></td><td>string</td><td><code>"127.0.0.1"</code></td><td>Address to bind. Leave as loopback for local use; set to <code>"0.0.0.0"</code> only if you intend to serve others on your network.</td></tr>
+              <tr><td><code>port</code></td><td>integer (u16)</td><td><code>3141</code></td><td>TCP port. Pick any unused port between 1 and 65535.</td></tr>
+            </tbody>
+          </table>
+
+          <h2><code>[database]</code></h2>
+          <p>Which database to connect to, and how eagerly to pool connections.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>url</code></td><td>string</td><td>&mdash; required</td><td>Connection string. For PostgreSQL, use the standard <code>postgres://user:pass@host:port/db</code> form. See <a href="/get-started/connections.html">Connections</a> for the full shape.</td></tr>
+              <tr><td><code>kind</code></td><td>string</td><td><code>"postgres"</code></td><td>Database family. <code>"postgres"</code> is the supported engine today; <code>"sqlite"</code> is reserved for future work.</td></tr>
+              <tr><td><code>max_connections</code></td><td>integer (u32)</td><td><code>5</code></td><td>Upper bound on the internal pool. Five is plenty for a single browser; raise it only if several people share the same SeeKi instance.</td></tr>
+            </tbody>
+          </table>
+
+          <h2><code>[tables]</code></h2>
+          <p>Optional. Controls which tables appear in the sidebar. Omit the whole block to show everything.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>include</code></td><td>array of string</td><td>unset (all tables)</td><td>Only these tables are shown. Match the name exactly as the database stores it.</td></tr>
+              <tr><td><code>exclude</code></td><td>array of string</td><td>unset (none excluded)</td><td>Hide these tables. Applied after <code>include</code>, so an entry that appears in both is excluded.</td></tr>
+            </tbody>
+          </table>
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Overlap warning</p>
+            <p>If the same name appears in <code>include</code> and <code>exclude</code>, SeeKi writes a warning to the log and hides the table. Nothing to worry about &mdash; this is just to flag unintended overlap.</p>
+          </aside>
+
+          <h2><code>[display]</code></h2>
+          <p>Optional. Replace the friendly names SeeKi generates from the raw table and column names. Useful when the auto-heuristic lands on something clumsy, like <em>Posn Lat</em>.</p>
+
+          <h3><code>[display.tables]</code></h3>
+          <p>Map <em>raw table name</em> to <em>label shown in the sidebar</em>.</p>
+          <pre><code>[display.tables]
+vehicles_log = "Fleet Log"</code></pre>
+
+          <h3><code>[display.columns.&lt;table&gt;]</code></h3>
+          <p>Per-table column overrides. Keys are raw column names, values are labels.</p>
+          <pre><code>[display.columns.vehicles_log]
+posn_lat = "Latitude"
+supervisor_id = "Supervisor"</code></pre>
+          <p>Anything you do not override falls back to SeeKi&rsquo;s heuristic: underscores become spaces, words are title-cased, and a trailing <code>_id</code> is dropped (<code>supervisor_id</code> &rarr; Supervisor).</p>
+
+          <h2><code>[branding]</code></h2>
+          <p>Optional. Replace the SeeKi title with your own.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>title</code></td><td>string</td><td>unset</td><td>Main label shown in the top bar. Example: <code>"My Database"</code>.</td></tr>
+              <tr><td><code>subtitle</code></td><td>string</td><td>unset</td><td>Short line beneath the title. Example: <code>"Fleet Telemetry"</code>.</td></tr>
+            </tbody>
+          </table>
+
+          <h2><code>[ssh]</code></h2>
+          <p>Optional. Tunnel the database connection through an SSH bastion. See <a href="/get-started/ssh-tunneling.html">SSH tunneling</a> for the full walkthrough.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>host</code></td><td>string</td><td>&mdash; required</td><td>Hostname of the SSH bastion.</td></tr>
+              <tr><td><code>port</code></td><td>integer (u16)</td><td><code>22</code></td><td>SSH port on the bastion.</td></tr>
+              <tr><td><code>username</code></td><td>string</td><td>&mdash; required</td><td>Login name on the bastion.</td></tr>
+              <tr><td><code>auth_method</code></td><td>string</td><td>&mdash; required</td><td>One of <code>"key"</code>, <code>"agent"</code>, or <code>"password"</code>. Password auth is not supported yet &mdash; use a key or the SSH agent.</td></tr>
+              <tr><td><code>key_path</code></td><td>string</td><td>unset</td><td>Path to a private key. Required when <code>auth_method = "key"</code>.</td></tr>
+            </tbody>
+          </table>
+          <aside class="sk-callout sk-callout--warn">
+            <p class="sk-callout__title">Secrets never live in <code>seeki.toml</code></p>
+            <p>If your key needs a passphrase, load it into your SSH agent (<code>ssh-add ~/.ssh/id_rsa</code>) and set <code>auth_method = "agent"</code>. SeeKi deliberately does not read passphrases from the main config file.</p>
+          </aside>
+
+          <h2>Where SeeKi looks for the file</h2>
+          <ol>
+            <li><code>./seeki.toml</code> (current working directory)</li>
+            <li><code>~/.config/seeki/config.toml</code> (platform config dir)</li>
+          </ol>
+          <p>The first file found wins. If neither exists, SeeKi opens the setup wizard in the browser and writes a fresh <code>seeki.toml</code> for you.</p>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

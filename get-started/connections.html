@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connections · SeeKi</title>
+    <meta name="description" content="Point SeeKi at a PostgreSQL database — connection strings, host/port/user/password pieces, and pool sizing." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/get-started/connections.html" aria-current="page">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Connections</h1>
+          <p>SeeKi connects to PostgreSQL. You give it a single connection string, and it does the rest &mdash; pooling, schema introspection, reading rows on demand. This page covers the shape of that string, how to break it apart when a URL is awkward, and how to size the pool.</p>
+
+          <h2>The simplest case</h2>
+          <p>A database running on your laptop, one user, default port:</p>
+          <pre><code>[database]
+kind = "postgres"
+url = "postgres://user:password@localhost:5432/mydb"
+max_connections = 5</code></pre>
+          <p>Paste that into <code>seeki.toml</code>, run <code>./seeki</code>, and the grid should render within a second or two.</p>
+
+          <h2>The pieces of a connection string</h2>
+          <p>PostgreSQL URLs follow a fixed shape. SeeKi accepts the standard form used by <code>psql</code>, every PostgreSQL driver, and most other tools.</p>
+          <pre><code>postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require</code></pre>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Piece</th><th>What to put</th><th>Example</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>USER</code></td><td>Database login name. Prefer a read-only user.</td><td><code>reporting</code></td></tr>
+              <tr><td><code>PASSWORD</code></td><td>That user&rsquo;s password. URL-encode any special characters.</td><td><code>s3cret%21</code></td></tr>
+              <tr><td><code>HOST</code></td><td>Hostname or IP of the database server.</td><td><code>db.internal</code></td></tr>
+              <tr><td><code>PORT</code></td><td>TCP port. PostgreSQL defaults to <code>5432</code>.</td><td><code>5432</code></td></tr>
+              <tr><td><code>DATABASE</code></td><td>Name of the database (not the server, the database inside it).</td><td><code>autoconnect</code></td></tr>
+              <tr><td><code>sslmode</code></td><td>Optional query parameter. Use <code>require</code> for most cloud providers.</td><td><code>require</code></td></tr>
+            </tbody>
+          </table>
+          <aside class="sk-callout sk-callout--tip">
+            <p class="sk-callout__title">Read-only user, always</p>
+            <p>SeeKi never writes, but the database doesn&rsquo;t know that. Create a login that only has <code>SELECT</code> rights on the tables you want to expose &mdash; it&rsquo;s a one-line defence against a misconfigured query or a future mistake.</p>
+          </aside>
+
+          <h2>Cloud providers</h2>
+          <p>Most hosted PostgreSQL services hand you a ready-made URL. Drop it in verbatim.</p>
+          <ul>
+            <li><strong>AWS RDS</strong> &mdash; copy the endpoint from the RDS console, prepend <code>postgres://user:pass@</code>, append <code>/dbname?sslmode=require</code>.</li>
+            <li><strong>Supabase</strong> &mdash; Project settings &rarr; Database &rarr; Connection string. Use the <em>Session</em> pooler URL for SeeKi.</li>
+            <li><strong>Neon</strong> &mdash; copy the <em>pooled</em> connection string from the dashboard.</li>
+            <li><strong>Google Cloud SQL / Azure</strong> &mdash; same shape; enable SSL in the URL with <code>?sslmode=require</code>.</li>
+          </ul>
+
+          <h2>When the URL won&rsquo;t paste cleanly</h2>
+          <p>Sometimes the password contains a <code>@</code> or your ops team hands you each piece separately. In practice the fix is URL-encoding, not a different config shape &mdash; SeeKi takes exactly one field, <code>database.url</code>.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Character in password</th><th>Encode as</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>@</code></td><td><code>%40</code></td></tr>
+              <tr><td><code>:</code></td><td><code>%3A</code></td></tr>
+              <tr><td><code>/</code></td><td><code>%2F</code></td></tr>
+              <tr><td><code>#</code></td><td><code>%23</code></td></tr>
+              <tr><td><code> </code> (space)</td><td><code>%20</code></td></tr>
+            </tbody>
+          </table>
+          <p>If the database lives behind a bastion host you can&rsquo;t reach directly, skip ahead to <a href="/get-started/ssh-tunneling.html">SSH tunneling</a>.</p>
+
+          <h2>Pool size</h2>
+          <p><code>max_connections</code> controls how many database connections SeeKi may open at once. The default of <code>5</code> is right for a single person browsing, and close to right for a small shared instance.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Who is using this SeeKi?</th><th>Suggested <code>max_connections</code></th></tr>
+            </thead>
+            <tbody>
+              <tr><td>One person, local laptop</td><td><code>5</code> (the default)</td></tr>
+              <tr><td>A small team sharing one instance</td><td><code>10</code> &ndash; <code>20</code></td></tr>
+              <tr><td>Dozens of concurrent readers</td><td><code>30</code>+, and check your database&rsquo;s own connection limit first</td></tr>
+            </tbody>
+          </table>
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Raise with care</p>
+            <p>The database has its own ceiling on open connections. Set this higher than the database allows and you will see failed connection errors in the log. When in doubt, leave it at <code>5</code>.</p>
+          </aside>
+
+          <h2>Test the connection</h2>
+          <p>Start SeeKi and watch the terminal. A healthy startup looks like this:</p>
+          <pre><code>INFO seeki: Loaded config from ./seeki.toml
+INFO seeki: Connecting to database...
+INFO seeki: Connected to database
+INFO seeki: SeeKi listening on http://127.0.0.1:3141</code></pre>
+          <p>If the connection fails, SeeKi prints the underlying error and stops. Common culprits: wrong password, wrong database name, the host is not reachable from this machine, or the database requires SSL and the URL doesn&rsquo;t ask for it.</p>
+
+          <h2>What&rsquo;s next</h2>
+          <ul>
+            <li><a href="/get-started/ssh-tunneling.html">SSH tunneling</a> &mdash; reach a database that only a bastion can see.</li>
+            <li><a href="/get-started/config-reference.html">Config reference</a> &mdash; every field in <code>seeki.toml</code>.</li>
+            <li><a href="/operate/troubleshooting.html">Troubleshooting</a> &mdash; what to try when the connection won&rsquo;t land.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

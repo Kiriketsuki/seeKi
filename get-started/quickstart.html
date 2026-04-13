@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quickstart · SeeKi</title>
+    <meta name="description" content="Open your first database in SeeKi in five minutes — download, point, run, browse." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/get-started/quickstart.html" aria-current="page">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Quickstart</h1>
+          <p>Five minutes from download to the first row on screen. This walkthrough assumes you have a PostgreSQL database you can reach from your laptop and the connection details to hand.</p>
+
+          <h2>1. Install SeeKi</h2>
+          <p>Grab the binary for your platform. Full options live on the <a href="/get-started/install.html">Install</a> page; the one-liner below covers macOS and Linux.</p>
+          <pre><code>curl -L -o seeki https://github.com/kiriketsuki/seeKi/releases/latest/download/seeki-$(uname -s)-$(uname -m)
+chmod +x seeki</code></pre>
+
+          <h2>2. Write a <code>seeki.toml</code></h2>
+          <p>Create a file called <code>seeki.toml</code> next to the binary. The minimum SeeKi needs is a server address and a database connection string.</p>
+          <pre><code>[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://user:password@localhost:5432/mydb"
+max_connections = 5</code></pre>
+          <aside class="sk-callout sk-callout--tip">
+            <p class="sk-callout__title">Prefer a wizard?</p>
+            <p>Skip this step. If no config exists when you start SeeKi, a first-run wizard opens in the browser and writes the file for you. See <a href="/features/setup-wizard.html">Setup wizard</a>.</p>
+          </aside>
+
+          <h2>3. Run it</h2>
+          <pre><code>./seeki
+# SeeKi listening on http://127.0.0.1:3141</code></pre>
+          <p>SeeKi stays in the foreground and prints a log line for each request. Leave the terminal open while you use it; press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop.</p>
+
+          <h2>4. Open the browser</h2>
+          <p>Visit <a href="http://127.0.0.1:3141">http://127.0.0.1:3141</a>. The sidebar lists every table you allowed, with row counts. Click one to see its rows in the grid.</p>
+
+          <h2>5. Browse, sort, filter, export</h2>
+          <ul>
+            <li><strong>Sort</strong> &mdash; click any column header. Click again to reverse; a third click clears the sort.</li>
+            <li><strong>Search</strong> &mdash; the toolbar search box looks across every text column in the current table.</li>
+            <li><strong>Filter one column</strong> &mdash; open the column menu from the header and type a value.</li>
+            <li><strong>Hide columns</strong> &mdash; use the column menu to hide anything you don&rsquo;t need. Your choices are remembered on the next visit.</li>
+            <li><strong>Export</strong> &mdash; the <em>Export</em> button saves the current view as a CSV with friendly column names.</li>
+          </ul>
+
+          <h2>You&rsquo;re done</h2>
+          <p>That&rsquo;s the whole loop: point SeeKi at a database, open the browser, read the data. No query editor to learn, nothing to install alongside it.</p>
+
+          <h2>Next steps</h2>
+          <ul>
+            <li><a href="/get-started/connections.html">Connections</a> &mdash; all the ways to describe your database.</li>
+            <li><a href="/get-started/config-reference.html">Config reference</a> &mdash; every option in <code>seeki.toml</code>.</li>
+            <li><a href="/get-started/ssh-tunneling.html">SSH tunneling</a> &mdash; reach a database that only a bastion host can see.</li>
+            <li><a href="/features/branding.html">Branding</a> &mdash; replace the SeeKi title with your team&rsquo;s name.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>
