@@ -2,7 +2,9 @@
   /* Palette */
   --sk-bg: #F5F0EB;
   --sk-text: #2F4858;
-  --sk-accent: #00A9A5;
+  --sk-accent: #ff9500;
+  --sk-brand-primary: #111111;
+  --sk-brand-surface: #f4f4f2;
   --sk-muted: #8a7a6c;
   --sk-secondary: #a0917f;
   --sk-secondary-strong: #556977;
@@ -44,7 +46,7 @@
 
   /* Shadows */
   --sk-shadow-card: 0 2px 16px rgba(47, 72, 88, 0.04);
-  --sk-shadow-accent: 0 2px 8px rgba(0, 169, 165, 0.2);
+  --sk-shadow-accent: 0 2px 8px rgba(255, 149, 0, 0.2);
 
   /* Typography */
   --sk-font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;

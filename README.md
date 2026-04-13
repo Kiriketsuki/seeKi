@@ -1,3 +1,7 @@
+<p align="left">
+  <img src="frontend/public/logo-wordmark.svg" alt="SeeKi" height="48" />
+</p>
+
 # SeeKi
 
 ![version-26.0.0.0-blue](https://img.shields.io/badge/version-26.0.0.0-blue)

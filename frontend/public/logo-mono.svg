@@ -1,13 +1,9 @@
 <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
   <style>
-    path { stroke: #111111; }
-    rect { fill: #ff9500; }
-    @media (prefers-color-scheme: dark) {
-      path { stroke: #f4f4f2; }
-      rect { fill: #ffb000; }
-    }
+    path, rect { stroke: currentColor; fill: none; }
+    rect { fill: currentColor; stroke: none; }
   </style>
   <path d="M 24 14 L 24 8 L 8 8 L 8 22 L 24 26 L 24 40 L 8 40 L 8 34" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
   <path d="M 24 26 L 38 12 M 24 26 L 38 40" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
-  <rect x="13" y="13" width="4" height="4" stroke="none" />
+  <rect x="13" y="13" width="4" height="4" />
 </svg>
