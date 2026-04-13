@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS soc_readings (
     read_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- Reset tables so the seed is idempotent (applied on every E2E setup run).
+-- RESTART IDENTITY resets the SERIAL counters so id values stay in the expected 1..200 / 1..80 ranges.
+TRUNCATE TABLE vehicle_logs, soc_readings RESTART IDENTITY;
+
 -- Generate 200 vehicle_logs rows
 INSERT INTO vehicle_logs (vehicle_id, event_type, speed_kmh, is_active, latitude, longitude, notes, logged_at)
 SELECT

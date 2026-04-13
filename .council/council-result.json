@@ -1,75 +1,93 @@
 {
-  "motion": "Merge PR #32: epic: End-to-End QA",
+  "motion": "Merge PR #32 (epic: End-to-End QA) — verify the Playwright E2E suite genuinely validates SeeKi against the real MEC-Miki PostgreSQL database (vehicle_logs and SOC tables)",
   "motion_type": "CODE",
-  "timestamp": "2026-04-13T00:15:00Z",
-  "duration_minutes": 12,
+  "timestamp": "2026-04-12T22:15:00Z",
+  "session": 3,
   "verdict": "CONDITIONAL",
   "confidence": "high",
-  "session": 2,
+  "rounds_completed": 3,
   "agents": {
-    "ADVOCATE-1": { "status": "completed", "verdict": "FOR" },
-    "CRITIC-1": { "status": "completed", "verdict": "CONDITIONAL", "findings": 4 },
-    "CRITIC-2": { "status": "completed", "verdict": "CONDITIONAL", "findings": 8 }
+    "ADVOCATE-1": { "status": "completed", "verdict": "FOR (with concessions)", "rounds_filed": 3 },
+    "CRITIC-1": { "status": "completed", "verdict": "CONDITIONAL", "rounds_filed": 3 },
+    "CRITIC-2": { "status": "completed", "verdict": "CONDITIONAL", "rounds_filed": 3 },
+    "QUESTIONER": { "status": "non_participant", "probes": 0, "note": "No rounds filed; all cited claims evaluated on source evidence directly" },
+    "ARBITER": { "status": "completed" }
   },
-  "mec_miki_verification": {
-    "status": "ALL PASSING",
-    "tables": ["vehicle_logs (200 rows)", "soc_readings (80 rows)"],
-    "endpoints_tested": ["status", "tables", "columns", "rows", "sort", "filter", "search", "pagination"],
-    "data_correctness": "numerics=strings (precision-safe), booleans=true/false, nulls=null, timestamps=ISO8601"
-  },
-  "prior_findings_status": {
-    "F1_double_build": "FIXED — Justfile:33 passes SEEKI_SKIP_BUILD=1",
-    "F2_hardcoded_vehicle_logs": "FIXED — error-states.spec.ts:51-55 dynamically fetches table name",
-    "F3_pendingRowsResponse_4xx": "FIXED — fixtures.ts:27 uses resp.ok(); separate pendingRowsResponseAny() for error tests",
-    "F4_tautological_assertions": "FIXED — toolbar.spec.ts:60 uses toBeLessThanOrEqual(initialTotal)",
-    "F5_sort_test_ui_only": "PARTIALLY FIXED — pendingRowsResponse waits added, no data-order assertion",
-    "F6_waitForGridLoaded_empty": "FIXED — fixtures.ts:59-61 resolves on any non-empty status bar text"
-  },
-  "new_findings": [
+  "findings": [
     {
       "id": 1,
       "type": "bug",
       "severity": "high",
-      "description": "Per-column filter test captures initialTotal but never uses it — test claims to verify narrowing but only checks regex pattern on status bar",
-      "file": "frontend/e2e/data-grid.spec.ts",
-      "line": 86,
-      "fix_description": "Add filteredTotal comparison after filter: expect(filteredTotal).toBeLessThanOrEqual(initialTotal)",
+      "description": "seed.sql is never applied by global-setup.ts — CI reproducibility gap. Session 2 'ALL PASSING' reflects a manually-prepared DB state that is not reproducible on fresh checkout. On a clean DB, NULL/boolean/numeric formatting tests and two-table navigation would skip silently.",
+      "file": "frontend/e2e/global-setup.ts",
+      "line": 149,
+      "fix_description": "Add a seed.sql execution step after waitForHealthy() using psql with the same env vars used for seeki.toml.test, or invoke via the Rust binary's existing DB pool. See recommendation file for sample implementation.",
       "verification": "verified",
-      "citations": ["frontend/e2e/data-grid.spec.ts:86", "frontend/e2e/data-grid.spec.ts:104"],
-      "status": "fixed"
+      "citations": ["frontend/e2e/global-setup.ts:55-153"],
+      "status": "merge_blocker"
     },
     {
       "id": 2,
-      "type": "improvement",
+      "type": "bug",
       "severity": "medium",
-      "description": "SQL injection and edge case beforeEach blocks use bare revo-grid visibility check instead of waitForAppReady + waitForGridLoaded — inconsistent with all other spec files, flake risk",
-      "file": "frontend/e2e/error-states.spec.ts",
-      "line": 43,
-      "fix_description": "Replace beforeEach with await seeki.waitForAppReady() + await seeki.waitForGridLoaded() pattern",
+      "description": "Filter narrowing assertion has no lower bound — zero-match filter result passes silently. `expect(filteredTotal).toBeLessThanOrEqual(initialTotal)` is satisfied by 0, so a structurally broken filter that always returns zero rows passes the test.",
+      "file": "frontend/e2e/data-grid.spec.ts",
+      "line": 131,
+      "fix_description": "Add `expect(filteredTotal).toBeGreaterThan(0)` before the existing upper-bound assertion at L131 to confirm the filter actually matched rows.",
       "verification": "verified",
-      "citations": ["frontend/e2e/error-states.spec.ts:43-47", "frontend/e2e/error-states.spec.ts:157-161"],
-      "status": "fixed"
-    }
-  ],
-  "dropped_findings": [
-    {
-      "source": "CRITIC-2 F6",
-      "reason": "UNSUBSTANTIATED — Playwright waitForResponse matches the next response after registration, not stale ones. Standard pattern."
+      "citations": ["frontend/e2e/data-grid.spec.ts:131"],
+      "status": "merge_blocker"
     },
     {
-      "source": "CRITIC-2 F5",
-      "reason": "UNSUBSTANTIATED — 'Showing 0 - 0 of 0' is non-empty text, condition resolves correctly. ADVOCATE confirmed."
+      "id": 3,
+      "type": "design_scope",
+      "severity": "low",
+      "description": "DB identity is unverified — a reachable wrong DB (developer local convenience DB) produces a green suite identical to MEC-Miki. This is a consequence of the suite being generic by design; not a test logic bug.",
+      "file": "frontend/e2e/global-setup.ts",
+      "line": 94,
+      "fix_description": "PR description amendment only (recharacterize suite as generic behavioral harness). Optional: add assert that `/api/tables` includes expected table names when SEEKI_E2E_ASSERT_MEC_MIKI=1 is set.",
+      "verification": "verified",
+      "citations": ["frontend/e2e/global-setup.ts:93-95"],
+      "status": "pr_description_amendment"
     }
   ],
-  "tracked_gaps": [
-    "Sort test has no data-order assertion (CRITIC-1 F2) — low severity, follow-up",
-    "No CI pipeline integration — structural gap, requires secrets provisioning",
-    "Single browser (Chrome) only — Safari/Firefox follow-on",
-    "Setup wizard route-handler LIFO ordering — fragile but functional"
+  "critical_discoveries": [
+    {
+      "id": "CD-1",
+      "category": "Data Loss",
+      "description": "Config backup at global-setup.ts:98-103 is corrupted on interrupted retry — Run #1 killed after line 103 leaves test config in seeki.toml; Run #2 then copies that test config over seeki.toml.user-backup, permanently destroying the user's original config.",
+      "file": "frontend/e2e/global-setup.ts",
+      "line": "98-103",
+      "recommended_fix": "Before overwriting CONFIG_BACKUP, only write if backup does not exist OR existing backup is identical to CONFIG_DST (indicating prior test-config state). See recommendation file for sample.",
+      "merge_blocker": false
+    }
   ],
   "conditions": [
-    "Fix unused initialTotal in per-column filter test — DONE",
-    "Fix inconsistent beforeEach in error-states — DONE"
+    "Condition 1: Apply seed.sql by the harness (global-setup.ts) to make the test state reproducible",
+    "Condition 2: Add `expect(filteredTotal).toBeGreaterThan(0)` lower bound to the filter test at data-grid.spec.ts:131",
+    "PR description amendment: recharacterize suite as a generic behavioral harness that exercises MEC-Miki runtime characteristics (booleans, NULLs, two tables, sortable id) — not a schema-specific regression detector"
   ],
-  "summary": "Second council session after all 6 prior findings were remediated. ADVOCATE-1 confirmed all fixes. CRITIC-1 and CRITIC-2 found 2 new actionable issues: (1) per-column filter test captured initialTotal but never compared it, making the test vacuous; (2) error-states beforeEach used bare revo-grid visibility instead of the standard waitForAppReady+waitForGridLoaded pattern. Both fixed. MEC-Miki data verification passed all endpoints. PR is ready to merge."
+  "concessions_summary": {
+    "advocate_conceded": [
+      "seed.sql is not auto-applied — CI reproducibility gap (F1)",
+      "DB identity unverified — reachable wrong DB produces green suite (F3 / Gap 4)",
+      "Config backup corrupted on interrupted retry (CD-1 / Gap 3)",
+      "Filter assertion has no lower bound (F2 / C4)",
+      "NULL/boolean formatting tests are soft coverage contingent on live page-1 data (C3)",
+      "Suite cannot detect MEC-Miki SCHEMA-specific regressions (column renames, type changes, timestamp format)"
+    ],
+    "critics_conceded": [
+      "Empty DB (0 rows / 0 tables) produces hard failures — not silent green",
+      "Unreachable host / bad credentials causes setup abort (30s timeout)",
+      "Sort conditional IS entered for MEC-Miki's id SERIAL column (C5 for MEC-Miki case)",
+      "Filter practical impact: returns positive matches on real MEC-Miki data (C4 practical narrowing)"
+    ]
+  },
+  "prior_session_status": {
+    "session_1_findings": "ALL FIXED (6 items in commits dd940dd, 070c245, 2023373)",
+    "session_2_findings": "ALL FIXED (2 items)",
+    "session_3_vs_prior": "No prior findings re-raised — all prior fixes confirmed intact"
+  },
+  "recommendation_file": "2026-04-12-221500-council-pr32-mec-miki-session3.md",
+  "summary": "Session 3 narrowly scoped to MEC-Miki validation rigor. Council converged on: suite IS a genuine behavioral harness against real MEC-Miki (not a mock-through), but 3 gaps undermine the 'MEC-Miki-specific regression coverage' framing: (F1) seed.sql not auto-applied, (F2) filter missing `>0` lower bound, (F3) DB identity unverified. Plus CD-1 data-loss path in config backup on interrupted retry. Verdict CONDITIONAL — 2 merge blockers + PR description amendment + 1 informational CD."
 }

@@ -128,6 +128,8 @@ test.describe('Data Grid — Filtering', () => {
     expect(statusText).toMatch(/Showing \d+ - \d+ of \d+/);
 
     const filteredTotal = await seeki.getTotalRows();
+    // Lower bound: filter actually matched rows (not a zero-match silent pass)
+    expect(filteredTotal).toBeGreaterThan(0);
     expect(filteredTotal).toBeLessThanOrEqual(initialTotal);
   });
 

@@ -94,10 +94,20 @@ async function globalSetup(): Promise<void> {
     console.warn(`[global-setup] WARNING: empty env vars in config: ${emptyVars.join(', ')}. Check .env.test.`);
   }
 
-  // Back up existing user config before overwriting
+  // Back up existing user config before overwriting.
+  // CD-1 safety: only write the backup if no backup exists yet, OR the existing backup
+  // is already identical to CONFIG_DST (i.e. a prior interrupted run left test config
+  // in both — overwriting is a no-op). This prevents an interrupted Run #1 + Run #2
+  // sequence from copying test config over the user's real backup.
   if (fs.existsSync(CONFIG_DST)) {
-    fs.copyFileSync(CONFIG_DST, CONFIG_BACKUP);
-    console.log(`[global-setup] Backed up existing ${CONFIG_DST} → ${CONFIG_BACKUP}`);
+    const shouldBackup = !fs.existsSync(CONFIG_BACKUP) ||
+      fs.readFileSync(CONFIG_BACKUP, 'utf-8') === fs.readFileSync(CONFIG_DST, 'utf-8');
+    if (shouldBackup) {
+      fs.copyFileSync(CONFIG_DST, CONFIG_BACKUP);
+      console.log(`[global-setup] Backed up existing ${CONFIG_DST} → ${CONFIG_BACKUP}`);
+    } else {
+      console.log(`[global-setup] Preserving existing ${CONFIG_BACKUP} (differs from current ${CONFIG_DST}; likely user config from a prior interrupted run)`);
+    }
   }
 
   fs.writeFileSync(CONFIG_DST, configContent);
@@ -147,6 +157,37 @@ async function globalSetup(): Promise<void> {
 
   // 5. Wait for healthy
   await waitForHealthy();
+
+  // 6. Apply seed.sql so the test DB state is reproducible on fresh checkouts / CI.
+  // Without this, NULL/boolean/numeric formatting tests and two-table navigation can
+  // skip silently against an uninitialised DB, making the suite non-reproducible.
+  const seedPath = path.join(PROJECT_ROOT, 'tests/fixtures/seed.sql');
+  if (fs.existsSync(seedPath) && process.env.SEEKI_SKIP_SEED !== '1') {
+    const user = process.env.SEEKI_TEST_DB_USER ?? '';
+    const pass = process.env.SEEKI_TEST_DB_PASSWORD ?? '';
+    const host = process.env.SEEKI_TEST_DB_HOST ?? '';
+    const port = process.env.SEEKI_TEST_DB_PORT ?? '5432';
+    const name = process.env.SEEKI_TEST_DB_NAME ?? '';
+    if (!user || !host || !name) {
+      console.warn('[global-setup] Skipping seed: SEEKI_TEST_DB_{USER,HOST,NAME} not all set.');
+    } else {
+      const connectUrl = `postgres://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}/${name}`;
+      console.log('[global-setup] Applying seed.sql...');
+      try {
+        execSync(`psql "${connectUrl}" -v ON_ERROR_STOP=1 -f "${seedPath}"`, {
+          cwd: PROJECT_ROOT,
+          stdio: 'inherit',
+          timeout: 30_000,
+        });
+      } catch (err) {
+        throw new Error(
+          `[global-setup] seed.sql apply failed. Ensure psql is installed and DB credentials are correct. ` +
+          `Set SEEKI_SKIP_SEED=1 to bypass (not recommended). Underlying error: ${(err as Error).message}`
+        );
+      }
+    }
+  }
+
   console.log('[global-setup] Setup complete');
 }
 

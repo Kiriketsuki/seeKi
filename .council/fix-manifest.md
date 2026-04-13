@@ -1,98 +1,67 @@
-# Fix Manifest — PR #30: epic: Toolbar, Column Management & Export
+# Fix Manifest — PR #32 Council Session 3 (MEC-Miki Validation)
 
-Council verdict: CONDITIONAL | 2026-04-10 | 10 findings (10 verified) | All fixed (4 sessions)
+Council verdict: **CONDITIONAL** | 2026-04-12 22:15 UTC | 3 findings (all verified) + 1 Critical Discovery
 
----
+## Fixes Required (Merge Blockers)
 
-## Session 1 Fixes (previously applied)
+### 1. Apply seed.sql by the harness (CI reproducibility)
+- **File**: `frontend/e2e/global-setup.ts`
+- **Line**: insert after line 149 (`await waitForHealthy()`)
+- **Severity**: HIGH
+- **Verification**: VERIFIED — global-setup.ts:55-153 contains no SQL execution
+- **Fix**: Add a seed application step so the "ALL PASSING" claim is reproducible on a fresh checkout.
 
-### 1. ARIA mismatch — columns dropdown missing role="dialog"
-- **File**: `frontend/src/components/ColumnDropdown.svelte`
-- **Line**: 30
-- **Type**: a11y / **Severity**: high
-- **Fix**: Added `role="dialog"` and `aria-label="Column visibility"` to `.dropdown` div
-- **Citations**: `Toolbar.svelte:128` (aria-haspopup="dialog"), `ColumnDropdown.svelte:30`
+```typescript
+// After await waitForHealthy() at line 149:
+const seedPath = path.join(PROJECT_ROOT, 'tests/fixtures/seed.sql');
+if (fs.existsSync(seedPath)) {
+  console.log('[global-setup] Applying seed.sql...');
+  const connectUrl = `postgres://${process.env.SEEKI_TEST_DB_USER}:${process.env.SEEKI_TEST_DB_PASSWORD}@${process.env.SEEKI_TEST_DB_HOST}:${process.env.SEEKI_TEST_DB_PORT ?? '5432'}/${process.env.SEEKI_TEST_DB_NAME}`;
+  execSync(`psql "${connectUrl}" -f "${seedPath}"`, {
+    cwd: PROJECT_ROOT,
+    stdio: 'inherit',
+    timeout: 30_000,
+  });
+}
+```
+- **Citations**: `frontend/e2e/global-setup.ts:55-153`
 
-### 2. Double horizontal padding on TableHeader
-- **File**: `frontend/src/components/TableHeader.svelte`
-- **Line**: 24
-- **Type**: layout / **Severity**: high
-- **Fix**: Changed `.table-header` `padding: 0 var(--sk-space-2xl)` → `padding: 0`
-- **Citations**: `TableHeader.svelte:24`, `App.svelte:576`
+### 2. Add filter lower-bound assertion
+- **File**: `frontend/e2e/data-grid.spec.ts`
+- **Line**: 131 (insert new line before)
+- **Severity**: MEDIUM
+- **Verification**: VERIFIED
+- **Fix**: Add `expect(filteredTotal).toBeGreaterThan(0)` before the existing `toBeLessThanOrEqual` assertion.
 
-### 3. Export button always enabled with no table selected
-- **File**: `frontend/src/components/Toolbar.svelte`
-- **Line**: 141
-- **Type**: ux / **Severity**: medium
-- **Fix**: Added `hasTable?: boolean` prop; `disabled={!hasTable}` on export button
-- **Citations**: `Toolbar.svelte:141`, `App.svelte:486`
+```typescript
+const filteredTotal = await seeki.getTotalRows();
+expect(filteredTotal).toBeGreaterThan(0);          // NEW
+expect(filteredTotal).toBeLessThanOrEqual(initialTotal);
+```
+- **Citations**: `frontend/e2e/data-grid.spec.ts:131`
 
-### 4. Ctrl+K blocked when search input focused
-- **File**: `frontend/src/App.svelte`
-- **Line**: 110
-- **Type**: ux / **Severity**: medium
-- **Fix**: Added `isSearchField` guard so Ctrl+K works when focus is in the search input
-- **Citations**: `App.svelte:110-111`
+## PR Description Amendment
 
-### 5. "Show All" always enabled when all columns visible
-- **File**: `frontend/src/components/ColumnDropdown.svelte`
-- **Line**: 39
-- **Type**: ux / **Severity**: low
-- **Fix**: Added `disabled={hiddenCount === 0}` to Show All button
-- **Citations**: `ColumnDropdown.svelte:39`
+Recharacterize the suite: "Generic behavioral regression harness. When run against MEC-Miki it additionally exercises boolean badge rendering, NULL cell styling, two-table navigation, and sort data-order. Does NOT assert MEC-Miki schema properties — schema drift (column rename / type change / timestamp format) is outside its regression surface."
 
----
+## Critical Discovery — CD-1 (Informational, Not Merge Blocker)
 
-## Session 3 Fixes (this session)
+### Config backup overwritten on interrupted retry
+- **File**: `frontend/e2e/global-setup.ts:98-103`
+- **Category**: Data Loss
+- **Mechanism**: Run #1 killed after line 103 leaves test config in `seeki.toml`. Run #2 line 99 then copies that test config over `seeki.toml.user-backup`, destroying the user's original.
+- **Recommended fix**:
 
-### 6. Static aria-label on filter/columns buttons hides dynamic badge count from AT
-- **File**: `frontend/src/components/Toolbar.svelte`
-- **Lines**: 103, 131
-- **Type**: a11y / **Severity**: medium
-- **Fix**: `aria-label="Toggle filters"` → `aria-label={filterTitle}`; `aria-label="Manage columns"` → `aria-label={columnsTitle}`. Both derived values already existed in the component.
-- **Citations**: `Toolbar.svelte:103`, `Toolbar.svelte:131`, `Toolbar.svelte:60-69`
-
-### 7. type="search" + custom X button renders two clear controls on Chrome/Safari
-- **File**: `frontend/src/App.svelte`
-- **Line**: 505
-- **Type**: ux / **Severity**: medium
-- **Fix**: Changed `type="search"` → `type="text"`; custom `<button class="clear-search">` is now the sole clear mechanism
-- **Citations**: `App.svelte:504`, `App.svelte:512-519`
-
-### 8. Export button disabled title gives no context
-- **File**: `frontend/src/components/Toolbar.svelte`
-- **Line**: 147
-- **Type**: ux / **Severity**: low
-- **Fix**: `title="Export CSV"` → `title={hasTable ? 'Export CSV' : 'Select a table to export'}`; `aria-label` likewise derived
-- **Citations**: `Toolbar.svelte:143-150`
-
----
-
-## Session 4 Fixes (this session)
-
-### 9. role="dialog" on ColumnDropdown without dialog keyboard contract
-- **File**: `frontend/src/components/ColumnDropdown.svelte`
-- **Line**: 30
-- **Type**: a11y / **Severity**: high
-- **Fix**: Replaced `role="dialog"` with `role="region"` — matches the Disclosure Button pattern already established by `aria-expanded` on the trigger; `aria-label="Column visibility"` transfers correctly; no focus management required
-- **Citations**: `ColumnDropdown.svelte:30`, `Toolbar.svelte:128-133`
-
-### 10. Search button has static aria-label while filter/columns were updated to dynamic in session 3
-- **File**: `frontend/src/components/Toolbar.svelte`
-- **Line**: 91
-- **Type**: a11y / **Severity**: medium
-- **Fix**: `aria-label="Search"` → `aria-label={searchTitle}`; `searchTitle` derived prop ("Open search (Ctrl+K)" / "Close search (Ctrl+K)") already existed at `Toolbar.svelte:59`
-- **Citations**: `Toolbar.svelte:91`, `Toolbar.svelte:59`
-
----
-
-## Conditions
-All 10 findings fixed. `svelte-check` passes: 0 errors, 0 warnings.
+```typescript
+if (!fs.existsSync(CONFIG_BACKUP) ||
+    fs.readFileSync(CONFIG_BACKUP, 'utf-8') === fs.readFileSync(CONFIG_DST, 'utf-8')) {
+  fs.copyFileSync(CONFIG_DST, CONFIG_BACKUP);
+}
+```
 
 ## Test Command
-```
-cd frontend && npx svelte-check
-```
+`just test-e2e`
 
 ## Raw Data
-council-result.json: .council/council-result.json
+- Full recommendation: `2026-04-12-221500-council-pr32-mec-miki-session3.md`
+- Structured result: `.council/council-result.json`
