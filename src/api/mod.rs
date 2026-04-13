@@ -21,10 +21,10 @@ use crate::db::{ExportQueryParams, RowQueryParams, ValidationError};
 pub fn router(mode: SharedAppMode) -> Router {
     Router::new()
         .route("/tables", get(list_tables))
-        .route("/tables/{table}/columns", get(get_columns))
-        .route("/tables/{table}/rows", get(get_rows))
+        .route("/tables/{schema}/{table}/columns", get(get_columns))
+        .route("/tables/{schema}/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
-        .route("/export/{table}/csv", get(export_csv))
+        .route("/export/{schema}/{table}/csv", get(export_csv))
         .route("/status", get(status))
         .route("/setup/test-connection", post(setup::test_connection))
         .route("/setup/save", post(setup::save_config))
@@ -78,24 +78,30 @@ async fn get_display_config(
     Extension(mode): Extension<SharedAppMode>,
 ) -> Result<Json<DisplayConfigResponse>, AppError> {
     let state = require_state(&mode).await?;
-    let all_tables = state.db.list_tables().await?;
+    let schemas = state.config.database.effective_schemas();
+    let all_tables = state.db.list_tables(&schemas).await?;
     let allowed_tables: Vec<_> = all_tables
         .into_iter()
-        .filter(|t| state.config.tables.allows(&t.name))
+        .filter(|t| state.config.tables.allows(&t.schema, &t.name))
         .collect();
 
-    let table_names: Vec<&str> = allowed_tables.iter().map(|t| t.name.as_str()).collect();
-    let all_columns = state.db.get_columns_bulk(&table_names).await?;
+    let table_refs: Vec<(&str, &str)> = allowed_tables
+        .iter()
+        .map(|t| (t.schema.as_str(), t.name.as_str()))
+        .collect();
+    let all_columns = state.db.get_columns_bulk(&table_refs).await?;
 
     let mut tables = HashMap::new();
     for table in &allowed_tables {
+        let key = (table.schema.clone(), table.name.clone());
         let columns: HashMap<String, ColumnDisplayConfig> = all_columns
-            .get(&table.name)
+            .get(&key)
             .cloned()
             .unwrap_or_default()
             .into_iter()
             .map(|c| {
-                let display = display_name_column(&table.name, &c.name, &state.config.display);
+                let display =
+                    display_name_column(&table.schema, &table.name, &c.name, &state.config.display);
                 (
                     c.name,
                     ColumnDisplayConfig {
@@ -105,9 +111,9 @@ async fn get_display_config(
             })
             .collect();
 
-        let display = display_name_table(&table.name, &state.config.display);
+        let display = display_name_table(&table.schema, &table.name, &state.config.display);
         tables.insert(
-            table.name.clone(),
+            table.qualified(),
             TableDisplayConfig {
                 display_name: display,
                 columns,
@@ -128,13 +134,15 @@ async fn list_tables(
     Extension(mode): Extension<SharedAppMode>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state = require_state(&mode).await?;
-    let all_tables = state.db.list_tables().await?;
+    let schemas = state.config.database.effective_schemas();
+    let all_tables = state.db.list_tables(&schemas).await?;
     let tables: Vec<serde_json::Value> = all_tables
         .into_iter()
-        .filter(|t| state.config.tables.allows(&t.name))
+        .filter(|t| state.config.tables.allows(&t.schema, &t.name))
         .map(|t| {
-            let display = display_name_table(&t.name, &state.config.display);
+            let display = display_name_table(&t.schema, &t.name, &state.config.display);
             serde_json::json!({
+                "schema": t.schema,
                 "name": t.name,
                 "display_name": display,
                 "row_count_estimate": t.row_count_estimate,
@@ -146,24 +154,28 @@ async fn list_tables(
 
 async fn get_columns(
     Extension(mode): Extension<SharedAppMode>,
-    Path(table): Path<String>,
+    Path((schema, table)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state = require_state(&mode).await?;
-    if !state.config.tables.allows(&table) {
-        return Err(AppError::not_found(format!("Table '{table}' not found")));
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
     }
     let raw_columns = state
         .db
-        .get_columns(&table)
+        .get_columns(&schema, &table)
         .await
         .map_err(|e| map_table_query_error(e, &table))?;
     if raw_columns.is_empty() {
-        return Err(AppError::not_found(format!("Table '{table}' not found")));
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
     }
     let columns: Vec<serde_json::Value> = raw_columns
         .into_iter()
         .map(|c| {
-            let display = display_name_column(&table, &c.name, &state.config.display);
+            let display = display_name_column(&schema, &table, &c.name, &state.config.display);
             serde_json::json!({
                 "name": c.name,
                 "display_name": display,
@@ -211,13 +223,15 @@ fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String
 
 async fn get_rows(
     Extension(mode): Extension<SharedAppMode>,
-    Path(table): Path<String>,
+    Path((schema, table)): Path<(String, String)>,
     Query(params): Query<RowsQuery>,
     Query(all_params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state = require_state(&mode).await?;
-    if !state.config.tables.allows(&table) {
-        return Err(AppError::not_found(format!("Table '{table}' not found")));
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
     }
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, MAX_PAGE_SIZE);
@@ -225,6 +239,7 @@ async fn get_rows(
     let result = state
         .db
         .query_rows(&RowQueryParams {
+            schema: &schema,
             table: &table,
             page,
             page_size,
@@ -240,13 +255,15 @@ async fn get_rows(
 
 async fn export_csv(
     Extension(mode): Extension<SharedAppMode>,
-    Path(table): Path<String>,
+    Path((schema, table)): Path<(String, String)>,
     Query(params): Query<RowsQuery>,
     Query(all_params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, AppError> {
     let state = require_state(&mode).await?;
-    if !state.config.tables.allows(&table) {
-        return Err(AppError::not_found(format!("Table '{table}' not found")));
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
     }
 
     let pg_pool = state
@@ -258,13 +275,13 @@ async fn export_csv(
     let filters = parse_filters(&all_params);
 
     // Fetch columns eagerly so we can build headers before spawning
-    let columns = state.db.get_columns(&table).await?;
+    let columns = state.db.get_columns(&schema, &table).await?;
     let display_headers: Vec<String> = columns
         .iter()
-        .map(|c| display_name_column(&table, &c.name, &state.config.display))
+        .map(|c| display_name_column(&schema, &table, &c.name, &state.config.display))
         .collect();
 
-    let display_table = display_name_table(&table, &state.config.display)
+    let display_table = display_name_table(&schema, &table, &state.config.display)
         .replace(' ', "_")
         .to_lowercase();
     let sanitized: String = display_table
@@ -282,6 +299,7 @@ async fn export_csv(
     let sort_column = params.sort_column.clone();
     let sort_direction = params.sort_direction.clone();
     let search = params.search.clone();
+    let schema_owned = schema.clone();
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(32);
 
@@ -305,6 +323,7 @@ async fn export_csv(
 
         // Build export params with owned data
         let export_params = ExportQueryParams {
+            schema: &schema_owned,
             table: &table,
             sort_column: sort_column.as_deref(),
             sort_direction: sort_direction.as_deref(),
@@ -685,7 +704,7 @@ mod tests {
 
         let headers: Vec<String> = columns
             .iter()
-            .map(|c| display_name_column("vehicles_log", &c.name, &config))
+            .map(|c| display_name_column("public", "vehicles_log", &c.name, &config))
             .collect();
 
         assert_eq!(headers, vec!["Supervisor", "Latitude"]);
@@ -723,7 +742,7 @@ mod tests {
             columns: HashMap::new(),
         };
 
-        let display = display_name_table("vehicles_log", &config)
+        let display = display_name_table("public", "vehicles_log", &config)
             .replace(' ', "_")
             .to_lowercase();
         assert_eq!(display, "fleet_log");

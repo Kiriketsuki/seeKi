@@ -8,15 +8,16 @@ import type {
 const MOCK_ROW_COUNT = 200;
 
 const TABLES: TableInfo[] = [
-  { name: 'users', display_name: 'Users', row_count_estimate: 42 },
+  { schema: 'public', name: 'users', display_name: 'Users', row_count_estimate: 42 },
   {
+    schema: 'public',
     name: 'activity_log',
     display_name: 'Activity Log',
     row_count_estimate: MOCK_ROW_COUNT,
   },
-  { name: 'events', display_name: 'Events', row_count_estimate: MOCK_ROW_COUNT },
-  { name: 'tickets', display_name: 'Tickets', row_count_estimate: MOCK_ROW_COUNT },
-  { name: 'orders', display_name: 'Orders', row_count_estimate: MOCK_ROW_COUNT },
+  { schema: 'public', name: 'events', display_name: 'Events', row_count_estimate: MOCK_ROW_COUNT },
+  { schema: 'public', name: 'tickets', display_name: 'Tickets', row_count_estimate: MOCK_ROW_COUNT },
+  { schema: 'public', name: 'orders', display_name: 'Orders', row_count_estimate: MOCK_ROW_COUNT },
 ];
 
 const COLUMNS: Record<string, ColumnInfo[]> = {
@@ -418,11 +419,12 @@ export function mockFetchTables(): TableInfo[] {
   return TABLES;
 }
 
-export function mockFetchColumns(table: string): ColumnInfo[] {
+export function mockFetchColumns(_schema: string, table: string): ColumnInfo[] {
   return COLUMNS[table] ?? [];
 }
 
 export function mockFetchRows(
+  _schema: string,
   table: string,
   params?: {
     page?: number;
@@ -500,7 +502,7 @@ export function mockFetchDisplayConfig(): DisplayConfig {
     },
     tables: Object.fromEntries(
       TABLES.map((t) => [
-        t.name,
+        `${t.schema}.${t.name}`,
         {
           display_name: t.display_name,
           columns: Object.fromEntries(
