@@ -4,13 +4,30 @@
 
   let {
     tables = [],
+    selectedSchema = '',
     selectedTable = '',
     onSelect,
   }: {
     tables: TableInfo[];
+    selectedSchema: string;
     selectedTable: string;
-    onSelect: (tableName: string) => void;
+    onSelect: (table: TableInfo) => void;
   } = $props();
+
+  // Bare table names that appear in more than one selected schema — these must
+  // always be shown qualified, even when the schema is `public`.
+  let collidingNames = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const t of tables) counts.set(t.name, (counts.get(t.name) ?? 0) + 1);
+    const out = new Set<string>();
+    for (const [name, n] of counts) if (n > 1) out.add(name);
+    return out;
+  });
+
+  function prettyLabel(t: TableInfo): string {
+    if (collidingNames.has(t.name)) return `${t.schema}.${t.name}`;
+    return t.schema === 'public' ? t.name : `${t.schema}.${t.name}`;
+  }
 
   let search = $state('');
   let filteredTables = $derived.by(() => {
@@ -19,8 +36,10 @@
       return tables;
     }
 
-    return tables.filter((table) =>
-      table.display_name.toLowerCase().includes(query)
+    return tables.filter(
+      (table) =>
+        prettyLabel(table).toLowerCase().includes(query) ||
+        table.display_name.toLowerCase().includes(query),
     );
   });
 </script>
@@ -39,14 +58,15 @@
   </div>
 
   {#if filteredTables.length > 0}
-    {#each filteredTables as table}
+    {#each filteredTables as table (`${table.schema}.${table.name}`)}
       <button
         type="button"
         class="table-item"
-        class:active={selectedTable === table.name}
-        onclick={() => onSelect(table.name)}
+        class:active={selectedSchema === table.schema && selectedTable === table.name}
+        onclick={() => onSelect(table)}
+        title={`${table.schema}.${table.name}`}
       >
-        <span class="table-item-name">{table.display_name}</span>
+        <span class="table-item-name">{prettyLabel(table)}</span>
         {#if table.row_count_estimate != null}
           <span class="table-item-count">{table.row_count_estimate.toLocaleString()}</span>
         {/if}

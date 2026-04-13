@@ -46,6 +46,9 @@
           kind: 'postgres',
           url: buildUrl(),
           max_connections: 10,
+          schemas: wizardData.selected_schemas.length > 0
+            ? wizardData.selected_schemas
+            : undefined,
         },
         ssh: wizardData.use_ssh ? wizardData.ssh : undefined,
         tables: wizardData.selected_tables.length > 0
@@ -123,6 +126,18 @@
           Via SSH tunnel to <code>{wizardData.ssh.host}</code>
         {:else}
           Direct connection
+        {/if}
+      </span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Schemas</span>
+      <span class="summary-value">
+        {#if wizardData.selected_schemas.length === 0}
+          <em class="muted">(defaults to <code>public</code>)</em>
+        {:else}
+          {#each wizardData.selected_schemas as schema, i (schema)}
+            <code>{schema}</code>{i < wizardData.selected_schemas.length - 1 ? ', ' : ''}
+          {/each}
         {/if}
       </span>
     </div>
@@ -228,6 +243,7 @@
     border-radius: 3px;
   }
   .subtitle-preview { color: var(--sk-muted); }
+  .muted { color: var(--sk-muted); font-style: italic; }
 
   .actions {
     display: flex;

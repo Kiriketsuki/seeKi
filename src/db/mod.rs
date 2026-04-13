@@ -18,10 +18,18 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TableInfo {
+    pub schema: String,
     pub name: String,
     pub row_count_estimate: Option<i64>,
+}
+
+impl TableInfo {
+    /// Qualified name: `"schema.name"`.
+    pub fn qualified(&self) -> String {
+        format!("{}.{}", self.schema, self.name)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,6 +52,7 @@ pub struct QueryResult {
 
 /// Bundled parameters for querying rows from a table.
 pub struct RowQueryParams<'a> {
+    pub schema: &'a str,
     pub table: &'a str,
     pub page: u32,
     pub page_size: u32,
@@ -55,6 +64,7 @@ pub struct RowQueryParams<'a> {
 
 /// Parameters for CSV export (no pagination).
 pub struct ExportQueryParams<'a> {
+    pub schema: &'a str,
     pub table: &'a str,
     pub sort_column: Option<&'a str>,
     pub sort_direction: Option<&'a str>,
@@ -111,24 +121,31 @@ impl DatabasePool {
         }
     }
 
-    pub async fn list_tables(&self) -> anyhow::Result<Vec<TableInfo>> {
+    pub async fn list_tables(&self, schemas: &[String]) -> anyhow::Result<Vec<TableInfo>> {
         match self {
-            Self::Postgres(pool, _) => postgres::list_tables(pool).await,
+            Self::Postgres(pool, _) => postgres::list_tables(pool, schemas).await,
         }
     }
 
-    pub async fn get_columns(&self, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
+    /// List every non-system schema visible to the connected DB user.
+    pub async fn list_schemas(&self) -> anyhow::Result<Vec<postgres::SchemaPreview>> {
         match self {
-            Self::Postgres(pool, _) => postgres::get_columns(pool, table).await,
+            Self::Postgres(pool, _) => postgres::list_schemas(pool).await,
+        }
+    }
+
+    pub async fn get_columns(&self, schema: &str, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
+        match self {
+            Self::Postgres(pool, _) => postgres::get_columns(pool, schema, table).await,
         }
     }
 
     pub async fn get_columns_bulk(
         &self,
-        tables: &[&str],
-    ) -> anyhow::Result<std::collections::HashMap<String, Vec<ColumnInfo>>> {
+        refs: &[(&str, &str)],
+    ) -> anyhow::Result<std::collections::HashMap<(String, String), Vec<ColumnInfo>>> {
         match self {
-            Self::Postgres(pool, _) => postgres::get_columns_bulk(pool, tables).await,
+            Self::Postgres(pool, _) => postgres::get_columns_bulk(pool, refs).await,
         }
     }
 

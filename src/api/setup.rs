@@ -44,10 +44,18 @@ struct TablePreviewDto {
 }
 
 #[derive(Serialize)]
+struct SchemaPreviewDto {
+    name: String,
+    table_count: i64,
+}
+
+#[derive(Serialize)]
 pub struct TestConnectionResponse {
     success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     tables: Option<Vec<TablePreviewDto>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    schemas: Option<Vec<SchemaPreviewDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,6 +86,8 @@ pub struct SaveDatabaseConfig {
     pub url: String,
     #[serde(default = "default_max_connections")]
     pub max_connections: u32,
+    #[serde(default)]
+    pub schemas: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +133,7 @@ pub async fn test_connection(
             Json(TestConnectionResponse {
                 success: false,
                 tables: None,
+                schemas: None,
                 error: Some("Setup is already complete".to_string()),
                 error_source: None,
             }),
@@ -135,6 +146,7 @@ pub async fn test_connection(
             return Json(TestConnectionResponse {
                 success: false,
                 tables: None,
+                schemas: None,
                 error: Some(e),
                 error_source: None,
             })
@@ -153,6 +165,7 @@ pub async fn test_connection(
                     return Json(TestConnectionResponse {
                         success: false,
                         tables: None,
+                        schemas: None,
                         error: Some(e),
                         error_source: Some("ssh_config".to_string()),
                     })
@@ -163,7 +176,7 @@ pub async fn test_connection(
             let ssh_ref = ssh_config.as_ref().zip(secrets.as_ref());
 
             match postgres::test_connection(&req.url, ssh_ref).await {
-                Ok(tables) => {
+                Ok((tables, schemas)) => {
                     let dtos: Vec<TablePreviewDto> = tables
                         .into_iter()
                         .map(|t| TablePreviewDto {
@@ -172,9 +185,17 @@ pub async fn test_connection(
                             is_system: t.is_system,
                         })
                         .collect();
+                    let schema_dtos: Vec<SchemaPreviewDto> = schemas
+                        .into_iter()
+                        .map(|s| SchemaPreviewDto {
+                            name: s.name,
+                            table_count: s.table_count,
+                        })
+                        .collect();
                     Json(TestConnectionResponse {
                         success: true,
                         tables: Some(dtos),
+                        schemas: Some(schema_dtos),
                         error: None,
                         error_source: None,
                     })
@@ -190,6 +211,7 @@ pub async fn test_connection(
                     Json(TestConnectionResponse {
                         success: false,
                         tables: None,
+                        schemas: None,
                         error: Some(
                             "Failed to connect to database. Check your connection URL and ensure the database is running.".to_string(),
                         ),
@@ -202,6 +224,7 @@ pub async fn test_connection(
         DatabaseKind::Sqlite => Json(TestConnectionResponse {
             success: false,
             tables: None,
+            schemas: None,
             error: Some("SQLite support coming in v0.2".to_string()),
             error_source: None,
         })
@@ -413,23 +436,38 @@ pub fn build_config_toml(
         ])),
     );
 
-    root.insert(
-        "database".to_string(),
-        toml::Value::Table(toml::value::Table::from_iter([
-            (
-                "kind".to_string(),
-                toml::Value::String(req.database.kind.clone()),
+    let mut db_table = toml::value::Table::from_iter([
+        (
+            "kind".to_string(),
+            toml::Value::String(req.database.kind.clone()),
+        ),
+        (
+            "url".to_string(),
+            toml::Value::String(req.database.url.clone()),
+        ),
+        (
+            "max_connections".to_string(),
+            toml::Value::Integer(req.database.max_connections as i64),
+        ),
+    ]);
+    if let Some(schemas) = &req.database.schemas {
+        if schemas.is_empty() {
+            return Err(
+                "database.schemas must not be empty — omit the field to default to [\"public\"]"
+                    .to_string(),
+            );
+        }
+        db_table.insert(
+            "schemas".to_string(),
+            toml::Value::Array(
+                schemas
+                    .iter()
+                    .map(|s| toml::Value::String(s.clone()))
+                    .collect(),
             ),
-            (
-                "url".to_string(),
-                toml::Value::String(req.database.url.clone()),
-            ),
-            (
-                "max_connections".to_string(),
-                toml::Value::Integer(req.database.max_connections as i64),
-            ),
-        ])),
-    );
+        );
+    }
+    root.insert("database".to_string(), toml::Value::Table(db_table));
 
     if let Some(tables_cfg) = &req.tables
         && let Some(include) = &tables_cfg.include
@@ -697,6 +735,7 @@ mod tests {
                 kind: "postgres".to_string(),
                 url: "postgres://user:pass@localhost:5432/mydb".to_string(),
                 max_connections: 10,
+                schemas: None,
             },
             ssh: None,
             tables: None,
@@ -721,6 +760,90 @@ mod tests {
     }
 
     #[test]
+    fn build_config_toml_persists_schemas_field() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3141,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+                schemas: Some(vec!["public".to_string(), "reporting".to_string()]),
+            },
+            ssh: None,
+            tables: None,
+            branding: None,
+        };
+
+        let toml_content = build_config_toml(&req, &None).expect("should produce TOML");
+
+        // Raw TOML contains the schemas array in [database]
+        let parsed: toml::Value = toml::from_str(&toml_content).unwrap();
+        let schemas = parsed["database"]["schemas"].as_array().unwrap();
+        assert_eq!(schemas.len(), 2);
+        assert_eq!(schemas[0].as_str().unwrap(), "public");
+        assert_eq!(schemas[1].as_str().unwrap(), "reporting");
+
+        // Round-trip: AppConfig::parse accepts it and effective_schemas reflects the selection
+        let app_config = AppConfig::parse(&toml_content).expect("parsed AppConfig");
+        assert_eq!(
+            app_config.database.effective_schemas(),
+            vec!["public".to_string(), "reporting".to_string()]
+        );
+    }
+
+    #[test]
+    fn build_config_toml_rejects_empty_schemas_list() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3141,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+                schemas: Some(vec![]),
+            },
+            ssh: None,
+            tables: None,
+            branding: None,
+        };
+
+        let err = build_config_toml(&req, &None).expect_err("empty schemas rejected");
+        assert!(err.contains("must not be empty"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn build_config_toml_without_schemas_defaults_to_public_via_effective() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3141,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+                schemas: None,
+            },
+            ssh: None,
+            tables: None,
+            branding: None,
+        };
+
+        let toml_content = build_config_toml(&req, &None).expect("should produce TOML");
+        let app_config = AppConfig::parse(&toml_content).expect("parsed AppConfig");
+        assert!(app_config.database.schemas.is_none());
+        assert_eq!(
+            app_config.database.effective_schemas(),
+            vec!["public".to_string()]
+        );
+    }
+
+    #[test]
     fn build_config_toml_with_tables_include() {
         let req = SaveConfigRequest {
             server: SaveServerConfig {
@@ -731,6 +854,7 @@ mod tests {
                 kind: "postgres".to_string(),
                 url: "postgres://u:p@localhost/db".to_string(),
                 max_connections: 5,
+                schemas: None,
             },
             ssh: None,
             tables: Some(SaveTablesConfig {
@@ -758,6 +882,7 @@ mod tests {
                 kind: "postgres".to_string(),
                 url: "postgres://u:p@localhost/db".to_string(),
                 max_connections: 5,
+                schemas: None,
             },
             ssh: None,
             tables: None,
@@ -795,6 +920,7 @@ mod tests {
                 kind: "postgres".to_string(),
                 url: "postgres://u:p@10.0.0.1/db".to_string(),
                 max_connections: 5,
+                schemas: None,
             },
             ssh: None,
             tables: None,

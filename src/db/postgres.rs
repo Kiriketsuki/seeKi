@@ -22,7 +22,7 @@ pub struct TablePreview {
 pub async fn test_connection(
     url: &str,
     ssh: Option<(&crate::config::SshConfig, &crate::config::SecretsConfig)>,
-) -> anyhow::Result<Vec<TablePreview>> {
+) -> anyhow::Result<(Vec<TablePreview>, Vec<SchemaPreview>)> {
     let (connect_url, _tunnel) = if let Some((ssh_config, secrets)) = ssh {
         let parsed =
             url::Url::parse(url).map_err(|e| anyhow::anyhow!("Invalid database URL: {e}"))?;
@@ -89,25 +89,71 @@ pub async fn test_connection(
         })
         .collect();
 
+    let schemas = list_schemas(&pool).await.unwrap_or_default();
+
     pool.close().await;
 
-    Ok(tables)
+    Ok((tables, schemas))
 }
 
-/// List all user tables in the public schema with estimated row counts.
-pub async fn list_tables(pool: &PgPool) -> anyhow::Result<Vec<TableInfo>> {
+/// A schema preview for the setup wizard: name + count of base tables.
+#[derive(Debug, Serialize, Clone)]
+pub struct SchemaPreview {
+    pub name: String,
+    pub table_count: i64,
+}
+
+/// List every non-system schema visible to the connected DB user, with table counts.
+/// Excludes `pg_catalog`, `information_schema`, and any `pg_%` schemas.
+pub async fn list_schemas(pool: &PgPool) -> anyhow::Result<Vec<SchemaPreview>> {
     let rows = sqlx::query(
         r#"
         SELECT
+            n.nspname AS schema_name,
+            COUNT(c.oid) FILTER (WHERE c.relkind = 'r') AS table_count
+        FROM pg_namespace n
+        LEFT JOIN pg_class c ON c.relnamespace = n.oid
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_%'
+          AND has_schema_privilege(n.oid, 'USAGE')
+        GROUP BY n.nspname
+        ORDER BY n.nspname
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|r| SchemaPreview {
+            name: r.get("schema_name"),
+            table_count: r.try_get::<i64, _>("table_count").unwrap_or(0),
+        })
+        .collect())
+}
+
+/// List all user tables in the given schemas with estimated row counts.
+pub async fn list_tables(pool: &PgPool, schemas: &[String]) -> anyhow::Result<Vec<TableInfo>> {
+    for schema in schemas {
+        if !is_valid_identifier(schema) {
+            anyhow::bail!("Invalid schema name in config: {schema}");
+        }
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            n.nspname AS schema_name,
             c.relname AS table_name,
             c.reltuples::bigint AS row_estimate
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public'
+        WHERE n.nspname = ANY($1)
           AND c.relkind = 'r'
-        ORDER BY c.relname
+        ORDER BY n.nspname, c.relname
         "#,
     )
+    .bind(schemas)
     .fetch_all(pool)
     .await?;
 
@@ -116,6 +162,7 @@ pub async fn list_tables(pool: &PgPool) -> anyhow::Result<Vec<TableInfo>> {
         .map(|r| {
             let raw_estimate: i64 = r.get("row_estimate");
             TableInfo {
+                schema: r.get("schema_name"),
                 name: r.get("table_name"),
                 row_count_estimate: if raw_estimate < 0 {
                     None
@@ -129,8 +176,15 @@ pub async fn list_tables(pool: &PgPool) -> anyhow::Result<Vec<TableInfo>> {
     Ok(tables)
 }
 
-/// Get column metadata for a table.
-pub async fn get_columns(pool: &PgPool, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
+/// Get column metadata for a table in a specific schema.
+pub async fn get_columns(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+) -> anyhow::Result<Vec<ColumnInfo>> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name: {schema}");
+    }
     let rows = sqlx::query(
         r#"
         SELECT
@@ -145,14 +199,17 @@ pub async fn get_columns(pool: &PgPool, table: &str) -> anyhow::Result<Vec<Colum
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
                 ON tc.constraint_name = kcu.constraint_name
-            WHERE tc.table_name = $1
+               AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_schema = $1
+              AND tc.table_name = $2
               AND tc.constraint_type = 'PRIMARY KEY'
         ) pk ON pk.column_name = c.column_name
-        WHERE c.table_schema = 'public'
-          AND c.table_name = $1
+        WHERE c.table_schema = $1
+          AND c.table_name = $2
         ORDER BY c.ordinal_position
         "#,
     )
+    .bind(schema)
     .bind(table)
     .fetch_all(pool)
     .await?;
@@ -175,20 +232,38 @@ pub async fn get_columns(pool: &PgPool, table: &str) -> anyhow::Result<Vec<Colum
     Ok(columns)
 }
 
-/// Get column metadata for multiple tables in a single query.
-/// Returns a map from table name to its columns.
+/// Get column metadata for multiple (schema, table) pairs in a single query.
+/// Returns a map from (schema, table) to its columns.
 pub async fn get_columns_bulk(
     pool: &PgPool,
-    tables: &[&str],
-) -> anyhow::Result<HashMap<String, Vec<ColumnInfo>>> {
-    if tables.is_empty() {
+    refs: &[(&str, &str)],
+) -> anyhow::Result<HashMap<(String, String), Vec<ColumnInfo>>> {
+    if refs.is_empty() {
         return Ok(HashMap::new());
     }
 
-    // Build a parameterized ANY($1) query using a text array
+    // Deduplicate schemas and tables, and validate schema names.
+    let mut schemas: Vec<String> = refs.iter().map(|(s, _)| (*s).to_string()).collect();
+    schemas.sort();
+    schemas.dedup();
+    for s in &schemas {
+        if !is_valid_identifier(s) {
+            anyhow::bail!("Invalid schema name: {s}");
+        }
+    }
+    let mut tables: Vec<String> = refs.iter().map(|(_, t)| (*t).to_string()).collect();
+    tables.sort();
+    tables.dedup();
+
+    let wanted: std::collections::HashSet<(String, String)> = refs
+        .iter()
+        .map(|(s, t)| ((*s).to_string(), (*t).to_string()))
+        .collect();
+
     let rows = sqlx::query(
         r#"
         SELECT
+            c.table_schema,
             c.table_name,
             c.column_name,
             c.data_type,
@@ -197,25 +272,37 @@ pub async fn get_columns_bulk(
             CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_pk
         FROM information_schema.columns c
         LEFT JOIN (
-            SELECT tc.table_name, kcu.column_name
+            SELECT tc.table_schema, tc.table_name, kcu.column_name
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
                 ON tc.constraint_name = kcu.constraint_name
-            WHERE tc.table_name = ANY($1)
+               AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_schema = ANY($1)
+              AND tc.table_name = ANY($2)
               AND tc.constraint_type = 'PRIMARY KEY'
-        ) pk ON pk.table_name = c.table_name AND pk.column_name = c.column_name
-        WHERE c.table_schema = 'public'
-          AND c.table_name = ANY($1)
-        ORDER BY c.table_name, c.ordinal_position
+        ) pk
+          ON pk.table_schema = c.table_schema
+         AND pk.table_name = c.table_name
+         AND pk.column_name = c.column_name
+        WHERE c.table_schema = ANY($1)
+          AND c.table_name = ANY($2)
+        ORDER BY c.table_schema, c.table_name, c.ordinal_position
         "#,
     )
-    .bind(tables)
+    .bind(&schemas)
+    .bind(&tables)
     .fetch_all(pool)
     .await?;
 
-    let mut result: HashMap<String, Vec<ColumnInfo>> = HashMap::new();
+    let mut result: HashMap<(String, String), Vec<ColumnInfo>> = HashMap::new();
     for r in &rows {
+        let schema_name: String = r.get("table_schema");
         let table_name: String = r.get("table_name");
+        let key = (schema_name, table_name);
+        // Filter out rows that don't exactly match a requested (schema, table) pair.
+        if !wanted.contains(&key) {
+            continue;
+        }
         let udt: String = r.get("udt_name");
         let data_type: String = r.get("data_type");
         let col = ColumnInfo {
@@ -225,7 +312,7 @@ pub async fn get_columns_bulk(
             is_nullable: r.get::<String, _>("is_nullable") == "YES",
             is_primary_key: r.get("is_pk"),
         };
-        result.entry(table_name).or_default().push(col);
+        result.entry(key).or_default().push(col);
     }
 
     Ok(result)
@@ -355,13 +442,17 @@ fn build_query_clauses(
 
 /// Query paginated rows from a table with optional sort, search, and per-column filters.
 pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
+    let schema = params.schema;
     let table = params.table;
 
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name");
+    }
     if !is_valid_identifier(table) {
         anyhow::bail!("Invalid table name");
     }
 
-    let columns = get_columns(pool, table).await?;
+    let columns = get_columns(pool, schema, table).await?;
     let qb = build_query_clauses(
         &columns,
         params.search,
@@ -372,7 +463,7 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
 
     // Count total matching rows
     let count_sql = format!(
-        "SELECT COUNT(*) as cnt FROM \"{table}\" {}",
+        "SELECT COUNT(*) as cnt FROM \"{schema}\".\"{table}\" {}",
         qb.where_clause
     );
     let mut count_query = sqlx::query(&count_sql);
@@ -383,7 +474,7 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
 
     let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);
     let query_sql = format!(
-        "SELECT * FROM \"{table}\" {} {} LIMIT {} OFFSET {offset}",
+        "SELECT * FROM \"{schema}\".\"{table}\" {} {} LIMIT {} OFFSET {offset}",
         qb.where_clause, qb.order_clause, params.page_size
     );
 
@@ -423,13 +514,17 @@ pub async fn export_rows_stream<'a>(
     Vec<ColumnInfo>,
     Pin<Box<dyn Stream<Item = Result<sqlx::postgres::PgRow, sqlx::Error>> + Send + 'a>>,
 )> {
+    let schema = params.schema;
     let table = params.table;
 
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name");
+    }
     if !is_valid_identifier(table) {
         anyhow::bail!("Invalid table name");
     }
 
-    let columns = get_columns(pool, table).await?;
+    let columns = get_columns(pool, schema, table).await?;
     let qb = build_query_clauses(
         &columns,
         params.search,
@@ -439,7 +534,7 @@ pub async fn export_rows_stream<'a>(
     )?;
 
     let query_sql = format!(
-        "SELECT * FROM \"{table}\" {} {}",
+        "SELECT * FROM \"{schema}\".\"{table}\" {} {}",
         qb.where_clause, qb.order_clause
     );
 

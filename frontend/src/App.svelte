@@ -22,6 +22,7 @@
   import SetupWizard from './components/SetupWizard.svelte';
 
   let tables: TableInfo[] = $state([]);
+  let selectedSchema: string = $state('');
   let selectedTable: string = $state('');
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
@@ -57,8 +58,11 @@
   let visibleColumns = $derived.by(
     () => columns.filter((column) => columnVisibility[column.name] !== false)
   );
+  let selectedTableKey = $derived.by(() =>
+    selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : ''
+  );
   let selectedTableDisplayName = $derived.by(
-    () => displayConfig?.tables[selectedTable]?.display_name ?? selectedTable
+    () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
   let sortLabel = $derived.by(() => {
     if (!sortState.column || !sortState.direction) {
@@ -84,7 +88,7 @@
       tables = fetchedTables;
       displayConfig = config;
       if (tables.length > 0) {
-        await selectTable(tables[0].name);
+        await selectTable(tables[0]);
       }
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to connect to database';
@@ -246,11 +250,12 @@
     columnsOpen = false;
   }
 
-  async function selectTable(tableName: string) {
+  async function selectTable(table: TableInfo) {
     const myRequest = ++selectRequestId;
     const resetSortState: SortState = { column: null, direction: null };
     const resetFilters: FilterState = {};
-    selectedTable = tableName;
+    selectedSchema = table.schema;
+    selectedTable = table.name;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
@@ -260,14 +265,19 @@
     columnsOpen = false;
     clearFilterDebounce();
     resetSearchState();
+    const storageKey = `${table.schema}.${table.name}`;
     try {
       const [cols, result] = await Promise.all([
-        fetchColumns(tableName),
-        fetchRows(tableName, buildRowsParams(1, resetSortState, resetFilters, '')),
+        fetchColumns(table.schema, table.name),
+        fetchRows(
+          table.schema,
+          table.name,
+          buildRowsParams(1, resetSortState, resetFilters, ''),
+        ),
       ]);
       if (myRequest !== selectRequestId) return;
       columns = cols;
-      columnVisibility = loadColumnVisibility(tableName, cols);
+      columnVisibility = loadColumnVisibility(storageKey, cols);
       queryResult = result;
     } catch (e) {
       if (myRequest !== selectRequestId) return;
@@ -310,12 +320,13 @@
     nextFilters: FilterState = filters,
     nextSearchTerm: string = searchTerm,
   ) {
-    if (!selectedTable) return;
+    if (!selectedTable || !selectedSchema) return;
     const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
     try {
       const result = await fetchRows(
+        selectedSchema,
         selectedTable,
         buildRowsParams(page, nextSortState, nextFilters, nextSearchTerm)
       );
@@ -388,29 +399,29 @@
   }
 
   function handleToggleColumnVisibility(columnName: string, visible: boolean) {
-    if (!selectedTable) return;
+    if (!selectedTable || !selectedTableKey) return;
 
     const nextVisibility = normalizeColumnVisibility(columns, {
       ...columnVisibility,
       [columnName]: visible,
     });
     columnVisibility = nextVisibility;
-    persistColumnVisibility(selectedTable, columns, nextVisibility);
+    persistColumnVisibility(selectedTableKey, columns, nextVisibility);
   }
 
   function handleShowAllColumns() {
-    if (!selectedTable) return;
+    if (!selectedTable || !selectedTableKey) return;
 
     const nextVisibility = normalizeColumnVisibility(
       columns,
       Object.fromEntries(columns.map((column) => [column.name, true])) as Record<string, boolean>
     );
     columnVisibility = nextVisibility;
-    persistColumnVisibility(selectedTable, columns, nextVisibility);
+    persistColumnVisibility(selectedTableKey, columns, nextVisibility);
   }
 
   function exportCsv() {
-    if (!selectedTable) return;
+    if (!selectedTable || !selectedSchema) return;
 
     const params = buildRowsParams(1);
     const searchParams = new URLSearchParams();
@@ -423,10 +434,8 @@
       }
     }
     const qs = searchParams.toString();
-    window.open(
-      `/api/export/${encodeURIComponent(selectedTable)}/csv${qs ? `?${qs}` : ''}`,
-      '_blank'
-    );
+    const base = `/api/export/${encodeURIComponent(selectedSchema)}/${encodeURIComponent(selectedTable)}/csv`;
+    window.open(`${base}${qs ? `?${qs}` : ''}`, '_blank');
   }
 </script>
 
@@ -448,7 +457,7 @@
       subtitle=""
     >
       {#if !sidebarCollapsed}
-        <TableList {tables} {selectedTable} onSelect={selectTable} />
+        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
       {/if}
     </Sidebar>
     <main class="main">
@@ -470,7 +479,7 @@
       subtitle={displayConfig?.branding?.subtitle ?? ''}
     >
       {#if !sidebarCollapsed}
-        <TableList {tables} {selectedTable} onSelect={selectTable} />
+        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
       {/if}
     </Sidebar>
     <Toolbar
