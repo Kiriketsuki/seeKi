@@ -49,3 +49,6 @@ council-fix-manifest.json
 
 # Stray screenshots at repo root
 /seeki-*.png
+
+# Internal deploy docs — never commit
+/docs/deploy-*.md
