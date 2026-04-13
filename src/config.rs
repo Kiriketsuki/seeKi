@@ -322,6 +322,26 @@ pub struct SshConfig {
     pub username: String,
     pub auth_method: SshAuthMethod,
     pub key_path: Option<String>,
+    /// Host-key verification policy. Defaults to `add` (StrictHostKeyChecking=accept-new),
+    /// matching the behaviour of prior versions.
+    #[serde(default)]
+    pub known_hosts: KnownHostsPolicy,
+}
+
+/// How to handle the remote host's public key on connect.
+///
+/// - `strict`: reject unknown hosts. Safest for servers with a pre-provisioned
+///   `known_hosts`. Required in hardened sandboxes that cannot write to `~/.ssh`.
+/// - `add`: trust-on-first-use — append new host keys to `known_hosts`, reject
+///   mismatches afterwards. Default; preserves legacy behaviour.
+/// - `accept`: never verify. Use only for throwaway environments.
+#[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum KnownHostsPolicy {
+    Strict,
+    #[default]
+    Add,
+    Accept,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -744,6 +764,45 @@ key_path = "/home/user/.ssh/id_rsa"
         assert_eq!(ssh.username, "admin");
         assert_eq!(ssh.auth_method, SshAuthMethod::Key);
         assert_eq!(ssh.key_path.as_deref(), Some("/home/user/.ssh/id_rsa"));
+        assert_eq!(ssh.known_hosts, KnownHostsPolicy::Add);
+    }
+
+    #[test]
+    fn ssh_known_hosts_policy_parses() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://localhost/db"
+[ssh]
+host = "bastion.example.com"
+username = "admin"
+auth_method = "key"
+known_hosts = "strict"
+"#;
+        let config = AppConfig::parse(toml).expect("strict policy should parse");
+        assert_eq!(
+            config.ssh.unwrap().known_hosts,
+            KnownHostsPolicy::Strict
+        );
+    }
+
+    #[test]
+    fn ssh_known_hosts_policy_rejects_unknown() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://localhost/db"
+[ssh]
+host = "bastion.example.com"
+username = "admin"
+auth_method = "key"
+known_hosts = "banana"
+"#;
+        AppConfig::parse(toml).expect_err("unknown policy must be rejected");
     }
 
     #[test]
