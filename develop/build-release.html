@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Build &amp; release &middot; SeeKi</title>
+    <meta name="description" content="How the Svelte UI and the Rust server become one binary — the Justfile recipes, the release CI workflow, and the versioning scheme." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <style>
+      .sk-flow { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: var(--sk-space-3); text-align: left; }
+      .sk-flow__node { flex: 1 1 9rem; min-width: 8rem; background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius); padding: var(--sk-space-3); display: flex; flex-direction: column; gap: 0.25rem; }
+      .sk-flow__node strong { font-size: var(--sk-fs-sm); color: var(--sk-ink); }
+      .sk-flow__node span { font-size: var(--sk-fs-xs); color: var(--sk-ink-subtle); }
+      .sk-flow__arrow { align-self: center; color: var(--sk-ink-subtle); font-size: 1.25rem; }
+      @media (max-width: 720px) { .sk-flow__arrow { transform: rotate(90deg); } }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/develop/build-release.html" aria-current="page">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Build &amp; release</h1>
+          <p>The promise is one binary. This page is how the promise is kept &mdash; from <code>npm run build</code> through <code>cargo build --release</code> to a signed GitHub release &mdash; and what to run locally when you want to check the chain yourself.</p>
+
+          <h2>The pipeline at a glance</h2>
+          <figure class="sk-diagram" aria-labelledby="build-caption">
+            <div class="sk-flow" role="img" aria-label="Build pipeline from Svelte source to release artifact">
+              <div class="sk-flow__node"><strong>frontend/src</strong><span>Svelte 5, TypeScript</span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>vite build</strong><span><code>npm run build</code></span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>frontend/dist</strong><span>static bundle</span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>cargo build --release</strong><span>rust-embed baking</span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>target/release/seeki</strong><span>one binary</span></div>
+            </div>
+            <figcaption id="build-caption">The frontend must exist on disk before Rust compiles &mdash; <code>rust-embed</code> reads <code>frontend/dist/</code> at build time. If you skip step 2, the binary ships an empty UI.</figcaption>
+          </figure>
+
+          <h2>Local builds</h2>
+          <p>The Justfile in the repo root wraps the common flows. From a clean clone:</p>
+          <table class="sk-table">
+            <thead><tr><th>Recipe</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>just dev</code></td><td>Boots <code>cargo run</code> and the Vite dev server side by side. Frontend hot-reloads; the backend proxies <code>/api/*</code>. Best for day-to-day work.</td></tr>
+              <tr><td><code>just dev-mock</code></td><td>Vite only, with <code>VITE_MOCK=true</code>. No database, no Rust &mdash; the UI runs against in-memory fixtures. Best for component work and styling passes.</td></tr>
+              <tr><td><code>just build</code></td><td>Builds the frontend with <code>VITE_MOCK=false</code>, then <code>cargo build --release</code>. Produces the shippable binary at <code>target/release/seeki</code>.</td></tr>
+              <tr><td><code>just test-e2e</code></td><td>Runs the Playwright suite against a freshly built release binary. Applies <code>tests/fixtures/seed.sql</code> unless <code>SEEKI_SKIP_SEED=1</code>.</td></tr>
+            </tbody>
+          </table>
+          <aside class="sk-callout sk-callout--warn">
+            <p class="sk-callout__title">The seed script truncates</p>
+            <p><code>just test-e2e</code> runs <code>TRUNCATE TABLE vehicle_logs, soc_readings RESTART IDENTITY</code> before seeding. Only ever point it at a dedicated test database. Set <code>SEEKI_SKIP_SEED=1</code> if your test DB is already populated.</p>
+          </aside>
+
+          <h2>How the UI ends up inside the binary</h2>
+          <p>The embedding is declared in <code>src/embed.rs</code>:</p>
+          <pre><code>#[derive(RustEmbed)]
+#[folder = &quot;frontend/dist/&quot;]
+struct Assets;</code></pre>
+          <p>At <code>cargo build</code> time, <a href="https://docs.rs/rust-embed" rel="noopener">rust-embed</a> walks <code>frontend/dist/</code>, reads every file, and embeds the bytes into the compiled binary&rsquo;s data segment. At runtime, the fallback handler in <code>src/main.rs</code> looks up request paths against that embedded set:</p>
+          <pre><code>let app = Router::new()
+    .nest(&quot;/api&quot;, api::router(mode.clone()))
+    .layer(localhost_cors())
+    .fallback(embed::handler);</code></pre>
+          <p>Two consequences worth remembering:</p>
+          <ul>
+            <li><strong>Frontend changes require a full rebuild.</strong> Editing a Svelte file without running <code>npm run build</code> changes nothing inside the release binary.</li>
+            <li><strong>Asset caching is fingerprinted.</strong> Files under <code>assets/</code> are served with <code>Cache-Control: public, max-age=31536000, immutable</code>; everything else (<code>index.html</code>) is <code>no-cache</code>. The handler lives in <code>src/embed.rs</code>.</li>
+          </ul>
+
+          <h2>Testing the build chain</h2>
+          <p>To confirm a production build works end-to-end without releasing:</p>
+          <pre><code>just build
+./target/release/seeki --help
+# with a config in place:
+./target/release/seeki</code></pre>
+          <p>If the <code>/</code> route returns an empty page or 404, <code>frontend/dist/</code> was empty when cargo ran. Rebuild the frontend and run <code>just build</code> again.</p>
+
+          <h2>Release workflow</h2>
+          <p>The release pipeline is GitHub Actions. The workflow file is <code>.github/workflows/release.yml</code>. Trigger and shape, in order:</p>
+          <ol>
+            <li><strong>Trigger.</strong> A pull request into the <code>release</code> branch is merged. Non-merge events &mdash; closed without merging, drafts &mdash; are ignored.</li>
+            <li><strong>Read version.</strong> The workflow reads the single-line <code>VERSION</code> file at the repo root. The expected format is <code>YY.MAJOR.MINOR.PATCH[suffix]</code> (for example <code>26.1.0.0</code> or <code>26.0.2.0rc</code>). The regex is enforced in the workflow.</li>
+            <li><strong>Sync with main.</strong> If <code>main</code>&rsquo;s VERSION is newer than the one on <code>release</code>, the workflow rewrites <code>VERSION</code> (and <code>package.json</code> if present) to match.</li>
+            <li><strong>Build.</strong> Frontend first (<code>npm ci &amp;&amp; npm run build</code>), then <code>cargo build --release</code> on the CI runner.</li>
+            <li><strong>Tag and publish.</strong> The workflow creates a git tag named after the version and publishes a GitHub release containing the compiled binary.</li>
+          </ol>
+
+          <h2>Versioning</h2>
+          <p>SeeKi uses a year-anchored scheme:</p>
+          <pre><code>YY . MAJOR . MINOR . PATCH [ suffix ]</code></pre>
+          <ul>
+            <li><strong>YY</strong> &mdash; two-digit calendar year (<code>26</code> for 2026).</li>
+            <li><strong>MAJOR</strong> &mdash; incompatible change in config, CLI, or API shape.</li>
+            <li><strong>MINOR</strong> &mdash; additive change: a new engine, a new field, a new page.</li>
+            <li><strong>PATCH</strong> &mdash; bug fixes, copy, docs, dependency bumps.</li>
+            <li><strong>suffix</strong> &mdash; optional, alphabetic (<code>rc</code>, <code>beta</code>). Absent for stable releases.</li>
+          </ul>
+          <p>The CI workflow parses these four digits out of <code>VERSION</code> and exposes them as job outputs, so downstream steps can branch on the major/minor number without re-parsing.</p>
+
+          <h2>CI on pull requests</h2>
+          <p><code>.github/workflows/ci.yml</code> runs on every pull request. It checks out the code, installs Node and Rust, builds the frontend and backend, runs the unit tests, and runs Clippy. It does not publish artifacts. Treat its green check as the minimum gate for any PR.</p>
+
+          <h2>Troubleshooting the build</h2>
+          <table class="sk-table">
+            <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+            <tbody>
+              <tr><td>Release binary serves 404 on <code>/</code>.</td><td><code>frontend/dist/</code> was empty when cargo ran.</td><td><code>cd frontend &amp;&amp; npm run build</code>, then <code>cargo build --release</code>.</td></tr>
+              <tr><td>Build fails on Rust edition.</td><td>Toolchain older than 1.85.</td><td><code>rustup update stable</code>.</td></tr>
+              <tr><td>UI shows stale assets after a rebuild.</td><td>Browser cached <code>index.html</code>.</td><td>Hard-reload. Fingerprinted assets are safe; only <code>index.html</code> is cacheable, and it is served <code>no-cache</code>.</td></tr>
+              <tr><td>Release workflow never triggers.</td><td>The PR was merged into <code>main</code>, not <code>release</code>.</td><td>Open a PR from <code>main</code> into <code>release</code> and merge that.</td></tr>
+              <tr><td>Version regex mismatch.</td><td><code>VERSION</code> missing the <code>YY.</code> prefix, or a stray newline.</td><td>Rewrite the file as a single line matching <code>YY.M.M.P[suffix]</code>.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Where to go from here</h2>
+          <ul>
+            <li><a href="/develop/architecture.html">Architecture</a> &mdash; what is inside the binary this page ships.</li>
+            <li><a href="/develop/frontend-map.html">Frontend map</a> &mdash; the source tree that <code>vite build</code> consumes.</li>
+            <li><a href="/project/changelog.html">Changelog</a> &mdash; the releases produced by this workflow.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture &middot; SeeKi</title>
+    <meta name="description" content="How SeeKi fits together — a single Rust binary that serves an embedded Svelte UI and a small read-only HTTP API over a pluggable database pool." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <style>
+      /* Scoped diagram styling for this page only. */
+      .sk-flow { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: var(--sk-space-3); text-align: left; }
+      .sk-flow__node { flex: 1 1 9rem; min-width: 8rem; background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius); padding: var(--sk-space-3); display: flex; flex-direction: column; gap: 0.25rem; }
+      .sk-flow__node strong { font-size: var(--sk-fs-sm); color: var(--sk-ink); }
+      .sk-flow__node span { font-size: var(--sk-fs-xs); color: var(--sk-ink-subtle); }
+      .sk-flow__arrow { align-self: center; color: var(--sk-ink-subtle); font-size: 1.25rem; }
+      @media (max-width: 720px) { .sk-flow__arrow { transform: rotate(90deg); } }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/develop/architecture.html" aria-current="page">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Architecture</h1>
+          <p>SeeKi is one Rust binary. It boots an <code>axum</code> HTTP server on <code>127.0.0.1:3141</code>, serves a compiled Svelte UI out of the binary itself, and answers a small read-only API backed by a pluggable database pool. No separate web server, no runtime, no build step at install time.</p>
+          <p>This page is the map. If you are about to add an engine, rework the API, or trace a strange response back to its source, start here.</p>
+
+          <h2>The ten-second version</h2>
+          <ol>
+            <li>A browser asks for <code>/</code>. The binary answers with the embedded <code>index.html</code>.</li>
+            <li>The UI asks for <code>/api/tables</code>. The binary answers out of the database pool.</li>
+            <li>There is no step three.</li>
+          </ol>
+
+          <h2>Request flow</h2>
+          <figure class="sk-diagram" aria-labelledby="flow-caption">
+            <div class="sk-flow" role="img" aria-label="Request flow from browser to database and back">
+              <div class="sk-flow__node"><strong>Browser</strong><span>Svelte UI loaded from the binary</span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>axum Router</strong><span><code>src/main.rs</code></span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>/api/*</strong><span><code>src/api/mod.rs</code></span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>DatabasePool</strong><span><code>src/db/mod.rs</code></span></div>
+              <div class="sk-flow__arrow" aria-hidden="true">&rarr;</div>
+              <div class="sk-flow__node"><strong>Engine</strong><span><code>src/db/postgres.rs</code></span></div>
+            </div>
+            <figcaption id="flow-caption">A request for <code>/api/tables</code>: router matches, handler reads shared state, pool dispatches to the engine, engine runs SQL, results come back as JSON. Any path that does not match <code>/api/*</code> falls through to the embedded-asset handler.</figcaption>
+          </figure>
+
+          <h2>Two modes, one binary</h2>
+          <p>SeeKi boots into one of two modes. The choice is made at startup by reading <code>seeki.toml</code>:</p>
+          <ul>
+            <li><strong>Normal mode</strong> &mdash; a valid config was found. The database pool is connected, and the full API is available.</li>
+            <li><strong>Setup mode</strong> &mdash; no config file exists. Only the setup endpoints under <code>/api/setup/*</code> respond; data endpoints return <code>503</code>.</li>
+          </ul>
+          <p>The mode is held in a shared <code>SharedAppMode</code> (<code>src/app_mode.rs</code>), an <code>Arc&lt;RwLock&lt;AppMode&gt;&gt;</code> that the setup handler flips to <strong>Normal</strong> once the user saves a config. The binary never needs to restart.</p>
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Why a shared <code>RwLock</code>?</p>
+            <p>The setup handler writes; every other handler reads. <code>RwLock</code> lets concurrent read handlers proceed without blocking each other, while still giving the setup flow a clean, exclusive write when it swaps the mode in.</p>
+          </aside>
+
+          <h2>Single-binary delivery</h2>
+          <p>The Svelte UI is compiled to <code>frontend/dist/</code> at build time, then baked into the Rust binary with <a href="https://docs.rs/rust-embed" rel="noopener">rust-embed</a>. The relevant piece lives in <code>src/embed.rs</code>:</p>
+          <pre><code>#[derive(RustEmbed)]
+#[folder = "frontend/dist/"]
+struct Assets;</code></pre>
+          <p>At runtime, any request that does not match the API falls through to the embedded-asset handler, which looks up <code>uri.path()</code> inside <code>Assets</code>, serves the match with a cache header, and falls back to <code>index.html</code> so the SPA can handle its own routing. One executable contains the server, the UI, the fonts, and the favicon.</p>
+
+          <h2>Module layout</h2>
+          <p>Every file under <code>src/</code> has one job. Read the file whose job matches the question.</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Path</th><th>Purpose</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>src/main.rs</code></td><td>Boots tracing, loads the config, picks a mode, builds the router, binds a TCP listener.</td></tr>
+              <tr><td><code>src/config.rs</code></td><td>The typed shape of <code>seeki.toml</code>: <code>AppConfig</code>, <code>DatabaseConfig</code>, <code>DatabaseKind</code>, <code>SshConfig</code>, display overrides, secrets.</td></tr>
+              <tr><td><code>src/app_mode.rs</code></td><td>The <code>AppMode</code> enum (<code>Normal</code> / <code>Setup</code>) and the <code>SharedAppMode</code> handle everything else holds.</td></tr>
+              <tr><td><code>src/api/mod.rs</code></td><td>Router wiring and the read-only handlers: tables, columns, rows, display config, CSV export, status.</td></tr>
+              <tr><td><code>src/api/setup.rs</code></td><td>First-run endpoints: <code>test-connection</code> and <code>save</code>. The only code path that writes <code>seeki.toml</code>.</td></tr>
+              <tr><td><code>src/db/mod.rs</code></td><td>The <code>DatabasePool</code> enum &mdash; the abstraction every engine implements. Shared types: <code>TableInfo</code>, <code>ColumnInfo</code>, <code>QueryResult</code>, <code>ValidationError</code>.</td></tr>
+              <tr><td><code>src/db/postgres.rs</code></td><td>The PostgreSQL engine. List tables, describe columns, page rows, stream CSV. Identifier-quoting lives here.</td></tr>
+              <tr><td><code>src/ssh/mod.rs</code></td><td>The optional SSH tunnel. Wraps <code>russh</code>, forwards a local port to the database host, and keeps itself alive for the life of the pool.</td></tr>
+              <tr><td><code>src/embed.rs</code></td><td>The rust-embed asset handler. Everything not under <code>/api/*</code> ends up here.</td></tr>
+              <tr><td><code>src/auth/mod.rs</code></td><td>Localhost-only bind plus CORS predicate. SeeKi has no accounts &mdash; the security model is &ldquo;only this machine can reach it.&rdquo;</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Shared state</h2>
+          <p>Every handler in <code>src/api/mod.rs</code> takes one extension: <code>Extension&lt;SharedAppMode&gt;</code>. Handlers that need the database pool call a tiny helper, <code>require_state</code>, which returns the <code>Arc&lt;AppState&gt;</code> in Normal mode and a <code>503</code> in Setup mode. That is the only gate between &ldquo;setup page&rdquo; and &ldquo;live data.&rdquo;</p>
+          <pre><code>async fn require_state(mode: &amp;SharedAppMode) -&gt; Result&lt;Arc&lt;AppState&gt;, AppError&gt; {
+    let guard = mode.read().await;
+    match &amp;*guard {
+        AppMode::Normal(s) =&gt; Ok(Arc::clone(s)),
+        AppMode::Setup =&gt; Err(AppError::service_unavailable(
+            &quot;This endpoint is not available in setup mode&quot;,
+        )),
+    }
+}</code></pre>
+
+          <h2>The database abstraction</h2>
+          <p>Every engine hides behind the <code>DatabasePool</code> enum:</p>
+          <pre><code>pub enum DatabasePool {
+    Postgres(sqlx::PgPool, Option&lt;crate::ssh::SshTunnel&gt;),
+}</code></pre>
+          <p>The API never names <code>sqlx</code>. It calls <code>pool.list_tables()</code>, <code>pool.get_columns(table)</code>, <code>pool.query_rows(params)</code>. Each method is a <code>match</code> that dispatches to the module for that variant. Adding an engine means adding a variant and a module &mdash; no handler code changes. The mechanics are in <a href="/develop/adding-a-db-engine.html">Adding a database engine</a>.</p>
+
+          <h2>What is deliberately absent</h2>
+          <ul>
+            <li><strong>No user accounts.</strong> SeeKi binds to localhost. If it can reach your machine, it is already inside the trust boundary.</li>
+            <li><strong>No write path.</strong> There is no <code>INSERT</code>, <code>UPDATE</code>, or <code>DELETE</code> handler anywhere in <code>src/api/</code>. The only file the process ever writes is <code>seeki.toml</code>, and only from the setup flow.</li>
+            <li><strong>No schema browser.</strong> The UI speaks spreadsheet, not database. Joins, foreign keys, and indexes are not surfaced.</li>
+            <li><strong>No query editor.</strong> Filtering and sorting are parameter-driven; the string <code>SELECT</code> never reaches the user.</li>
+          </ul>
+
+          <h2>Where to go from here</h2>
+          <ul>
+            <li><a href="/develop/frontend-map.html">Frontend map</a> &mdash; the Svelte component tree and how state flows through it.</li>
+            <li><a href="/develop/adding-a-db-engine.html">Adding a database engine</a> &mdash; the checklist for shipping SQLite, MySQL, or anything else.</li>
+            <li><a href="/develop/build-release.html">Build &amp; release</a> &mdash; how the frontend ends up inside the Rust binary, and how that binary reaches a GitHub release.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

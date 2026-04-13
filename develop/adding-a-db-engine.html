@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Adding a database engine &middot; SeeKi</title>
+    <meta name="description" content="Teach SeeKi a new database. A step-by-step walk through the DatabasePool enum, the per-engine module, and the safety rules every engine must follow." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <style>
+      .sk-steps { counter-reset: sk-step; list-style: none; padding: 0; margin: var(--sk-space-5) 0; display: flex; flex-direction: column; gap: var(--sk-space-4); }
+      .sk-steps > li { counter-increment: sk-step; position: relative; padding: var(--sk-space-4) var(--sk-space-4) var(--sk-space-4) 3.25rem; border: 1px solid var(--sk-border); border-radius: var(--sk-radius); background: var(--sk-surface-raised); }
+      .sk-steps > li::before { content: counter(sk-step); position: absolute; left: var(--sk-space-4); top: var(--sk-space-4); width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--sk-surface); border: 1px solid var(--sk-border-strong); display: grid; place-items: center; font-variant-numeric: tabular-nums; color: var(--sk-ink-muted); }
+      .sk-steps h3 { margin: 0 0 0.5rem; font-size: var(--sk-fs-lg); }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/develop/adding-a-db-engine.html" aria-current="page">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Adding a database engine</h1>
+          <p>SeeKi only speaks PostgreSQL today. The code is shaped so that the second engine &mdash; SQLite, MySQL, whatever is next &mdash; lands in three small places, and the handlers in <code>src/api/</code> never notice. This page is the path.</p>
+          <p>Read <a href="/develop/architecture.html">Architecture</a> first if you have not. Everything below assumes you know what <code>DatabasePool</code> is and why it is an enum.</p>
+
+          <h2>The contract</h2>
+          <p>An engine is a module under <code>src/db/</code> that exposes the four functions the pool dispatches to. The full shape in <code>src/db/mod.rs</code>:</p>
+          <pre><code>impl DatabasePool {
+    pub async fn list_tables(&amp;self) -&gt; anyhow::Result&lt;Vec&lt;TableInfo&gt;&gt;;
+    pub async fn get_columns(&amp;self, table: &amp;str) -&gt; anyhow::Result&lt;Vec&lt;ColumnInfo&gt;&gt;;
+    pub async fn query_rows(&amp;self, params: RowQueryParams&lt;'_&gt;)
+        -&gt; Result&lt;QueryResult, EngineError&gt;;
+    pub async fn export_csv(&amp;self, params: ExportQueryParams&lt;'_&gt;)
+        -&gt; Result&lt;impl Stream&lt;Item = ...&gt;, EngineError&gt;;
+}</code></pre>
+          <p>Mirror <code>src/db/postgres.rs</code>. It is the reference implementation and, today, the only one.</p>
+
+          <h2>The walk-through</h2>
+          <p>Assume the new engine is SQLite. Adapt the names as needed.</p>
+          <ol class="sk-steps">
+            <li>
+              <h3>Declare the variant</h3>
+              <p>Add <code>Sqlite</code> to <code>DatabaseKind</code> in <code>src/config.rs</code>. The <code>#[serde(rename_all = &quot;lowercase&quot;)]</code> attribute maps it to the string <code>"sqlite"</code> in <code>seeki.toml</code>.</p>
+              <pre><code>#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = &quot;lowercase&quot;)]
+pub enum DatabaseKind {
+    Postgres,
+    Sqlite,
+}</code></pre>
+            </li>
+            <li>
+              <h3>Create the engine module</h3>
+              <p>Add <code>src/db/sqlite.rs</code> and register it in <code>src/db/mod.rs</code>:</p>
+              <pre><code>pub mod postgres;
+pub mod sqlite;</code></pre>
+              <p>The module exports four functions: <code>list_tables</code>, <code>get_columns</code>, <code>query_rows</code>, <code>export_csv</code>. Copy the signatures from <code>src/db/postgres.rs</code> and replace the body.</p>
+            </li>
+            <li>
+              <h3>Add the pool variant</h3>
+              <p>Extend the enum in <code>src/db/mod.rs</code> with a variant that carries whatever connection handle your driver uses:</p>
+              <pre><code>pub enum DatabasePool {
+    Postgres(sqlx::PgPool, Option&lt;crate::ssh::SshTunnel&gt;),
+    Sqlite(sqlx::SqlitePool),
+}</code></pre>
+              <p>SQLite has no network endpoint, so there is no tunnel. An engine that does (MySQL, MSSQL) should keep the <code>Option&lt;SshTunnel&gt;</code> slot.</p>
+            </li>
+            <li>
+              <h3>Wire <code>connect</code></h3>
+              <p>Add a <code>match</code> arm in <code>DatabasePool::connect</code> that reads the URL, opens a pool, and returns the new variant. Keep the PostgreSQL arm untouched.</p>
+              <pre><code>match config.kind {
+    DatabaseKind::Postgres =&gt; { /* existing */ }
+    DatabaseKind::Sqlite =&gt; {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(config.max_connections)
+            .connect(&amp;config.url)
+            .await?;
+        Ok(Self::Sqlite(pool))
+    }
+}</code></pre>
+            </li>
+            <li>
+              <h3>Wire the dispatch arms</h3>
+              <p>Every method on <code>DatabasePool</code> is a <code>match</code>. Add an arm for each. The compiler will tell you which ones you missed &mdash; the enum is not marked <code>#[non_exhaustive]</code> on purpose.</p>
+              <pre><code>pub async fn list_tables(&amp;self) -&gt; anyhow::Result&lt;Vec&lt;TableInfo&gt;&gt; {
+    match self {
+        Self::Postgres(pool, _) =&gt; postgres::list_tables(pool).await,
+        Self::Sqlite(pool)      =&gt; sqlite::list_tables(pool).await,
+    }
+}</code></pre>
+            </li>
+            <li>
+              <h3>Teach the setup flow</h3>
+              <p>The first-run wizard tests a connection before writing <code>seeki.toml</code>. Add a <code>test_connection</code> entry for the new engine in <code>src/db/sqlite.rs</code> and dispatch to it from <code>src/api/setup.rs</code>. The return type is <code>Vec&lt;TablePreview&gt;</code>, same as PostgreSQL.</p>
+            </li>
+            <li>
+              <h3>Surface it in the UI</h3>
+              <p>Step 1 of the setup wizard lets the user pick an engine. Add the new option in <code>frontend/src/components/SetupStep1Connection.svelte</code>, and widen the type unions in <code>frontend/src/lib/types.ts</code>. The placeholder for the URL field should match what the driver expects &mdash; for SQLite, <code>sqlite://./data.db</code>.</p>
+            </li>
+            <li>
+              <h3>Cover it with tests</h3>
+              <p>Add engine-level tests in <code>src/db/sqlite.rs</code> against an in-memory or temp-file database. Then extend <code>frontend/tests/</code> (Playwright) with a spec that boots the binary pointed at a fixture database and walks the grid. See the Justfile target <code>just test-e2e</code>.</p>
+            </li>
+          </ol>
+
+          <h2>Safety rules</h2>
+          <p>Every engine lives behind the same promise the product makes to the user: <strong>read-only, and never vulnerable to the data it reads</strong>. Two rules, enforced per engine.</p>
+          <h3>1. Parameterise every value</h3>
+          <p>All user-supplied <em>values</em> &mdash; filter terms, search strings, pagination bounds &mdash; go through bound parameters. Never format them into SQL with <code>format!</code> or string concatenation. The PostgreSQL engine uses <code>sqlx::query(...).bind(value)</code>; use the equivalent in your driver.</p>
+          <h3>2. Whitelist every identifier</h3>
+          <p>Table names, column names, and sort directions cannot be parameter-bound &mdash; they are part of the SQL grammar. Every identifier that reaches the engine must be validated against the live schema before it is quoted into a query:</p>
+          <ul>
+            <li>Take the list of real tables from <code>list_tables</code>, or real columns from <code>get_columns</code>.</li>
+            <li>Reject anything not in that list with <code>ValidationError</code> (the API layer maps this to <code>400</code>).</li>
+            <li>Quote the survivor using the engine&rsquo;s identifier quote &mdash; double quotes for PostgreSQL and SQLite, backticks for MySQL &mdash; and escape the quote character by doubling it.</li>
+            <li>Sort direction accepts only <code>asc</code> or <code>desc</code>, compared case-insensitively, mapped to a fixed literal.</li>
+          </ul>
+          <aside class="sk-callout sk-callout--warn">
+            <p class="sk-callout__title">Do not skip the whitelist</p>
+            <p>&ldquo;The frontend only sends valid names&rdquo; is not a defence. An attacker with filesystem access to the browser&rsquo;s devtools can send anything. The engine is the boundary; the engine enforces the rule.</p>
+          </aside>
+
+          <h3>3. Read-only means read-only</h3>
+          <p>No engine function emits <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>TRUNCATE</code>, <code>DROP</code>, or <code>ALTER</code>. If the driver supports read-only connections natively (PostgreSQL <code>default_transaction_read_only</code>, SQLite URI flag <code>?mode=ro</code>), enable it. Belt-and-braces is the whole point.</p>
+
+          <h2>The checklist</h2>
+          <table class="sk-table">
+            <thead><tr><th>File</th><th>Change</th></tr></thead>
+            <tbody>
+              <tr><td><code>src/config.rs</code></td><td>Add a variant to <code>DatabaseKind</code>.</td></tr>
+              <tr><td><code>src/db/mod.rs</code></td><td>Declare the module, add the pool variant, add arms to each <code>match</code>.</td></tr>
+              <tr><td><code>src/db/&lt;engine&gt;.rs</code></td><td>Implement <code>list_tables</code>, <code>get_columns</code>, <code>query_rows</code>, <code>export_csv</code>, <code>test_connection</code>.</td></tr>
+              <tr><td><code>src/api/setup.rs</code></td><td>Dispatch <code>/api/setup/test-connection</code> to the new engine.</td></tr>
+              <tr><td><code>frontend/src/components/SetupStep1Connection.svelte</code></td><td>Add the engine option and its URL placeholder.</td></tr>
+              <tr><td><code>frontend/src/lib/types.ts</code></td><td>Extend the engine union.</td></tr>
+              <tr><td><code>frontend/tests/</code></td><td>Add an end-to-end spec against a fixture database.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Where to go from here</h2>
+          <ul>
+            <li><a href="/develop/architecture.html">Architecture</a> &mdash; the big picture the pool fits into.</li>
+            <li><a href="/develop/build-release.html">Build &amp; release</a> &mdash; once the engine compiles, how to ship it.</li>
+            <li><a href="/api/rows.html">Rows API</a> &mdash; the exact request shape your engine has to satisfy.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

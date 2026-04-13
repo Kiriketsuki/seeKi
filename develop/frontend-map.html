@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Frontend map &middot; SeeKi</title>
+    <meta name="description" content="The Svelte 5 component tree — App.svelte at the root, SetupWizard or the grid stack below, RevoGrid at the bottom, api.ts talking to the backend." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <style>
+      .sk-tree { font-family: var(--sk-font-mono); font-size: var(--sk-fs-sm); line-height: 1.7; padding: var(--sk-space-4); background: var(--sk-surface-raised); border: 1px solid var(--sk-border); border-radius: var(--sk-radius); white-space: pre; overflow-x: auto; color: var(--sk-ink); }
+      .sk-tree em { color: var(--sk-ink-subtle); font-style: normal; }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/develop/frontend-map.html" aria-current="page">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Frontend map</h1>
+          <p>The SeeKi UI is a small Svelte 5 application. It lives under <code>frontend/src/</code>, builds with Vite, and ends up as a handful of static files that the Rust binary serves itself. Everything starts at <code>main.ts</code>, which mounts <code>App.svelte</code> and steps out of the way.</p>
+
+          <h2>Component tree</h2>
+          <figure class="sk-diagram" aria-labelledby="tree-caption">
+            <pre class="sk-tree" role="img" aria-label="Svelte component tree">main.ts
+  &bull; App.svelte                <em># orchestrator — fetches, owns state, decides which tree to render</em>
+      |
+      |&ndash;&ndash; SetupWizard.svelte       <em># shown when GET /api/status returns mode: &quot;setup&quot;</em>
+      |       |&ndash;&ndash; SetupStep1Connection.svelte
+      |       |&ndash;&ndash; SetupStep2Tables.svelte
+      |       |&ndash;&ndash; SetupStep3Branding.svelte
+      |       &lsquo;&ndash;&ndash; SetupStep4Confirm.svelte
+      |
+      &lsquo;&ndash;&ndash; <em>normal mode</em>
+              |&ndash;&ndash; Sidebar.svelte          <em># translucent chrome, brand, collapse toggle</em>
+              |       &lsquo;&ndash;&ndash; TableList.svelte   <em># the list of tables the user picks from</em>
+              |&ndash;&ndash; Toolbar.svelte          <em># search, filter toggle, column menu, export</em>
+              |       &lsquo;&ndash;&ndash; ColumnDropdown.svelte
+              |&ndash;&ndash; TableHeader.svelte      <em># table name, active sort chip, row count</em>
+              |&ndash;&ndash; DataGrid.svelte         <em># wraps RevoGrid — the hero surface</em>
+              &lsquo;&ndash;&ndash; StatusBar.svelte        <em># pagination, connection status</em></pre>
+            <figcaption id="tree-caption">Source files under <code>frontend/src/components/</code>. <code>App.svelte</code> at the root owns every piece of state; children receive props and fire events.</figcaption>
+          </figure>
+
+          <h2>Boot sequence</h2>
+          <p>From cold load to first grid render:</p>
+          <ol>
+            <li><code>main.ts</code> mounts <code>App.svelte</code> into <code>#app</code>.</li>
+            <li><code>App.svelte</code>&rsquo;s <code>onMount</code> calls <code>fetchStatus()</code>. If the server is in setup mode, the wizard renders and the data path is skipped.</li>
+            <li>In normal mode, <code>App.svelte</code> calls <code>fetchTables()</code> and <code>fetchDisplayConfig()</code> in parallel.</li>
+            <li>When the user picks a table, <code>App.svelte</code> calls <code>fetchColumns(table)</code> then <code>fetchRows(params)</code> and passes the result down to <code>DataGrid</code>.</li>
+          </ol>
+
+          <h2>State lives at the top</h2>
+          <p>There is no store, no context, no external state library. <code>App.svelte</code> is the single source of truth; every child receives what it needs as props. This is deliberate &mdash; the data flow is small enough that adding a store would cost more than it saves.</p>
+          <p>State is declared with Svelte 5 runes. A cut-down view of the orchestrator:</p>
+          <pre><code>let tables: TableInfo[] = $state([]);
+let selectedTable: string = $state('');
+let columns: ColumnInfo[] = $state([]);
+let queryResult: QueryResult | null = $state(null);
+let sortState: SortState = $state({ column: null, direction: null });
+let filters: FilterState = $state({});
+let searchTerm: string = $state('');
+
+let activeFilterCount = $derived(
+  Object.values(filters).filter((v) =&gt; v.trim().length &gt; 0).length
+);
+let visibleColumns = $derived.by(
+  () =&gt; columns.filter((c) =&gt; columnVisibility[c.name] !== false)
+);</code></pre>
+          <p>Children receive these as props. When the user acts &mdash; types into search, clicks a sort header, changes a page &mdash; the child fires an event, <code>App.svelte</code> updates its state, a <code>$derived</code> or an <code>$effect</code> rebuilds the query params, and <code>fetchRows</code> runs again.</p>
+
+          <h2>RevoGrid, the hero</h2>
+          <p><code>DataGrid.svelte</code> is a thin wrapper over <a href="https://rv-grid.com/" rel="noopener">RevoGrid</a>. Its job is narrow: take <code>visibleColumns</code> and <code>queryResult.rows</code>, translate them into RevoGrid&rsquo;s column and data arrays, and render. Three details matter:</p>
+          <ul>
+            <li>Columns are keyed by <code>name</code>; widths persist per-table in <code>localStorage</code> under a prefixed key.</li>
+            <li><code>Yes/No</code> and <code>NULL</code> are cell templates, not CSS on raw text &mdash; the shape and label carry the meaning, not colour alone.</li>
+            <li>Sort headers are intercepted at the wrapper level and turned into events, so sorting goes through the server every time (no client-side reshuffle that would lie about the row count).</li>
+          </ul>
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Why RevoGrid?</p>
+            <p>SeeKi has to feel like a spreadsheet for tables with half a million rows. RevoGrid virtualises the viewport, keeps the DOM small, and behaves well on resize. It earns its dependency line.</p>
+          </aside>
+
+          <h2>The API client</h2>
+          <p>Every call to the backend goes through <code>frontend/src/lib/api.ts</code>. One helper, one shape, one set of timeouts.</p>
+          <pre><code>// frontend/src/lib/api.ts
+const DEFAULT_TIMEOUT_MS = 30_000;
+const SETUP_TIMEOUT_MS   = 60_000;
+const USE_MOCK = import.meta.env.VITE_MOCK === 'true';
+
+async function apiFetch&lt;T&gt;(path: string): Promise&lt;T&gt; {
+  const controller = new AbortController();
+  const timeout = setTimeout(() =&gt; controller.abort(), DEFAULT_TIMEOUT_MS);
+  // ... fetch, handle non-2xx, parse JSON, assertShape ...
+}</code></pre>
+          <p>Three details worth knowing:</p>
+          <ul>
+            <li><strong>Timeout by default.</strong> Every request aborts after 30 seconds (60 for setup). A slow database never freezes the UI.</li>
+            <li><strong>Shape assertions.</strong> Responses are checked with <code>assertShape</code> before they reach the renderers. If the server ships an unexpected shape, the user sees a readable error instead of a silent broken grid.</li>
+            <li><strong>Mock mode.</strong> When <code>VITE_MOCK=true</code>, the client routes to in-memory fixtures in <code>frontend/src/lib/mock.ts</code>. That is how <code>just dev-mock</code> runs the UI with no backend at all &mdash; useful for component work and CI snapshots.</li>
+          </ul>
+
+          <h2>The <code>lib/</code> folder</h2>
+          <table class="sk-table">
+            <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>lib/api.ts</code></td><td>The HTTP client. All network calls live here.</td></tr>
+              <tr><td><code>lib/types.ts</code></td><td>Shared TypeScript shapes: <code>TableInfo</code>, <code>ColumnInfo</code>, <code>QueryResult</code>, <code>SortState</code>, <code>FilterState</code>.</td></tr>
+              <tr><td><code>lib/constants.ts</code></td><td>Magic strings: <code>localStorage</code> keys, default page size.</td></tr>
+              <tr><td><code>lib/data-grid.ts</code></td><td>Pure helpers used by <code>DataGrid.svelte</code> &mdash; formatting, column mapping, value rendering.</td></tr>
+              <tr><td><code>lib/mock.ts</code></td><td>Fixture responses for <code>VITE_MOCK=true</code>. Mirrors the real API shape exactly.</td></tr>
+            </tbody>
+          </table>
+          <p>The <code>.test.ts</code> siblings are Vitest unit tests. Keep them next to the code they exercise.</p>
+
+          <h2>Theming and tokens</h2>
+          <p><code>frontend/src/theme/tokens.css</code> is where the design tokens live &mdash; colours, spacing, typography, the <code>--sk-*</code> variables the whole UI reads. <code>app.css</code> wires those tokens to base element styles. Component styles go in the component file, scoped by Svelte, and reach for tokens through <code>var(--sk-*)</code>. No raw hex, no per-component palette.</p>
+
+          <h2>Where to go from here</h2>
+          <ul>
+            <li><a href="/develop/architecture.html">Architecture</a> &mdash; the backend side of every <code>fetch</code> call.</li>
+            <li><a href="/develop/build-release.html">Build &amp; release</a> &mdash; how <code>frontend/dist/</code> ends up inside the Rust binary.</li>
+            <li><a href="/features/data-grid.html">Data grid</a> &mdash; the product surface these components serve.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>
