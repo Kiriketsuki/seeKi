@@ -98,16 +98,20 @@ port = 3141
 kind = "postgres"
 url = "postgres://user:password@localhost:5432/mydb"
 max_connections = 5
+# Which schemas to browse. Omit to default to ["public"].
+# System schemas (pg_catalog, information_schema, pg_*) are always excluded.
+schemas = ["public", "reporting"]
 
 [branding]
 title = "My Database"
 subtitle = "Fleet Telemetry Database"
 
 [tables]
-# Include specific tables (if omitted, all tables are exposed)
-include = ["vehicles", "vehicles_log", "events", "missions"]
+# Include specific tables (if omitted, all tables are exposed).
+# Bare names match any selected schema; use "schema.table" to target one schema.
+include = ["vehicles", "vehicles_log", "reporting.orders"]
 # Or exclude specific tables:
-# exclude = ["internal_logs", "migrations"]
+# exclude = ["internal_logs", "migrations", "audit.sessions"]
 
 [display.columns]
 # Override auto-generated column display names
@@ -132,6 +136,14 @@ Without any configuration, SeeKi automatically converts column names to friendly
 | `posn_lat` | Posn Lat | Title Case (override recommended) |
 
 Use `[display.columns]` overrides for names the heuristic gets wrong.
+
+### Multiple Schemas
+
+PostgreSQL databases often organise tables across schemas (`public`, `reporting`, `audit`, …). SeeKi auto-discovers every non-system schema the DB user can access; during the setup wizard, tick the schemas you want exposed. The selection is saved to `seeki.toml` as `database.schemas`.
+
+- Display: tables in `public` are shown unqualified (`orders`); tables in other schemas are prefixed (`reporting.orders`). When the same bare name exists in multiple selected schemas, both are always shown qualified.
+- `tables.include` / `tables.exclude` accept either bare names (match any selected schema) or qualified `schema.table` pairs.
+- An empty `schemas = []` is rejected at startup.
 
 ## Architecture
 

@@ -1,4 +1,5 @@
 export interface TableInfo {
+  schema: string;
   name: string;
   display_name: string;
   row_count_estimate: number | null;
@@ -47,6 +48,7 @@ export interface DisplayConfig {
     title: string | null;
     subtitle: string | null;
   };
+  // Keyed by qualified "schema.table" (including "public.table").
   tables: Record<
     string,
     {
@@ -69,14 +71,21 @@ export interface SshWizardConfig {
 }
 
 export interface TablePreview {
-  name: string;
+  schema: string;
+  name: string; // always the bare table name (never "schema.table")
   estimated_rows: number;
   is_system: boolean;
+}
+
+export interface SchemaPreview {
+  name: string;
+  table_count: number;
 }
 
 export interface TestConnectionResult {
   success: boolean;
   tables?: TablePreview[];
+  schemas?: SchemaPreview[];
   error?: string;
   error_source?: 'ssh' | 'db' | 'ssh_config';
 }
@@ -96,7 +105,9 @@ export interface WizardData {
   ssh: SshWizardConfig;
   // Step 2
   tables: TablePreview[]; // from test-connection response
+  schemas: SchemaPreview[]; // from test-connection response
   selected_tables: string[];
+  selected_schemas: string[];
   // Step 3
   title: string;
   subtitle: string;
@@ -104,7 +115,12 @@ export interface WizardData {
 
 export interface SetupSaveRequest {
   server?: { host: string; port: number };
-  database: { kind: string; url: string; max_connections: number };
+  database: {
+    kind: string;
+    url: string;
+    max_connections: number;
+    schemas?: string[];
+  };
   ssh?: SshWizardConfig;
   tables?: { include: string[] };
   branding?: { title: string; subtitle?: string };
