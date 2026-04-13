@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rows — SeeKi API</title>
+    <meta name="description" content="GET /api/tables/{table}/rows — paginated rows with sort, search, and per-column filters." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+<nav class="sk-sidebar__nav" aria-label="Documentation">
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Get Started</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Features</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+      <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+      <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+      <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+      <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+      <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Operate</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Develop</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">API</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+      <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+      <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+      <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/api/rows.html" aria-current="page">Rows</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Project</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+      <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+      <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+      <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Reference</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+    </ul>
+  </section>
+</nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Rows</h1>
+          <p>Read a page of rows from one table, optionally sorted, searched, and filtered. The response bundles the column metadata together with the page so a grid can render without a second request.</p>
+
+          <h2>Request</h2>
+<pre class="sk-code"><code>GET /api/tables/{table}/rows</code></pre>
+
+          <h3>Path parameters</h3>
+          <table class="sk-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>table</code></td><td>string</td><td>Real table name from <a href="/api/tables.html">GET /api/tables</a>.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Query parameters</h3>
+          <table class="sk-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>page</code></td>
+                <td>integer ≥ 1</td>
+                <td><code>1</code></td>
+                <td>1-indexed page number. Values below <code>1</code> are clamped to <code>1</code>.</td>
+              </tr>
+              <tr>
+                <td><code>page_size</code></td>
+                <td>integer</td>
+                <td><code>50</code></td>
+                <td>Rows per page. Clamped to the range <code>[1, 1000]</code>.</td>
+              </tr>
+              <tr>
+                <td><code>sort_column</code></td>
+                <td>string</td>
+                <td>—</td>
+                <td>A real column name from <a href="/api/columns.html">GET /api/tables/{table}/columns</a>. Validated against the live schema; unknown or unsafe names return <code>400</code>.</td>
+              </tr>
+              <tr>
+                <td><code>sort_direction</code></td>
+                <td><code>asc</code> or <code>desc</code></td>
+                <td><code>asc</code></td>
+                <td>Only <code>desc</code> / <code>DESC</code> selects descending order; anything else (including omitted) sorts ascending. Has no effect unless <code>sort_column</code> is also set.</td>
+              </tr>
+              <tr>
+                <td><code>search</code></td>
+                <td>string</td>
+                <td>—</td>
+                <td>Case-insensitive substring match (<code>ILIKE '%value%'</code>) applied across every text-like column — <code>text</code>, <code>character varying</code>, <code>character</code>, and <code>uuid</code>. Non-text columns are not included in the search.</td>
+              </tr>
+              <tr>
+                <td><code>filter.&lt;column&gt;</code></td>
+                <td>string (repeatable)</td>
+                <td>—</td>
+                <td>Per-column filter. Any query parameter whose name begins with <code>filter.</code> is treated as a filter on the column named after the dot. Multiple filters are AND-ed. See "Filter semantics" below.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="sk-callout sk-callout--note">
+            <div class="sk-callout__title">Filter semantics</div>
+            <p>For most columns the filter runs as <code>"column"::text ILIKE '%value%'</code> — a case-insensitive substring match after casting to text. For <code>boolean</code> columns the filter is an exact match: values <code>yes</code>, <code>true</code>, <code>t</code>, <code>1</code> match <code>TRUE</code>; <code>no</code>, <code>false</code>, <code>f</code>, <code>0</code> match <code>FALSE</code>; anything else matches no rows.</p>
+          </div>
+
+          <h2>Response</h2>
+          <p><strong>200 OK.</strong> A JSON object describing the requested page.</p>
+          <table class="sk-table">
+            <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>columns</code></td><td>array</td><td>The same shape as <a href="/api/columns.html">GET /api/tables/{table}/columns</a>. Included so the client can render headers and NULL cells without a second round-trip.</td></tr>
+              <tr><td><code>rows</code></td><td>array of objects</td><td>One object per row, keyed by real column name. Values are JSON-typed according to the source SQL type — see "Value encoding" below.</td></tr>
+              <tr><td><code>total_rows</code></td><td>integer</td><td>Total number of rows matching the search and filters across the whole table, not just the returned page. Use this for pagination controls.</td></tr>
+              <tr><td><code>page</code></td><td>integer</td><td>The page that was returned (after clamping).</td></tr>
+              <tr><td><code>page_size</code></td><td>integer</td><td>The page size that was used (after clamping).</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Value encoding</h3>
+          <table class="sk-table">
+            <thead><tr><th>SQL type</th><th>JSON representation</th></tr></thead>
+            <tbody>
+              <tr><td><code>smallint</code>, <code>integer</code></td><td>JSON number.</td></tr>
+              <tr><td><code>bigint</code></td><td>JSON number when the absolute value fits in 2<sup>53</sup>, otherwise a JSON string to preserve precision in JavaScript clients.</td></tr>
+              <tr><td><code>real</code>, <code>double precision</code></td><td>JSON number.</td></tr>
+              <tr><td><code>numeric</code></td><td>JSON string — arbitrary-precision decimals are never widened to a float.</td></tr>
+              <tr><td><code>boolean</code></td><td>JSON boolean.</td></tr>
+              <tr><td><code>json</code>, <code>jsonb</code></td><td>The parsed JSON value, inlined.</td></tr>
+              <tr><td><code>timestamp without time zone</code></td><td>String, formatted <code>"YYYY-MM-DD HH:MM:SS"</code>.</td></tr>
+              <tr><td><code>timestamp with time zone</code></td><td>RFC 3339 string (UTC).</td></tr>
+              <tr><td><code>date</code></td><td>String, formatted <code>"YYYY-MM-DD"</code>.</td></tr>
+              <tr><td><code>time with/without time zone</code></td><td>String, formatted <code>"HH:MM:SS"</code>.</td></tr>
+              <tr><td><code>uuid</code></td><td>String.</td></tr>
+              <tr><td>Other</td><td>String — the value as PostgreSQL would render it via <code>::text</code>.</td></tr>
+              <tr><td>SQL <code>NULL</code></td><td>JSON <code>null</code>.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Example</h2>
+<pre class="sk-code"><code>curl "http://127.0.0.1:3141/api/tables/vehicles_log/rows\
+?page=1\
+&amp;page_size=2\
+&amp;sort_column=recorded_at\
+&amp;sort_direction=desc\
+&amp;search=ADT\
+&amp;filter.vehicle_id=ADT3\
+&amp;filter.is_active=yes"</code></pre>
+<pre class="sk-code"><code>{
+  "columns": [
+    { "name": "id", "display_name": "Id", "data_type": "bigint",
+      "display_type": "Number", "is_nullable": false, "is_primary_key": true },
+    { "name": "vehicle_id", "display_name": "Vehicle", "data_type": "character varying",
+      "display_type": "Text", "is_nullable": false, "is_primary_key": false },
+    { "name": "posn_lat", "display_name": "Latitude", "data_type": "double precision",
+      "display_type": "Decimal", "is_nullable": true, "is_primary_key": false },
+    { "name": "is_active", "display_name": "Active", "data_type": "boolean",
+      "display_type": "Yes/No", "is_nullable": false, "is_primary_key": false },
+    { "name": "recorded_at", "display_name": "Recorded At",
+      "data_type": "timestamp with time zone", "display_type": "Date & Time",
+      "is_nullable": false, "is_primary_key": false }
+  ],
+  "rows": [
+    {
+      "id": 523401,
+      "vehicle_id": "ADT3",
+      "posn_lat": 52.41933,
+      "is_active": true,
+      "recorded_at": "2026-04-12T17:42:05+00:00"
+    },
+    {
+      "id": 523397,
+      "vehicle_id": "ADT3",
+      "posn_lat": null,
+      "is_active": true,
+      "recorded_at": "2026-04-12T17:41:55+00:00"
+    }
+  ],
+  "total_rows": 18422,
+  "page": 1,
+  "page_size": 2
+}</code></pre>
+
+          <h2>Errors</h2>
+          <table class="sk-table">
+            <thead><tr><th>Status</th><th>When</th></tr></thead>
+            <tbody>
+              <tr><td><code>400</code></td><td><code>sort_column</code> or a <code>filter.&lt;name&gt;</code> references an unknown column, or the name contains characters other than letters, digits, underscore, hyphen, or space. Body: <code>{"error": "Unknown sort column: X"}</code> or <code>{"error": "Invalid filter column name: X"}</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The table is not in the allow-list or does not exist.</td></tr>
+              <tr><td><code>503</code></td><td>The server is still in setup mode.</td></tr>
+              <tr><td><code>500</code></td><td>The query failed. See the server log for detail.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/api/tables.html">GET /api/tables</a> — the source of valid <code>{table}</code> values.</li>
+            <li><a href="/api/columns.html">GET /api/tables/{table}/columns</a> — the source of valid <code>sort_column</code> and <code>filter.*</code> names.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

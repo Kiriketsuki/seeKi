@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API overview — SeeKi</title>
+    <meta name="description" content="SeeKi HTTP API overview — base URL, response envelope, error shape, and read-only guarantees." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+<nav class="sk-sidebar__nav" aria-label="Documentation">
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Get Started</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Features</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+      <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+      <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+      <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+      <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+      <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Operate</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Develop</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">API</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/api/" aria-current="page">Overview</a></li>
+      <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+      <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+      <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Project</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+      <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+      <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+      <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Reference</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+    </ul>
+  </section>
+</nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>API overview</h1>
+          <p>SeeKi exposes a small HTTP API that backs its own grid. It is stable, read-only, and designed for direct consumption from any HTTP client. Everything the web UI does is a request you can make yourself.</p>
+
+          <h2>Base URL</h2>
+          <p>SeeKi binds to <code>127.0.0.1:3141</code> by default. All API routes are served under the <code>/api</code> prefix.</p>
+<pre class="sk-code"><code>http://127.0.0.1:3141/api</code></pre>
+          <p>The host and port come from the <code>server.host</code> and <code>server.port</code> fields in <code>config.toml</code>, or from the <code>SEEKI_BIND</code> environment variable. The API is reachable from the same machine only unless you deliberately change the bind address.</p>
+
+          <h2>Endpoints at a glance</h2>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>GET</code></td><td><code>/api/status</code></td><td>Report whether the server is in <em>normal</em> or <em>setup</em> mode.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/tables</code></td><td>List the tables the user is allowed to see. <a href="/api/tables.html">Details</a>.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/tables/{table}/columns</code></td><td>Column metadata for one table. <a href="/api/columns.html">Details</a>.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/tables/{table}/rows</code></td><td>Paginated rows with optional sort, search, and filters. <a href="/api/rows.html">Details</a>.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/config/display</code></td><td>Branding + display-name overrides for all allowed tables and columns.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/export/{table}/csv</code></td><td>Stream all matching rows for a table as CSV.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/setup/test-connection</code></td><td>Used by the setup wizard. See note below.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/setup/save</code></td><td>Used by the setup wizard. See note below.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Response shape</h2>
+          <p>Successful responses are JSON objects whose top-level keys name the payload — <code>tables</code>, <code>columns</code>, <code>rows</code>, and so on. There is no generic envelope and no <code>data</code> wrapper.</p>
+<pre class="sk-code"><code>{
+  "tables": [
+    { "name": "vehicles_log", "display_name": "Fleet Log", "row_count_estimate": 523401 }
+  ]
+}</code></pre>
+          <p>The <code>rows</code> endpoint is richer — it returns <code>columns</code>, <code>rows</code>, <code>total_rows</code>, <code>page</code>, and <code>page_size</code> together so the grid can render without a second round-trip.</p>
+
+          <h2>Error shape</h2>
+          <p>Errors are JSON objects with a single <code>error</code> field and an appropriate HTTP status code.</p>
+<pre class="sk-code"><code>{ "error": "Table 'vehicles_log' not found" }</code></pre>
+          <table class="sk-table">
+            <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>400 Bad Request</code></td><td>An invalid or unknown column was passed to <code>sort_column</code> or a <code>filter.*</code> parameter; or the database type does not support the requested operation.</td></tr>
+              <tr><td><code>404 Not Found</code></td><td>The table does not exist, or is not in the configured allow-list.</td></tr>
+              <tr><td><code>503 Service Unavailable</code></td><td>The server is still in setup mode and the endpoint is only available after a database is configured.</td></tr>
+              <tr><td><code>500 Internal Server Error</code></td><td>An unexpected failure. The message is always the literal string <code>"Internal server error"</code> — detail is written to the server log, not the response.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Authentication</h2>
+          <div class="sk-callout sk-callout--note">
+            <div class="sk-callout__title">No authentication</div>
+            <p>SeeKi has no login, no tokens, and no session layer. It listens on localhost and trusts the operating-system boundary around it. Anyone who can reach the bind address can read everything the configured database user can read. If you expose SeeKi beyond localhost, put it behind your own authentication proxy.</p>
+          </div>
+
+          <h2>Read-only guarantee</h2>
+          <p>Every query SeeKi issues is a <code>SELECT</code>. There is no endpoint that accepts row edits, schema changes, or raw SQL. Column and filter names are validated against the live schema before interpolation, and all user values are bound as parameters.</p>
+          <p>The one exception is the setup wizard, which writes <code>config.toml</code> on disk — never to the database.</p>
+
+          <h2>Setup-mode endpoints</h2>
+          <p>The two <code>/api/setup/*</code> routes exist only to power the first-run setup wizard. They accept a candidate connection URL (and optional SSH tunnel config) and write the resulting configuration to <code>config.toml</code>. They are documented here for completeness but are not intended as a general integration surface — once the server enters normal mode, the data endpoints above are the supported interface.</p>
+
+          <h2>Try it</h2>
+<pre class="sk-code"><code>curl http://127.0.0.1:3141/api/status
+curl http://127.0.0.1:3141/api/tables
+curl "http://127.0.0.1:3141/api/tables/vehicles_log/rows?page=1&amp;page_size=10"</code></pre>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

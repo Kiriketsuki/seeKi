@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Columns — SeeKi API</title>
+    <meta name="description" content="GET /api/tables/{table}/columns — column metadata including data type, nullability, primary-key flag, and display name." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+<nav class="sk-sidebar__nav" aria-label="Documentation">
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Get Started</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Features</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+      <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+      <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+      <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+      <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+      <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Operate</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Develop</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">API</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+      <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+      <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/api/columns.html" aria-current="page">Columns</a></li>
+      <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Project</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+      <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+      <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+      <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Reference</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+    </ul>
+  </section>
+</nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Columns</h1>
+          <p>Return the ordered list of columns for one table, with the underlying SQL type, a human-friendly display type, nullability, and whether the column participates in the primary key.</p>
+
+          <h2>Request</h2>
+<pre class="sk-code"><code>GET /api/tables/{table}/columns</code></pre>
+          <table class="sk-table">
+            <thead><tr><th>Parameter</th><th>In</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>table</code></td><td>path</td><td>string</td><td>The real table name from <a href="/api/tables.html">GET /api/tables</a>. Must be in the allow-list and must exist in the <code>public</code> schema.</td></tr>
+            </tbody>
+          </table>
+          <p>There are no query parameters and no request body.</p>
+
+          <h2>Response</h2>
+          <p><strong>200 OK.</strong> A JSON object with a single <code>columns</code> array, ordered by the column's position in the table (<code>information_schema.columns.ordinal_position</code>).</p>
+          <table class="sk-table">
+            <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>columns[].name</code></td><td>string</td><td>The real column name. Use this for <code>sort_column</code> and <code>filter.*</code> parameters on the rows endpoint.</td></tr>
+              <tr><td><code>columns[].display_name</code></td><td>string</td><td>The name shown in the UI. Either the override from <code>[display.columns]</code> in <code>config.toml</code>, or the column name rewritten from <code>snake_case</code> to Title Case.</td></tr>
+              <tr><td><code>columns[].data_type</code></td><td>string</td><td>The raw SQL type from <code>information_schema</code> — e.g. <code>integer</code>, <code>character varying</code>, <code>timestamp with time zone</code>, <code>boolean</code>, <code>uuid</code>, <code>jsonb</code>.</td></tr>
+              <tr><td><code>columns[].display_type</code></td><td>string</td><td>A friendly label derived from <code>data_type</code>: one of <code>Text</code>, <code>Number</code>, <code>Decimal</code>, <code>Yes/No</code>, <code>Date</code>, <code>Date &amp; Time</code>, <code>Time</code>, <code>Duration</code>, <code>JSON</code>, <code>UUID</code>, <code>Network</code>, <code>Currency</code>, <code>Binary</code>, <code>List</code>. Unknown types fall through unchanged.</td></tr>
+              <tr><td><code>columns[].is_nullable</code></td><td>boolean</td><td><code>true</code> when the column is declared <code>NULL</code>-able. Drives the hatched NULL rendering in the grid.</td></tr>
+              <tr><td><code>columns[].is_primary_key</code></td><td>boolean</td><td><code>true</code> when the column participates in the table's primary key.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Example</h2>
+<pre class="sk-code"><code>curl http://127.0.0.1:3141/api/tables/vehicles_log/columns</code></pre>
+<pre class="sk-code"><code>{
+  "columns": [
+    {
+      "name": "id",
+      "display_name": "Id",
+      "data_type": "bigint",
+      "display_type": "Number",
+      "is_nullable": false,
+      "is_primary_key": true
+    },
+    {
+      "name": "vehicle_id",
+      "display_name": "Vehicle",
+      "data_type": "character varying",
+      "display_type": "Text",
+      "is_nullable": false,
+      "is_primary_key": false
+    },
+    {
+      "name": "posn_lat",
+      "display_name": "Latitude",
+      "data_type": "double precision",
+      "display_type": "Decimal",
+      "is_nullable": true,
+      "is_primary_key": false
+    },
+    {
+      "name": "recorded_at",
+      "display_name": "Recorded At",
+      "data_type": "timestamp with time zone",
+      "display_type": "Date & Time",
+      "is_nullable": false,
+      "is_primary_key": false
+    }
+  ]
+}</code></pre>
+
+          <h2>Errors</h2>
+          <table class="sk-table">
+            <thead><tr><th>Status</th><th>When</th></tr></thead>
+            <tbody>
+              <tr><td><code>404</code></td><td>The table is not in the allow-list, or does not exist in the <code>public</code> schema. Body: <code>{"error": "Table 'X' not found"}</code>.</td></tr>
+              <tr><td><code>503</code></td><td>The server is still in setup mode.</td></tr>
+              <tr><td><code>500</code></td><td>The underlying query failed. See the server log for detail.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/api/tables.html">GET /api/tables</a> — discover table names.</li>
+            <li><a href="/api/rows.html">GET /api/tables/{table}/rows</a> — the column names here are exactly the names accepted by <code>sort_column</code> and <code>filter.*</code>.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

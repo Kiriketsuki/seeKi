@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tables — SeeKi API</title>
+    <meta name="description" content="GET /api/tables — list the tables visible to SeeKi with estimated row counts and display names." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+<nav class="sk-sidebar__nav" aria-label="Documentation">
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Get Started</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+      <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Features</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+      <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+      <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+      <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+      <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+      <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Operate</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+      <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Develop</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+      <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">API</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+      <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/api/tables.html" aria-current="page">Tables</a></li>
+      <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+      <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Project</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+      <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+      <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+      <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+    </ul>
+  </section>
+  <section class="sk-sidebar__section">
+    <h2 class="sk-sidebar__heading">Reference</h2>
+    <ul class="sk-sidebar__list">
+      <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+    </ul>
+  </section>
+</nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Tables</h1>
+          <p>List every table in the connected database's <code>public</code> schema that passes the configured allow-list, together with its display name and an estimated row count.</p>
+
+          <h2>Request</h2>
+<pre class="sk-code"><code>GET /api/tables</code></pre>
+          <p>No path parameters, no query parameters, no request body.</p>
+
+          <h2>Response</h2>
+          <p><strong>200 OK.</strong> A JSON object with a single <code>tables</code> array. Each entry describes one visible table.</p>
+          <table class="sk-table">
+            <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>tables[].name</code></td><td>string</td><td>The real table name in PostgreSQL's <code>public</code> schema. Use this for path parameters on the columns and rows endpoints.</td></tr>
+              <tr><td><code>tables[].display_name</code></td><td>string</td><td>The name the UI shows. Either the override from <code>[display.tables]</code> in <code>config.toml</code>, or — if no override is set — the table name rewritten from <code>snake_case</code> to Title Case.</td></tr>
+              <tr><td><code>tables[].row_count_estimate</code></td><td>integer or null</td><td>PostgreSQL's <code>pg_class.reltuples</code> estimate, cast to a signed 64-bit integer. <code>null</code> when the planner has no statistics yet (raw estimate below zero).</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Example</h2>
+<pre class="sk-code"><code>curl http://127.0.0.1:3141/api/tables</code></pre>
+<pre class="sk-code"><code>{
+  "tables": [
+    {
+      "name": "vehicles_log",
+      "display_name": "Fleet Log",
+      "row_count_estimate": 523401
+    },
+    {
+      "name": "supervisors",
+      "display_name": "Supervisors",
+      "row_count_estimate": 42
+    },
+    {
+      "name": "route_events",
+      "display_name": "Route Events",
+      "row_count_estimate": null
+    }
+  ]
+}</code></pre>
+
+          <h2>Filtering behaviour</h2>
+          <p>SeeKi reads every user table in the <code>public</code> schema, then drops anything that fails <code>config.tables.allows(name)</code>. If the config has an <code>include</code> allow-list, only matching tables are returned; if it has an <code>exclude</code> list, those tables are removed; if neither is set, every <code>public</code> table is returned.</p>
+          <div class="sk-callout sk-callout--note">
+            <div class="sk-callout__title">Schema scope</div>
+            <p>Only the <code>public</code> schema is listed. Tables in other schemas are not visible to SeeKi today, regardless of the allow-list.</p>
+          </div>
+
+          <h2>Errors</h2>
+          <table class="sk-table">
+            <thead><tr><th>Status</th><th>When</th></tr></thead>
+            <tbody>
+              <tr><td><code>503</code></td><td>The server is still in setup mode — a database has not yet been configured. Body: <code>{"error": "This endpoint is not available in setup mode"}</code>.</td></tr>
+              <tr><td><code>500</code></td><td>The database query failed. The real error is written to the server log; the response body is <code>{"error": "Internal server error"}</code>.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/api/columns.html">GET /api/tables/{table}/columns</a> — column metadata for one table.</li>
+            <li><a href="/api/rows.html">GET /api/tables/{table}/rows</a> — paginated rows for one table.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>
