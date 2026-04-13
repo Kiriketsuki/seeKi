@@ -4,7 +4,7 @@
 
 # SeeKi
 
-![version-26.5.0.3-blue](https://img.shields.io/badge/version-26.5.0.1-blue)
+![version-26.5.0.3a-blue](https://img.shields.io/badge/version-26.5.0.1-blue)
 [![CI](https://github.com/Kiriketsuki/seeKi/actions/workflows/ci.yml/badge.svg)](https://github.com/Kiriketsuki/seeKi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 ![Rust](https://img.shields.io/badge/Rust-2024_edition-orange?logo=rust)
