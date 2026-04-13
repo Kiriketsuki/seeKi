@@ -22,9 +22,19 @@ Thumbs.db
 
 # Project-specific
 seeki.toml
+seeki.toml.user-backup
 .seeki.secrets
 node_modules/
 frontend/dist/
 .brainstorm/
 .gitnexus
 .claude/
+.playwright-mcp/
+
+# E2E test artifacts
+.env.test
+test-results/
+playwright-report/
+.e2e-server.pid
+frontend/test-results/
+frontend/playwright-report/
