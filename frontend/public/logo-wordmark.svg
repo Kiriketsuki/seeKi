@@ -1,0 +1,18 @@
+<svg viewBox="0 0 200 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .mark-stroke { stroke: #111111; }
+    .mark-dot { fill: #ff9500; }
+    .wordmark { fill: #111111; font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 600; font-size: 28px; }
+    @media (prefers-color-scheme: dark) {
+      .mark-stroke { stroke: #f4f4f2; }
+      .mark-dot { fill: #ffb000; }
+      .wordmark { fill: #f4f4f2; }
+    }
+  </style>
+  <g>
+    <path class="mark-stroke" d="M 24 14 L 24 8 L 8 8 L 8 22 L 24 26 L 24 40 L 8 40 L 8 34" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path class="mark-stroke" d="M 24 26 L 38 12 M 24 26 L 38 40" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
+    <rect class="mark-dot" x="13" y="13" width="4" height="4" />
+  </g>
+  <text class="wordmark" x="56" y="34">SeeKi</text>
+</svg>
