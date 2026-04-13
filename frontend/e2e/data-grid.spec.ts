@@ -286,6 +286,7 @@ test.describe('Data Grid — Cell Formatting', () => {
     const hasNull = await nullCell.count() > 0;
 
     if (!hasNull) {
+      console.warn('[e2e] NULL cell coverage skipped: loaded table has no NULL values in visible columns. If running against a real DB (SEEKI_SKIP_SEED=1), point at a table with nullable columns to exercise this assertion.');
       test.skip();
       return;
     }
@@ -298,6 +299,7 @@ test.describe('Data Grid — Cell Formatting', () => {
     const hasBadge = await badge.count() > 0;
 
     if (!hasBadge) {
+      console.warn('[e2e] Boolean badge coverage skipped: loaded table has no boolean columns. If running against a real DB (SEEKI_SKIP_SEED=1), point at a table with BOOLEAN columns to exercise this assertion.');
       test.skip();
       return;
     }
@@ -314,6 +316,7 @@ test.describe('Data Grid — Cell Formatting', () => {
     const hasNumeric = await numericCell.count() > 0;
 
     if (!hasNumeric) {
+      console.warn('[e2e] Numeric alignment coverage skipped: loaded table has no numeric columns. If running against a real DB (SEEKI_SKIP_SEED=1), point at a table with NUMERIC/INTEGER columns to exercise this assertion.');
       test.skip();
       return;
     }
