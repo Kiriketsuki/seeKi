@@ -96,7 +96,12 @@ async fn get_display_config(
             .into_iter()
             .map(|c| {
                 let display = display_name_column(&table.name, &c.name, &state.config.display);
-                (c.name, ColumnDisplayConfig { display_name: display })
+                (
+                    c.name,
+                    ColumnDisplayConfig {
+                        display_name: display,
+                    },
+                )
             })
             .collect();
 
@@ -147,7 +152,10 @@ async fn get_columns(
     if !state.config.tables.allows(&table) {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
     }
-    let raw_columns = state.db.get_columns(&table).await
+    let raw_columns = state
+        .db
+        .get_columns(&table)
+        .await
         .map_err(|e| map_table_query_error(e, &table))?;
     if raw_columns.is_empty() {
         return Err(AppError::not_found(format!("Table '{table}' not found")));
@@ -304,8 +312,7 @@ async fn export_csv(
             filters: &filters,
         };
 
-        let stream_result =
-            crate::db::postgres::export_rows_stream(&pg_pool, &export_params).await;
+        let stream_result = crate::db::postgres::export_rows_stream(&pg_pool, &export_params).await;
 
         let (_cols, mut row_stream) = match stream_result {
             Ok(v) => v,
@@ -355,9 +362,7 @@ async fn export_csv(
         }
 
         // Flush any remaining buffered rows
-        if !stream_error
-            && wtr.flush().is_ok()
-        {
+        if !stream_error && wtr.flush().is_ok() {
             let remaining = wtr.into_inner().unwrap_or_default();
             if !remaining.is_empty() {
                 let _ = tx.send(Ok(bytes::Bytes::from(remaining))).await;
@@ -390,11 +395,7 @@ async fn export_csv(
     ))
 }
 
-fn pg_value_to_csv_string(
-    row: &sqlx::postgres::PgRow,
-    col: &str,
-    data_type: &str,
-) -> String {
+fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> String {
     use sqlx::Row;
     match data_type {
         "smallint" => row
@@ -449,9 +450,7 @@ fn pg_value_to_csv_string(
             .try_get::<uuid::Uuid, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
-        _ => row
-            .try_get::<String, _>(col)
-            .unwrap_or_default(),
+        _ => row.try_get::<String, _>(col).unwrap_or_default(),
     }
 }
 
@@ -502,12 +501,10 @@ impl From<anyhow::Error> for AppError {
 /// Map a DB query error to an AppError, converting PostgreSQL "undefined_table"
 /// (error code 42P01) into a 404 that includes the table name.
 fn map_table_query_error(err: anyhow::Error, table: &str) -> AppError {
-    if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
-        if let sqlx::Error::Database(db_err) = sqlx_err {
-            if db_err.code().as_deref() == Some("42P01") {
-                return AppError::not_found(format!("Table '{table}' not found"));
-            }
-        }
+    if let Some(sqlx::Error::Database(db_err)) = err.downcast_ref::<sqlx::Error>()
+        && db_err.code().as_deref() == Some("42P01")
+    {
+        return AppError::not_found(format!("Table '{table}' not found"));
     }
     AppError::from(err)
 }
@@ -648,7 +645,10 @@ mod tests {
     fn generic_error_maps_to_internal_server_error() {
         let err = anyhow::anyhow!("something broke");
         let app_err = AppError::from(err);
-        assert_eq!(app_err.status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            app_err.status,
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[test]
@@ -656,7 +656,7 @@ mod tests {
         use crate::config::DisplayConfig;
         use crate::db::ColumnInfo;
 
-        let columns = vec![
+        let columns = [
             ColumnInfo {
                 name: "supervisor_id".into(),
                 data_type: "integer".into(),
@@ -694,10 +694,7 @@ mod tests {
     #[test]
     fn csv_writes_valid_output() {
         let headers = vec!["Name", "Age", "Active"];
-        let rows = vec![
-            vec!["Alice", "30", "Yes"],
-            vec!["Bob", "25", "No"],
-        ];
+        let rows = vec![vec!["Alice", "30", "Yes"], vec!["Bob", "25", "No"]];
 
         let mut buf = Vec::new();
         {

@@ -144,7 +144,11 @@ fn casualify(name: &str, drop_id_suffix: bool) -> String {
 }
 
 fn title_case(segment: &str) -> String {
-    if segment.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) && segment.len() > 1 {
+    if segment
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        && segment.len() > 1
+    {
         return segment.to_string();
     }
     let mut chars = segment.chars();
@@ -164,7 +168,10 @@ pub enum ConfigLoadError {
     /// No config file found at any candidate path — safe to enter setup mode.
     NotFound,
     /// Config file exists but failed to read or parse — should NOT enter setup mode.
-    Invalid { path: PathBuf, source: anyhow::Error },
+    Invalid {
+        path: PathBuf,
+        source: anyhow::Error,
+    },
 }
 
 impl std::fmt::Display for ConfigLoadError {
@@ -183,12 +190,11 @@ impl std::error::Error for ConfigLoadError {}
 impl AppConfig {
     pub fn load() -> Result<Self, ConfigLoadError> {
         let config_path = Self::find_config_file()?;
-        let content = std::fs::read_to_string(&config_path).map_err(|e| {
-            ConfigLoadError::Invalid {
+        let content =
+            std::fs::read_to_string(&config_path).map_err(|e| ConfigLoadError::Invalid {
                 path: config_path.clone(),
                 source: e.into(),
-            }
-        })?;
+            })?;
         let config = Self::parse(&content).map_err(|e| ConfigLoadError::Invalid {
             path: config_path.clone(),
             source: e,
@@ -528,10 +534,7 @@ subtitle = "Fleet Telemetry"
 
     #[test]
     fn casualify_handles_empty_string() {
-        assert_eq!(
-            display_name_column("t", "", &DisplayConfig::default()),
-            ""
-        );
+        assert_eq!(display_name_column("t", "", &DisplayConfig::default()), "");
     }
 
     #[test]
