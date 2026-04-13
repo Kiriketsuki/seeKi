@@ -38,8 +38,6 @@ impl SshTunnel {
 
         let mut decrypted_key: Option<tempfile::NamedTempFile> = None;
 
-        let mut decrypted_key: Option<tempfile::NamedTempFile> = None;
-
         match ssh_config.auth_method {
             SshAuthMethod::Key => {
                 if let Some(key_path) = &ssh_config.key_path {
