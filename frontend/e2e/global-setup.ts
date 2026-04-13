@@ -95,18 +95,21 @@ async function globalSetup(): Promise<void> {
   }
 
   // Back up existing user config before overwriting.
-  // CD-1 safety: only write the backup if no backup exists yet, OR the existing backup
-  // is already identical to CONFIG_DST (i.e. a prior interrupted run left test config
-  // in both — overwriting is a no-op). This prevents an interrupted Run #1 + Run #2
-  // sequence from copying test config over the user's real backup.
+  // CD-1 safety (session 4 refinement): compare DST against the test config we are
+  // about to write (configContent), NOT against CONFIG_BACKUP.
+  //   - DST !== configContent → DST is user config (original or edited since last run);
+  //     capture it as backup.
+  //   - DST === configContent → a prior interrupted run left test config in DST; the
+  //     existing backup already holds the real user config — preserve it.
+  // This correctly handles the orphaned-backup+evolved-DST path (user edits seeki.toml
+  // between runs after a crashed teardown) that the backup-vs-dst comparison missed.
   if (fs.existsSync(CONFIG_DST)) {
-    const shouldBackup = !fs.existsSync(CONFIG_BACKUP) ||
-      fs.readFileSync(CONFIG_BACKUP, 'utf-8') === fs.readFileSync(CONFIG_DST, 'utf-8');
-    if (shouldBackup) {
+    const dstContent = fs.readFileSync(CONFIG_DST, 'utf-8');
+    if (!fs.existsSync(CONFIG_BACKUP) || dstContent !== configContent) {
       fs.copyFileSync(CONFIG_DST, CONFIG_BACKUP);
       console.log(`[global-setup] Backed up existing ${CONFIG_DST} → ${CONFIG_BACKUP}`);
     } else {
-      console.log(`[global-setup] Preserving existing ${CONFIG_BACKUP} (differs from current ${CONFIG_DST}; likely user config from a prior interrupted run)`);
+      console.log(`[global-setup] Preserving existing ${CONFIG_BACKUP} (DST already contains test config from prior interrupted run)`);
     }
   }
 
@@ -168,8 +171,13 @@ async function globalSetup(): Promise<void> {
     const host = process.env.SEEKI_TEST_DB_HOST ?? '';
     const port = process.env.SEEKI_TEST_DB_PORT ?? '5432';
     const name = process.env.SEEKI_TEST_DB_NAME ?? '';
-    if (!user || !host || !name) {
-      console.warn('[global-setup] Skipping seed: SEEKI_TEST_DB_{USER,HOST,NAME} not all set.');
+    const missing: string[] = [];
+    if (!user) missing.push('SEEKI_TEST_DB_USER');
+    if (!host) missing.push('SEEKI_TEST_DB_HOST');
+    if (!name) missing.push('SEEKI_TEST_DB_NAME');
+    if (!pass) missing.push('SEEKI_TEST_DB_PASSWORD');
+    if (missing.length > 0) {
+      console.warn(`[global-setup] Skipping seed: missing env var(s): ${missing.join(', ')}. Check .env.test.`);
     } else {
       const connectUrl = `postgres://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}/${name}`;
       console.log('[global-setup] Applying seed.sql...');

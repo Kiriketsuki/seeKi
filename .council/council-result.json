@@ -1,93 +1,73 @@
 {
-  "motion": "Merge PR #32 (epic: End-to-End QA) — verify the Playwright E2E suite genuinely validates SeeKi against the real MEC-Miki PostgreSQL database (vehicle_logs and SOC tables)",
+  "motion": "Merge PR #32 after session 3 fixes (commit d72decb). Audit F1 seed auto-apply, F2 filter lower-bound, CD-1 backup safety.",
   "motion_type": "CODE",
-  "timestamp": "2026-04-12T22:15:00Z",
-  "session": 3,
+  "timestamp": "2026-04-12T22:35:00Z",
+  "session": 4,
   "verdict": "CONDITIONAL",
   "confidence": "high",
   "rounds_completed": 3,
   "agents": {
-    "ADVOCATE-1": { "status": "completed", "verdict": "FOR (with concessions)", "rounds_filed": 3 },
-    "CRITIC-1": { "status": "completed", "verdict": "CONDITIONAL", "rounds_filed": 3 },
-    "CRITIC-2": { "status": "completed", "verdict": "CONDITIONAL", "rounds_filed": 3 },
-    "QUESTIONER": { "status": "non_participant", "probes": 0, "note": "No rounds filed; all cited claims evaluated on source evidence directly" },
+    "ADVOCATE-1": { "status": "completed", "rounds_filed": 3 },
+    "CRITIC-1": { "status": "completed", "rounds_filed": 3 },
+    "CRITIC-2": { "status": "completed", "rounds_filed": 2 },
+    "QUESTIONER": { "status": "completed", "probes": "filed mid-debate" },
     "ARBITER": { "status": "completed" }
   },
   "findings": [
     {
-      "id": 1,
-      "type": "bug",
-      "severity": "high",
-      "description": "seed.sql is never applied by global-setup.ts — CI reproducibility gap. Session 2 'ALL PASSING' reflects a manually-prepared DB state that is not reproducible on fresh checkout. On a clean DB, NULL/boolean/numeric formatting tests and two-table navigation would skip silently.",
-      "file": "frontend/e2e/global-setup.ts",
-      "line": 149,
-      "fix_description": "Add a seed.sql execution step after waitForHealthy() using psql with the same env vars used for seeki.toml.test, or invoke via the Rust binary's existing DB pool. See recommendation file for sample implementation.",
-      "verification": "verified",
-      "citations": ["frontend/e2e/global-setup.ts:55-153"],
-      "status": "merge_blocker"
-    },
-    {
-      "id": 2,
+      "id": "S4-1",
       "type": "bug",
       "severity": "medium",
-      "description": "Filter narrowing assertion has no lower bound — zero-match filter result passes silently. `expect(filteredTotal).toBeLessThanOrEqual(initialTotal)` is satisfied by 0, so a structurally broken filter that always returns zero rows passes the test.",
-      "file": "frontend/e2e/data-grid.spec.ts",
-      "line": 131,
-      "fix_description": "Add `expect(filteredTotal).toBeGreaterThan(0)` before the existing upper-bound assertion at L131 to confirm the filter actually matched rows.",
+      "description": "CD-1 regression: the shouldBackup guard compares backup===dst, which fails the orphaned-backup+evolved-config path. If Run #1 teardown crashes then user edits seeki.toml, Run #2 preserves the stale backup and teardown silently overwrites the user's edits.",
+      "file": "frontend/e2e/global-setup.ts",
+      "line": "98-111",
+      "fix_description": "Replace backup-vs-dst comparison with dst-vs-configContent: if DST !== configContent, DST is user config and must be backed up; if DST === configContent, prior run left test config — preserve existing backup. configContent is already in scope at L86.",
       "verification": "verified",
-      "citations": ["frontend/e2e/data-grid.spec.ts:131"],
+      "citations": ["frontend/e2e/global-setup.ts:98-111", "frontend/e2e/global-teardown.ts:43"],
+      "consensus": "unanimous (ADVOCATE-1 conceded)",
       "status": "merge_blocker"
     },
     {
-      "id": 3,
-      "type": "design_scope",
-      "severity": "low",
-      "description": "DB identity is unverified — a reachable wrong DB (developer local convenience DB) produces a green suite identical to MEC-Miki. This is a consequence of the suite being generic by design; not a test logic bug.",
-      "file": "frontend/e2e/global-setup.ts",
-      "line": 94,
-      "fix_description": "PR description amendment only (recharacterize suite as generic behavioral harness). Optional: add assert that `/api/tables` includes expected table names when SEEKI_E2E_ASSERT_MEC_MIKI=1 is set.",
+      "id": "S4-2",
+      "type": "documentation",
+      "severity": "medium",
+      "description": "Justfile test-e2e recipe omits destructive-operation warning. d72decb added TRUNCATE + INSERT on every run; Justfile:33 invocation gives no signal before data destruction. Before d72decb the suite was read-only.",
+      "file": "Justfile",
+      "line": "29-33",
+      "fix_description": "Add comment warning that test-e2e truncates vehicle_logs and soc_readings; recommend SEEKI_SKIP_SEED=1 for non-dedicated DBs.",
       "verification": "verified",
-      "citations": ["frontend/e2e/global-setup.ts:93-95"],
-      "status": "pr_description_amendment"
+      "citations": ["Justfile:29-33", "tests/fixtures/seed.sql:28", "frontend/e2e/global-setup.ts:175"],
+      "consensus": "severity disputed by ADVOCATE-1; arbiter ruled as condition",
+      "status": "merge_blocker"
     }
   ],
-  "critical_discoveries": [
+  "critical_discoveries": [],
+  "non_blocker_followups": [
     {
-      "id": "CD-1",
-      "category": "Data Loss",
-      "description": "Config backup at global-setup.ts:98-103 is corrupted on interrupted retry — Run #1 killed after line 103 leaves test config in seeki.toml; Run #2 then copies that test config over seeki.toml.user-backup, permanently destroying the user's original config.",
-      "file": "frontend/e2e/global-setup.ts",
-      "line": "98-103",
-      "recommended_fix": "Before overwriting CONFIG_BACKUP, only write if backup does not exist OR existing backup is identical to CONFIG_DST (indicating prior test-config state). See recommendation file for sample.",
-      "merge_blocker": false
+      "id": "FU-1",
+      "description": "Credential guard at global-setup.ts:171 omits !pass check — unset SEEKI_TEST_DB_PASSWORD produces generic psql auth error instead of specific 'password not set' message",
+      "severity": "low"
+    },
+    {
+      "id": "FU-2",
+      "description": "Filter upper-bound uses toBeLessThanOrEqual(initialTotal) — with seed data the reduction is strict; toBeLessThan(initialTotal) would give a tighter assertion",
+      "file": "frontend/e2e/data-grid.spec.ts",
+      "line": 133,
+      "severity": "low"
     }
   ],
-  "conditions": [
-    "Condition 1: Apply seed.sql by the harness (global-setup.ts) to make the test state reproducible",
-    "Condition 2: Add `expect(filteredTotal).toBeGreaterThan(0)` lower bound to the filter test at data-grid.spec.ts:131",
-    "PR description amendment: recharacterize suite as a generic behavioral harness that exercises MEC-Miki runtime characteristics (booleans, NULLs, two tables, sortable id) — not a schema-specific regression detector"
+  "resolved_in_session": [
+    "F1 partial-seed risk (Playwright aborts on globalSetup failure — tests never run against empty DB)",
+    "CD-1 inverted-logic framing (scenarios 1-3 correct; only orphaned-backup path regresses)",
+    "O-4 loud failure under SEEKI_SKIP_SEED=1 is correct behavior",
+    "O-2 teardown-without-DB-cleanup is conventional for dedicated test DBs",
+    "O-3 empty-password guard — imprecise diagnostic, not silent failure"
   ],
-  "concessions_summary": {
-    "advocate_conceded": [
-      "seed.sql is not auto-applied — CI reproducibility gap (F1)",
-      "DB identity unverified — reachable wrong DB produces green suite (F3 / Gap 4)",
-      "Config backup corrupted on interrupted retry (CD-1 / Gap 3)",
-      "Filter assertion has no lower bound (F2 / C4)",
-      "NULL/boolean formatting tests are soft coverage contingent on live page-1 data (C3)",
-      "Suite cannot detect MEC-Miki SCHEMA-specific regressions (column renames, type changes, timestamp format)"
-    ],
-    "critics_conceded": [
-      "Empty DB (0 rows / 0 tables) produces hard failures — not silent green",
-      "Unreachable host / bad credentials causes setup abort (30s timeout)",
-      "Sort conditional IS entered for MEC-Miki's id SERIAL column (C5 for MEC-Miki case)",
-      "Filter practical impact: returns positive matches on real MEC-Miki data (C4 practical narrowing)"
-    ]
-  },
   "prior_session_status": {
-    "session_1_findings": "ALL FIXED (6 items in commits dd940dd, 070c245, 2023373)",
-    "session_2_findings": "ALL FIXED (2 items)",
-    "session_3_vs_prior": "No prior findings re-raised — all prior fixes confirmed intact"
+    "session_1": "6 findings, all fixed",
+    "session_2": "2 findings, all fixed",
+    "session_3": "3 findings + 1 Critical Discovery, all applied in d72decb (verified intact; S4-1 is a regression in the CD-1 fix itself, not in other session-3 fixes)"
   },
-  "recommendation_file": "2026-04-12-221500-council-pr32-mec-miki-session3.md",
-  "summary": "Session 3 narrowly scoped to MEC-Miki validation rigor. Council converged on: suite IS a genuine behavioral harness against real MEC-Miki (not a mock-through), but 3 gaps undermine the 'MEC-Miki-specific regression coverage' framing: (F1) seed.sql not auto-applied, (F2) filter missing `>0` lower bound, (F3) DB identity unverified. Plus CD-1 data-loss path in config backup on interrupted retry. Verdict CONDITIONAL — 2 merge blockers + PR description amendment + 1 informational CD."
+  "recommendation_file": "2026-04-12-223500-council-pr32-session4.md",
+  "summary": "Session 4 auditing d72decb surfaced two findings: S4-1 (merge blocker, unanimous) is a regression in the CD-1 fix — the shouldBackup guard fails on the orphaned-backup+evolved-config path, destroying user-edited configs. S4-2 (arbiter-ruled condition) is a documentation gap: Justfile introduces a new destructive operation without warning. Both are addressable in the same PR. Core F1/F2/seed idempotency fixes verified correct. No Critical Discoveries."
 }

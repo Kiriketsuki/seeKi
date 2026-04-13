@@ -128,9 +128,11 @@ test.describe('Data Grid — Filtering', () => {
     expect(statusText).toMatch(/Showing \d+ - \d+ of \d+/);
 
     const filteredTotal = await seeki.getTotalRows();
-    // Lower bound: filter actually matched rows (not a zero-match silent pass)
+    // Lower bound: filter actually matched rows (not a zero-match silent pass).
+    // Upper bound is strict: seed data guarantees '1' does not match every row, so the
+    // filtered set must be a proper subset of the initial set.
     expect(filteredTotal).toBeGreaterThan(0);
-    expect(filteredTotal).toBeLessThanOrEqual(initialTotal);
+    expect(filteredTotal).toBeLessThan(initialTotal);
   });
 
   test('multiple filters AND together', async ({ page, seeki }) => {
