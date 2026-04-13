@@ -1,0 +1,12 @@
+# seeki.toml.test — Test configuration for E2E tests against MEC-Miki PostgreSQL.
+# Credentials are injected from .env.test via env var expansion in global-setup.ts.
+# DO NOT put real credentials in this file — use .env.test (gitignored) instead.
+
+[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://${SEEKI_TEST_DB_USER}:${SEEKI_TEST_DB_PASSWORD}@${SEEKI_TEST_DB_HOST}:${SEEKI_TEST_DB_PORT}/${SEEKI_TEST_DB_NAME}"
+max_connections = 5
