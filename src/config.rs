@@ -544,7 +544,12 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn column_display_name_uses_title_case_heuristic() {
         assert_eq!(
-            display_name_column("public", "my_table", "some_column", &DisplayConfig::default()),
+            display_name_column(
+                "public",
+                "my_table",
+                "some_column",
+                &DisplayConfig::default()
+            ),
             "Some Column"
         );
     }
@@ -552,7 +557,12 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn column_display_name_drops_id_suffix() {
         assert_eq!(
-            display_name_column("public", "vehicles_log", "supervisor_id", &DisplayConfig::default()),
+            display_name_column(
+                "public",
+                "vehicles_log",
+                "supervisor_id",
+                &DisplayConfig::default()
+            ),
             "Supervisor"
         );
     }
@@ -782,10 +792,7 @@ auth_method = "key"
 known_hosts = "strict"
 "#;
         let config = AppConfig::parse(toml).expect("strict policy should parse");
-        assert_eq!(
-            config.ssh.unwrap().known_hosts,
-            KnownHostsPolicy::Strict
-        );
+        assert_eq!(config.ssh.unwrap().known_hosts, KnownHostsPolicy::Strict);
     }
 
     #[test]
