@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Running SeeKi — SeeKi</title>
+    <meta name="description" content="How to run the SeeKi binary: default port 3141, changing the port, running in the foreground, and a systemd service example." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body data-page="operate-running">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Running SeeKi</h1>
+          <p>SeeKi is a single binary. It reads its config, connects to the database, and serves a local web UI. No daemon manager is required to try it — you run it, you open a browser, you close the terminal when you're done.</p>
+
+          <h2>Start it</h2>
+          <p>From the directory that contains your <code>seeki.toml</code>:</p>
+          <pre class="sk-code"><code>./seeki</code></pre>
+          <p>On the first line of output, SeeKi prints the address it is listening on:</p>
+          <pre class="sk-code"><code>INFO seeki: SeeKi listening on http://127.0.0.1:3141</code></pre>
+          <p>Open that URL in a browser. That's it.</p>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Default port</p>
+            <p>SeeKi listens on <code>127.0.0.1:3141</code> by default. The port number is a small nod to π — easy to remember, unlikely to collide with common dev servers.</p>
+          </div>
+
+          <h2>Change the port</h2>
+          <p>Set <code>server.host</code> and <code>server.port</code> in your config file:</p>
+          <pre class="sk-code"><code>[server]
+host = "127.0.0.1"
+port = 8080</code></pre>
+          <p>Restart the binary and it will bind to the new address. If you bind to <code>0.0.0.0</code> the UI becomes reachable from other machines on your network — keep in mind that SeeKi has no authentication layer of its own, so only do that on a trusted network.</p>
+
+          <h2>Foreground vs. background</h2>
+          <p>Two honest options, depending on how long you want it running.</p>
+
+          <h3>Foreground — for a session</h3>
+          <p>Run it in a terminal. Press <span class="sk-kbd">Ctrl</span> + <span class="sk-kbd">C</span> to stop. Logs go to stdout where you can watch them. This is the right choice when you're exploring data for an hour or two.</p>
+
+          <h3>systemd — for a long-lived install</h3>
+          <p>If you want SeeKi to come back up after a reboot, a small user-level systemd unit is usually all you need. Save this as <code>~/.config/systemd/user/seeki.service</code>:</p>
+          <pre class="sk-code"><code>[Unit]
+Description=SeeKi — read-only database browser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/seeki
+ExecStart=%h/seeki/seeki
+Restart=on-failure
+RestartSec=3
+Environment=RUST_LOG=seeki=info
+
+[Install]
+WantedBy=default.target</code></pre>
+          <p>Enable and start it:</p>
+          <pre class="sk-code"><code>systemctl --user daemon-reload
+systemctl --user enable --now seeki
+systemctl --user status seeki</code></pre>
+
+          <div class="sk-callout sk-callout--tip">
+            <p class="sk-callout__title">Tip</p>
+            <p><code>WorkingDirectory</code> matters — SeeKi looks for <code>seeki.toml</code> in the current directory first. Point this at the folder that holds your config.</p>
+          </div>
+
+          <h2>Stopping cleanly</h2>
+          <p>SeeKi is read-only. There is no write queue to flush, no cache to persist, no transaction to roll back. A <span class="sk-kbd">Ctrl</span> + <span class="sk-kbd">C</span> or <code>systemctl --user stop seeki</code> is all it takes. Open connections to the database are closed in the background.</p>
+
+          <h2>Next</h2>
+          <ul>
+            <li><a href="/operate/config-locations.html">Where SeeKi looks for its config</a></li>
+            <li><a href="/operate/logs.html">Reading the logs</a></li>
+            <li><a href="/operate/troubleshooting.html">Troubleshooting common start-up errors</a></li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Config locations — SeeKi</title>
+    <meta name="description" content="Where SeeKi looks for its config file, how the lookup order works, and how to validate that the right file is loaded." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body data-page="operate-config-locations">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <h1>Config locations</h1>
+          <p>SeeKi reads a single TOML file at start-up. It looks in two places, in order, and uses the first one it finds. If neither is present, the binary drops into the first-run setup wizard instead of erroring out.</p>
+
+          <h2>Lookup order</h2>
+          <p>From top to bottom — the first match wins:</p>
+          <table class="sk-table">
+            <thead>
+              <tr><th>Order</th><th>Path</th><th>When to use</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><code>./seeki.toml</code> <small>(current working directory)</small></td>
+                <td>Per-project config. Travels with the folder. Overrides the user-level file.</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><code>~/.config/seeki/config.toml</code> <small>(XDG user config)</small></td>
+                <td>Personal default when you always connect to the same database.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>How to read this diagram</h3>
+          <p>The arrow is the search path the binary walks at start-up. The first file that exists is loaded in full. The second is never consulted.</p>
+          <figure class="sk-diagram" role="img" aria-label="Config lookup flow: start at cwd, then fall back to XDG config dir, then setup wizard">
+            <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+                </marker>
+              </defs>
+              <g font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13">
+                <g>
+                  <rect x="20" y="60" width="190" height="90" rx="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                  <text x="115" y="92" text-anchor="middle" font-weight="600">1. ./seeki.toml</text>
+                  <text x="115" y="114" text-anchor="middle" opacity="0.7">current directory</text>
+                  <text x="115" y="132" text-anchor="middle" opacity="0.7">(wins if present)</text>
+                </g>
+                <line x1="215" y1="105" x2="275" y2="105" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+                <g>
+                  <rect x="280" y="60" width="210" height="90" rx="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                  <text x="385" y="92" text-anchor="middle" font-weight="600">2. ~/.config/seeki/</text>
+                  <text x="385" y="110" text-anchor="middle" font-weight="600">config.toml</text>
+                  <text x="385" y="132" text-anchor="middle" opacity="0.7">user default</text>
+                </g>
+                <line x1="495" y1="105" x2="555" y2="105" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+                <g>
+                  <rect x="560" y="60" width="140" height="90" rx="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4"/>
+                  <text x="630" y="98" text-anchor="middle" font-weight="600">neither → setup</text>
+                  <text x="630" y="118" text-anchor="middle" opacity="0.7">first-run wizard</text>
+                </g>
+              </g>
+            </svg>
+            <figcaption>Config lookup order. <code>./seeki.toml</code> always wins over the user-level file.</figcaption>
+          </figure>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Only one file is read</p>
+            <p>SeeKi does not merge settings across both locations. The first file found is used in full. If you want to adjust one value for a project, copy the user-level file into the project and edit the copy.</p>
+          </div>
+
+          <h2>Validate which file is loaded</h2>
+          <p>SeeKi logs the path it opened on the second line of output:</p>
+          <pre class="sk-code"><code>INFO seeki: Loaded config from seeki.toml
+INFO seeki: SeeKi listening on http://127.0.0.1:3141</code></pre>
+          <p>If the path isn't the one you expected, check for a stray <code>seeki.toml</code> in the working directory — it will shadow the user-level file.</p>
+
+          <h3>Validate the TOML itself</h3>
+          <p>Any TOML parser will flag syntax errors offline. A quick sanity check with Python's standard library:</p>
+          <pre class="sk-code"><code>python3 -c "import tomllib; tomllib.load(open('seeki.toml','rb')); print('ok')"</code></pre>
+          <p>Or let SeeKi do it — start the binary. An invalid file produces a clear error that names the path and the offending line; see <a href="/operate/troubleshooting.html">Troubleshooting</a> for the exact message.</p>
+
+          <h2>Secrets file</h2>
+          <p>Passphrases and passwords never live in <code>seeki.toml</code>. They go in a sibling file named <code>.seeki.secrets</code> in the same working directory. SeeKi loads it automatically if it exists; if it doesn't, SeeKi carries on with no secrets set.</p>
+          <pre class="sk-code"><code>[ssh]
+key_passphrase = "…"
+password = "…"</code></pre>
+
+          <div class="sk-callout sk-callout--tip">
+            <p class="sk-callout__title">Keep it out of version control</p>
+            <p>Add <code>.seeki.secrets</code> to your <code>.gitignore</code>. The file is deliberately named with a leading dot so most <code>ls</code> commands hide it by default.</p>
+          </div>
+
+          <h2>Next</h2>
+          <ul>
+            <li><a href="/get-started/config-reference.html">Full config reference</a> — every field, every default.</li>
+            <li><a href="/operate/logs.html">Reading the logs</a> — verify what got loaded.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>
