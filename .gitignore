@@ -21,3 +21,16 @@ seeki-mvp-spec.md
 seeki-*.png
 
 .impeccable.md
+
+# Main-branch leftovers
+AGENTS.md
+CLAUDE.md
+QA-CHECKLIST.md
+README.md
+LICENSE
+Justfile
+VERSION
+Cargo.toml
+Cargo.lock
+seeki.toml.example
+seeki.toml.test
