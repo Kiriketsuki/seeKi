@@ -12,7 +12,8 @@ use super::{
 /// Result of a connection test — describes a single table visible to the server.
 #[derive(Debug, Serialize)]
 pub struct TablePreview {
-    pub name: String,
+    pub schema: String,
+    pub name: String, // always the bare table name (never "schema.table")
     pub estimated_rows: i64,
     pub is_system: bool,
 }
@@ -76,13 +77,9 @@ pub async fn test_connection(
             let table_name: String = r.get("table_name");
             let is_system =
                 system_schemas.contains(&schema.as_str()) || table_name.starts_with("pg_");
-            let display_name = if schema == "public" {
-                table_name
-            } else {
-                format!("{schema}.{table_name}")
-            };
             TablePreview {
-                name: display_name,
+                schema,
+                name: table_name, // always bare; schema is carried in the dedicated field
                 estimated_rows: r.get("row_estimate"),
                 is_system,
             }
@@ -242,23 +239,26 @@ pub async fn get_columns_bulk(
         return Ok(HashMap::new());
     }
 
-    // Deduplicate schemas and tables, and validate schema names.
-    let mut schemas: Vec<String> = refs.iter().map(|(s, _)| (*s).to_string()).collect();
-    schemas.sort();
-    schemas.dedup();
-    for s in &schemas {
+    // Build paired (schema, table) arrays for the UNNEST filter.
+    // Validate all names for defense-in-depth symmetry before binding.
+    let mut pair_schemas: Vec<String> = Vec::with_capacity(refs.len());
+    let mut pair_tables: Vec<String> = Vec::with_capacity(refs.len());
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for (s, t) in refs {
         if !is_valid_identifier(s) {
             anyhow::bail!("Invalid schema name: {s}");
         }
+        if !is_valid_identifier(t) {
+            anyhow::bail!("Invalid table name: {t}");
+        }
+        let pair = ((*s).to_string(), (*t).to_string());
+        if seen.insert(pair.clone()) {
+            pair_schemas.push(pair.0);
+            pair_tables.push(pair.1);
+        }
     }
-    let mut tables: Vec<String> = refs.iter().map(|(_, t)| (*t).to_string()).collect();
-    tables.sort();
-    tables.dedup();
 
-    let wanted: std::collections::HashSet<(String, String)> = refs
-        .iter()
-        .map(|(s, t)| ((*s).to_string(), (*t).to_string()))
-        .collect();
+    let wanted: std::collections::HashSet<(String, String)> = seen;
 
     let rows = sqlx::query(
         r#"
@@ -277,20 +277,22 @@ pub async fn get_columns_bulk(
             JOIN information_schema.key_column_usage kcu
                 ON tc.constraint_name = kcu.constraint_name
                AND tc.table_schema = kcu.table_schema
-            WHERE tc.table_schema = ANY($1)
-              AND tc.table_name = ANY($2)
+            WHERE (tc.table_schema, tc.table_name) IN (
+                SELECT s, t FROM UNNEST($1::text[], $2::text[]) AS u(s, t)
+            )
               AND tc.constraint_type = 'PRIMARY KEY'
         ) pk
           ON pk.table_schema = c.table_schema
          AND pk.table_name = c.table_name
          AND pk.column_name = c.column_name
-        WHERE c.table_schema = ANY($1)
-          AND c.table_name = ANY($2)
+        WHERE (c.table_schema, c.table_name) IN (
+            SELECT s, t FROM UNNEST($1::text[], $2::text[]) AS u(s, t)
+        )
         ORDER BY c.table_schema, c.table_name, c.ordinal_position
         "#,
     )
-    .bind(&schemas)
-    .bind(&tables)
+    .bind(&pair_schemas)
+    .bind(&pair_tables)
     .fetch_all(pool)
     .await?;
 
@@ -299,7 +301,7 @@ pub async fn get_columns_bulk(
         let schema_name: String = r.get("table_schema");
         let table_name: String = r.get("table_name");
         let key = (schema_name, table_name);
-        // Filter out rows that don't exactly match a requested (schema, table) pair.
+        // Defensive check: only include rows that matched a requested (schema, table) pair.
         if !wanted.contains(&key) {
             continue;
         }
@@ -320,7 +322,7 @@ pub async fn get_columns_bulk(
 
 /// Validate that a name is safe for use as a double-quoted SQL identifier.
 /// Allows alphanumeric, underscore, hyphen, and space — all safe inside `"..."`.
-fn is_valid_identifier(name: &str) -> bool {
+pub(crate) fn is_valid_identifier(name: &str) -> bool {
     !name.is_empty()
         && name
             .chars()

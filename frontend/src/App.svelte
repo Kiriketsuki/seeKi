@@ -178,6 +178,9 @@
       return normalizeColumnVisibility(tableColumns, {});
     }
 
+    // Key format changed in PR #57: tableName is now "schema.table" (e.g. "reporting.orders"),
+    // not the bare table name used before. A future migration would need to read old bare-name
+    // keys and translate them — no migration code here.
     const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${tableName}`;
     const raw = localStorage.getItem(storageKey);
     if (!raw) {

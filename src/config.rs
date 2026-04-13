@@ -166,10 +166,13 @@ fn default_max_connections() -> u32 {
     5
 }
 
-pub fn display_name_table(table: &str, config: &DisplayConfig) -> String {
+pub fn display_name_table(schema: &str, table: &str, config: &DisplayConfig) -> String {
+    // Lookup order: qualified key ("schema.table") → bare name → casualify fallback.
+    let qualified = format!("{schema}.{table}");
     config
         .tables
-        .get(table)
+        .get(&qualified)
+        .or_else(|| config.tables.get(table))
         .cloned()
         .unwrap_or_else(|| casualify(table, false))
 }
@@ -537,7 +540,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn table_display_name_uses_title_case_heuristic() {
         assert_eq!(
-            display_name_table("vehicles_log", &DisplayConfig::default()),
+            display_name_table("public", "vehicles_log", &DisplayConfig::default()),
             "Vehicles Log"
         );
     }
@@ -547,8 +550,35 @@ subtitle = "Fleet Telemetry"
         let config = AppConfig::parse(FULL_CONFIG).expect("full config should parse");
 
         assert_eq!(
-            display_name_table("vehicles_log", &config.display),
+            display_name_table("public", "vehicles_log", &config.display),
             "Fleet Log"
+        );
+    }
+
+    #[test]
+    fn table_display_name_prefers_qualified_key_override() {
+        let mut tables = std::collections::HashMap::new();
+        // Bare key — should be the fallback for any schema.
+        tables.insert("orders".to_string(), "All Orders".to_string());
+        // Qualified key — takes precedence for the reporting schema.
+        tables.insert(
+            "reporting.orders".to_string(),
+            "Reporting Orders".to_string(),
+        );
+        let config = DisplayConfig {
+            tables,
+            columns: std::collections::HashMap::new(),
+        };
+
+        // Qualified key matches.
+        assert_eq!(
+            display_name_table("reporting", "orders", &config),
+            "Reporting Orders"
+        );
+        // Bare key fallback for a different schema.
+        assert_eq!(
+            display_name_table("public", "orders", &config),
+            "All Orders"
         );
     }
 
@@ -584,7 +614,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn casualify_preserves_mixed_caps_segments() {
         assert_eq!(
-            display_name_table("HTTP_STATUS", &DisplayConfig::default()),
+            display_name_table("public", "HTTP_STATUS", &DisplayConfig::default()),
             "HTTP STATUS"
         );
     }
@@ -614,7 +644,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn casualify_handles_numbers_in_name() {
         assert_eq!(
-            display_name_table("vehicle_v2_data", &DisplayConfig::default()),
+            display_name_table("public", "vehicle_v2_data", &DisplayConfig::default()),
             "Vehicle V2 Data"
         );
     }

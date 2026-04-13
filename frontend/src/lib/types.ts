@@ -71,9 +71,8 @@ export interface SshWizardConfig {
 }
 
 export interface TablePreview {
-  // `name` is the bare table name for public schema, or "schema.table" for others —
-  // matches what the backend currently sends in the setup test-connection response.
-  name: string;
+  schema: string;
+  name: string; // always the bare table name (never "schema.table")
   estimated_rows: number;
   is_system: boolean;
 }

@@ -15,17 +15,15 @@
   let activeTab: Tab = $state('user');
   let searchTerm: string = $state('');
 
-  // TablePreview.name is either bare ("orders") for the public schema or
-  // qualified ("reporting.orders") for any other schema — this mirrors what
-  // the backend currently sends. Split on the first dot to recover the pair.
-  function parsePreview(name: string): { schema: string; bare: string } {
-    const idx = name.indexOf('.');
-    if (idx === -1) return { schema: 'public', bare: name };
-    return { schema: name.slice(0, idx), bare: name.slice(idx + 1) };
+  // TablePreview now carries a structured `schema` field alongside bare `name`.
+  // selected_tables stores "schema.table" qualified keys for unambiguous identification.
+  function qualifiedKey(t: TablePreview): string {
+    return `${t.schema}.${t.name}`;
   }
 
-  function schemaOf(tableName: string): string {
-    return parsePreview(tableName).schema;
+  function schemaOfKey(key: string): string {
+    const idx = key.indexOf('.');
+    return idx === -1 ? 'public' : key.slice(0, idx);
   }
 
   let userTables = $derived(wizardData.tables.filter((t) => !t.is_system));
@@ -33,10 +31,10 @@
 
   // Filter to tables whose schema is currently ticked.
   let schemaFilteredUser = $derived(
-    userTables.filter((t) => wizardData.selected_schemas.includes(schemaOf(t.name))),
+    userTables.filter((t) => wizardData.selected_schemas.includes(t.schema)),
   );
   let schemaFilteredSystem = $derived(
-    systemTables.filter((t) => wizardData.selected_schemas.includes(schemaOf(t.name))),
+    systemTables.filter((t) => wizardData.selected_schemas.includes(t.schema)),
   );
 
   let visibleTables = $derived(
@@ -55,7 +53,7 @@
       wizardData.selected_tables.length === 0 &&
       wizardData.selected_schemas.length > 0
     ) {
-      wizardData.selected_tables = schemaFilteredUser.map((t) => t.name);
+      wizardData.selected_tables = schemaFilteredUser.map(qualifiedKey);
     }
   });
 
@@ -63,7 +61,7 @@
   // final payload doesn't carry references to hidden schemas.
   $effect(() => {
     const allowed = new Set(wizardData.selected_schemas);
-    const pruned = wizardData.selected_tables.filter((n) => allowed.has(schemaOf(n)));
+    const pruned = wizardData.selected_tables.filter((n) => allowed.has(schemaOfKey(n)));
     if (pruned.length !== wizardData.selected_tables.length) {
       wizardData.selected_tables = pruned;
     }
@@ -81,22 +79,22 @@
     return `${n} ${n === 1 ? 'table' : 'tables'}`;
   }
 
-  function toggleTable(name: string) {
-    if (wizardData.selected_tables.includes(name)) {
-      wizardData.selected_tables = wizardData.selected_tables.filter((n) => n !== name);
+  function toggleTable(key: string) {
+    if (wizardData.selected_tables.includes(key)) {
+      wizardData.selected_tables = wizardData.selected_tables.filter((n) => n !== key);
     } else {
-      wizardData.selected_tables = [...wizardData.selected_tables, name];
+      wizardData.selected_tables = [...wizardData.selected_tables, key];
     }
   }
 
   function selectAll() {
-    const visible = visibleTables.map((t) => t.name);
+    const visible = visibleTables.map(qualifiedKey);
     const existing = wizardData.selected_tables.filter((n) => !visible.includes(n));
     wizardData.selected_tables = [...existing, ...visible];
   }
 
   function deselectAll() {
-    const visible = new Set(visibleTables.map((t) => t.name));
+    const visible = new Set(visibleTables.map(qualifiedKey));
     wizardData.selected_tables = wizardData.selected_tables.filter((n) => !visible.has(n));
   }
 
@@ -183,13 +181,14 @@
         {/if}
       </div>
     {:else}
-      {#each visibleTables as table (table.name)}
-        {@const checked = wizardData.selected_tables.includes(table.name)}
+      {#each visibleTables as table (qualifiedKey(table))}
+        {@const key = qualifiedKey(table)}
+        {@const checked = wizardData.selected_tables.includes(key)}
         <label class="table-row" class:checked>
           <input
             type="checkbox"
             {checked}
-            onchange={() => toggleTable(table.name)}
+            onchange={() => toggleTable(key)}
             aria-label="Include table {table.name}"
           />
           <span class="table-name">{table.name}</span>
@@ -204,7 +203,11 @@
     <button class="btn-back" onclick={onBack} aria-label="Go back to connection setup">← Back</button>
     <div class="right-actions">
       {#if selectedCount === 0}
-        <span class="hint">Select at least one table</span>
+        <span class="hint">
+          {wizardData.schemas.length > 0 && wizardData.selected_schemas.length === 0
+            ? 'Select at least one schema to continue'
+            : 'Select at least one table'}
+        </span>
       {/if}
       <button
         class="btn-next"

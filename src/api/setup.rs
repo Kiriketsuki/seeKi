@@ -38,7 +38,8 @@ fn default_ssh_port() -> u16 {
 
 #[derive(Serialize)]
 struct TablePreviewDto {
-    name: String,
+    schema: String,
+    name: String, // always the bare table name (never "schema.table")
     estimated_rows: i64,
     is_system: bool,
 }
@@ -180,6 +181,7 @@ pub async fn test_connection(
                     let dtos: Vec<TablePreviewDto> = tables
                         .into_iter()
                         .map(|t| TablePreviewDto {
+                            schema: t.schema,
                             name: t.name,
                             estimated_rows: t.estimated_rows,
                             is_system: t.is_system,
@@ -456,6 +458,11 @@ pub fn build_config_toml(
                 "database.schemas must not be empty — omit the field to default to [\"public\"]"
                     .to_string(),
             );
+        }
+        for s in schemas {
+            if !postgres::is_valid_identifier(s) {
+                return Err(format!("Invalid schema name: {s}"));
+            }
         }
         db_table.insert(
             "schemas".to_string(),
@@ -814,6 +821,28 @@ mod tests {
 
         let err = build_config_toml(&req, &None).expect_err("empty schemas rejected");
         assert!(err.contains("must not be empty"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn build_config_toml_rejects_invalid_schema_name() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3141,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+                schemas: Some(vec!["bad;name".to_string()]),
+            },
+            ssh: None,
+            tables: None,
+            branding: None,
+        };
+
+        let err = build_config_toml(&req, &None).expect_err("invalid schema name rejected");
+        assert!(err.contains("Invalid schema name"), "unexpected: {err}");
     }
 
     #[test]

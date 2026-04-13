@@ -110,7 +110,7 @@ async fn get_display_config(
             })
             .collect();
 
-        let display = display_name_table(&table.name, &state.config.display);
+        let display = display_name_table(&table.schema, &table.name, &state.config.display);
         tables.insert(
             table.qualified(),
             TableDisplayConfig {
@@ -139,7 +139,7 @@ async fn list_tables(
         .into_iter()
         .filter(|t| state.config.tables.allows(&t.schema, &t.name))
         .map(|t| {
-            let display = display_name_table(&t.name, &state.config.display);
+            let display = display_name_table(&t.schema, &t.name, &state.config.display);
             serde_json::json!({
                 "schema": t.schema,
                 "name": t.name,
@@ -280,7 +280,7 @@ async fn export_csv(
         .map(|c| display_name_column(&table, &c.name, &state.config.display))
         .collect();
 
-    let display_table = display_name_table(&table, &state.config.display)
+    let display_table = display_name_table(&schema, &table, &state.config.display)
         .replace(' ', "_")
         .to_lowercase();
     let sanitized: String = display_table
@@ -741,7 +741,7 @@ mod tests {
             columns: HashMap::new(),
         };
 
-        let display = display_name_table("vehicles_log", &config)
+        let display = display_name_table("public", "vehicles_log", &config)
             .replace(' ', "_")
             .to_lowercase();
         assert_eq!(display, "fleet_log");
