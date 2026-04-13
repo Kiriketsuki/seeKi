@@ -46,6 +46,14 @@
       testResult = result;
       if (result.success) {
         wizardData.tables = result.tables ?? [];
+        wizardData.schemas = result.schemas ?? [];
+        // Default schema selection: public if available, else everything.
+        const names = wizardData.schemas.map((s) => s.name);
+        if (names.includes('public')) {
+          wizardData.selected_schemas = ['public'];
+        } else {
+          wizardData.selected_schemas = names;
+        }
         testState = 'success';
       } else {
         const prefix = result.error_source === 'ssh' ? 'SSH: ' : result.error_source === 'db' ? 'Database: ' : '';

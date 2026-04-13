@@ -15,41 +15,86 @@
   let activeTab: Tab = $state('user');
   let searchTerm: string = $state('');
 
+  // TablePreview now carries a structured `schema` field alongside bare `name`.
+  // selected_tables stores "schema.table" qualified keys for unambiguous identification.
+  function qualifiedKey(t: TablePreview): string {
+    return `${t.schema}.${t.name}`;
+  }
+
+  function schemaOfKey(key: string): string {
+    const idx = key.indexOf('.');
+    return idx === -1 ? 'public' : key.slice(0, idx);
+  }
+
   let userTables = $derived(wizardData.tables.filter((t) => !t.is_system));
   let systemTables = $derived(wizardData.tables.filter((t) => t.is_system));
 
+  // Filter to tables whose schema is currently ticked.
+  let schemaFilteredUser = $derived(
+    userTables.filter((t) => wizardData.selected_schemas.includes(t.schema)),
+  );
+  let schemaFilteredSystem = $derived(
+    systemTables.filter((t) => wizardData.selected_schemas.includes(t.schema)),
+  );
+
   let visibleTables = $derived(
-    (activeTab === 'user' ? userTables : systemTables).filter((t) =>
-      t.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    (activeTab === 'user' ? schemaFilteredUser : schemaFilteredSystem).filter((t) =>
+      t.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    ),
   );
 
   let selectedCount = $derived(wizardData.selected_tables.length);
-  let totalSelectable = $derived(userTables.length + systemTables.length);
+  let totalSelectable = $derived(schemaFilteredUser.length + schemaFilteredSystem.length);
 
-  // Pre-select user tables on mount
+  // Pre-select user tables in the ticked schemas on first mount.
   $effect(() => {
-    if (wizardData.tables.length > 0 && wizardData.selected_tables.length === 0) {
-      wizardData.selected_tables = userTables.map((t) => t.name);
+    if (
+      wizardData.tables.length > 0 &&
+      wizardData.selected_tables.length === 0 &&
+      wizardData.selected_schemas.length > 0
+    ) {
+      wizardData.selected_tables = schemaFilteredUser.map(qualifiedKey);
     }
   });
 
-  function toggleTable(name: string) {
-    if (wizardData.selected_tables.includes(name)) {
-      wizardData.selected_tables = wizardData.selected_tables.filter((n) => n !== name);
+  // When a schema is un-ticked, drop its tables from the selection so the
+  // final payload doesn't carry references to hidden schemas.
+  $effect(() => {
+    const allowed = new Set(wizardData.selected_schemas);
+    const pruned = wizardData.selected_tables.filter((n) => allowed.has(schemaOfKey(n)));
+    if (pruned.length !== wizardData.selected_tables.length) {
+      wizardData.selected_tables = pruned;
+    }
+  });
+
+  function toggleSchema(name: string) {
+    if (wizardData.selected_schemas.includes(name)) {
+      wizardData.selected_schemas = wizardData.selected_schemas.filter((n) => n !== name);
     } else {
-      wizardData.selected_tables = [...wizardData.selected_tables, name];
+      wizardData.selected_schemas = [...wizardData.selected_schemas, name];
+    }
+  }
+
+  function formatTableCount(n: number): string {
+    return `${n} ${n === 1 ? 'table' : 'tables'}`;
+  }
+
+  function toggleTable(key: string) {
+    if (wizardData.selected_tables.includes(key)) {
+      wizardData.selected_tables = wizardData.selected_tables.filter((n) => n !== key);
+    } else {
+      wizardData.selected_tables = [...wizardData.selected_tables, key];
     }
   }
 
   function selectAll() {
-    const visible = visibleTables.map((t) => t.name);
+    const visible = visibleTables.map(qualifiedKey);
     const existing = wizardData.selected_tables.filter((n) => !visible.includes(n));
     wizardData.selected_tables = [...existing, ...visible];
   }
 
   function deselectAll() {
-    const visible = new Set(visibleTables.map((t) => t.name));
+    const visible = new Set(visibleTables.map(qualifiedKey));
     wizardData.selected_tables = wizardData.selected_tables.filter((n) => !visible.has(n));
   }
 
@@ -61,6 +106,30 @@
 </script>
 
 <div class="step">
+  {#if wizardData.schemas.length > 0}
+    <div class="schema-picker" role="group" aria-label="Schemas to include">
+      <div class="schema-picker-header">
+        <span class="schema-picker-title">Schemas</span>
+        <span class="schema-picker-hint">Tick the schemas you want to browse</span>
+      </div>
+      <div class="schema-list">
+        {#each wizardData.schemas as schema (schema.name)}
+          {@const checked = wizardData.selected_schemas.includes(schema.name)}
+          <label class="schema-row" class:checked>
+            <input
+              type="checkbox"
+              {checked}
+              onchange={() => toggleSchema(schema.name)}
+              aria-label="Include schema {schema.name}"
+            />
+            <span class="schema-name">{schema.name}</span>
+            <span class="schema-count">{formatTableCount(schema.table_count)}</span>
+          </label>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   <!-- Tabs -->
   <div class="tabs-row">
     <div class="tabs">
@@ -70,7 +139,7 @@
         onclick={() => { activeTab = 'user'; searchTerm = ''; }}
         aria-pressed={activeTab === 'user'}
       >
-        Your tables ({userTables.length})
+        Your tables ({schemaFilteredUser.length})
       </button>
       <button
         class="tab"
@@ -78,7 +147,7 @@
         onclick={() => { activeTab = 'system'; searchTerm = ''; }}
         aria-pressed={activeTab === 'system'}
       >
-        System ({systemTables.length})
+        System ({schemaFilteredSystem.length})
       </button>
     </div>
     <span class="selection-count">{selectedCount} of {totalSelectable} selected</span>
@@ -112,13 +181,14 @@
         {/if}
       </div>
     {:else}
-      {#each visibleTables as table (table.name)}
-        {@const checked = wizardData.selected_tables.includes(table.name)}
+      {#each visibleTables as table (qualifiedKey(table))}
+        {@const key = qualifiedKey(table)}
+        {@const checked = wizardData.selected_tables.includes(key)}
         <label class="table-row" class:checked>
           <input
             type="checkbox"
             {checked}
-            onchange={() => toggleTable(table.name)}
+            onchange={() => toggleTable(key)}
             aria-label="Include table {table.name}"
           />
           <span class="table-name">{table.name}</span>
@@ -133,7 +203,11 @@
     <button class="btn-back" onclick={onBack} aria-label="Go back to connection setup">← Back</button>
     <div class="right-actions">
       {#if selectedCount === 0}
-        <span class="hint">Select at least one table</span>
+        <span class="hint">
+          {wizardData.schemas.length > 0 && wizardData.selected_schemas.length === 0
+            ? 'Select at least one schema to continue'
+            : 'Select at least one table'}
+        </span>
       {/if}
       <button
         class="btn-next"
@@ -149,6 +223,65 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: var(--sk-space-md); }
+
+  .schema-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-space-sm);
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    border: 1px solid var(--sk-border);
+    border-radius: var(--sk-radius-lg);
+    background: rgba(255,255,255,0.5);
+  }
+  .schema-picker-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sk-space-sm);
+  }
+  .schema-picker-title {
+    font-size: var(--sk-font-size-sm);
+    font-weight: 600;
+    color: var(--sk-text);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .schema-picker-hint {
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-muted);
+  }
+  .schema-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sk-space-xs);
+  }
+  .schema-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sk-space-xs);
+    padding: 4px var(--sk-space-sm);
+    border: 1px solid rgba(47,72,88,0.14);
+    border-radius: var(--sk-radius-sm);
+    cursor: pointer;
+    background: transparent;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .schema-row:hover { background: rgba(0,169,165,0.04); }
+  .schema-row.checked { background: rgba(0,169,165,0.08); border-color: rgba(0,169,165,0.4); }
+  .schema-row input[type=checkbox] {
+    width: 13px; height: 13px;
+    accent-color: var(--sk-accent);
+    cursor: pointer;
+  }
+  .schema-name {
+    font-family: var(--sk-font-mono);
+    font-size: var(--sk-font-size-body);
+    color: var(--sk-text);
+  }
+  .schema-count {
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-muted);
+  }
 
   .tabs-row {
     display: flex;

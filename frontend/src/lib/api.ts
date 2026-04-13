@@ -69,12 +69,14 @@ export async function fetchTables(): Promise<TableInfo[]> {
   return data.tables;
 }
 
-export async function fetchColumns(table: string): Promise<ColumnInfo[]> {
-  if (USE_MOCK) return mockFetchColumns(table);
-  const data = await apiFetch<ColumnsResponse>(
-    `/api/tables/${encodeURIComponent(table)}/columns`,
-  );
-  assertShape(data, ['columns'], `/api/tables/${table}/columns`);
+export async function fetchColumns(
+  schema: string,
+  table: string,
+): Promise<ColumnInfo[]> {
+  if (USE_MOCK) return mockFetchColumns(schema, table);
+  const path = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/columns`;
+  const data = await apiFetch<ColumnsResponse>(path);
+  assertShape(data, ['columns'], path);
   return data.columns;
 }
 
@@ -88,10 +90,11 @@ export interface FetchRowsParams {
 }
 
 export async function fetchRows(
+  schema: string,
   table: string,
   params?: FetchRowsParams,
 ): Promise<QueryResult> {
-  if (USE_MOCK) return mockFetchRows(table, params);
+  if (USE_MOCK) return mockFetchRows(schema, table, params);
   const searchParams = new URLSearchParams();
   if (params?.page != null) searchParams.set('page', String(params.page));
   if (params?.page_size != null)
@@ -107,9 +110,10 @@ export async function fetchRows(
     }
   }
   const qs = searchParams.toString();
-  const path = `/api/tables/${encodeURIComponent(table)}/rows${qs ? `?${qs}` : ''}`;
+  const base = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/rows`;
+  const path = `${base}${qs ? `?${qs}` : ''}`;
   const result = await apiFetch<QueryResult>(path);
-  assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], `/api/tables/${table}/rows`);
+  assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], base);
   return result;
 }
 

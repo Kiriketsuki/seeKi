@@ -34,7 +34,9 @@
       password: '',
     },
     tables: [],
+    schemas: [],
     selected_tables: [],
+    selected_schemas: [],
     title: 'SeeKi',
     subtitle: '',
   });
