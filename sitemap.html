@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SeeKi — a quiet database browser</title>
-    <meta name="description" content="SeeKi is a read-only database browser for people who shouldn't need to learn SQL. Point it at a table, read the row, trust the value." />
+    <title>Sitemap — SeeKi</title>
+    <meta name="description" content="Every page in the SeeKi documentation, grouped by section." />
     <link rel="icon" type="image/svg+xml" href="/assets/img/seeki-mark.svg" />
     <link rel="stylesheet" href="/assets/css/site.css" />
     <script>
@@ -20,7 +20,7 @@
       })();
     </script>
   </head>
-  <body data-page="home">
+  <body data-page="sitemap">
     <div class="sk-shell">
       <header class="sk-topbar sk-glass" role="banner">
         <a class="sk-topbar__brand" href="/" aria-label="SeeKi — home">
@@ -97,67 +97,85 @@
           <section class="sk-sidebar__section">
             <h2 class="sk-sidebar__heading">Reference</h2>
             <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/sitemap.html" aria-current="page">Sitemap</a></li>
             </ul>
           </section>
         </nav>
       </aside>
 
       <main class="sk-main" role="main">
-        <section class="sk-hero">
-          <p class="sk-hero__kicker">A quieter way to read the database.</p>
-          <h1 class="sk-hero__title">Point at a table. Read the row. Trust the value.</h1>
-          <p class="sk-hero__lede">
-            SeeKi is a read-only browser for the databases your team already runs. It opens as a spreadsheet,
-            not a query editor — no SQL, no joins, no schema tree. The data is the hero; the chrome gets out of the way.
-          </p>
-          <div class="sk-hero__cta">
-            <a class="sk-cta sk-cta--primary" href="/get-started/quickstart.html">Get started in five minutes</a>
-            <a class="sk-cta sk-cta--secondary" href="/develop/architecture.html">How it works</a>
-            <a class="sk-cta sk-cta--secondary" href="/api/">API reference</a>
+        <article class="sk-prose">
+          <header class="sk-page-header">
+            <p class="sk-page-header__kicker">Reference</p>
+            <h1 class="sk-page-header__title">Sitemap</h1>
+            <p class="sk-page-header__lede">Every page in the documentation, grouped by section.</p>
+          </header>
+
+          <div class="sk-sitemap">
+            <section class="sk-sitemap__section">
+              <h2>Get Started</h2>
+              <ul>
+                <li><a href="/get-started/install.html">Install</a> — pick a release, verify the checksum, make it runnable.</li>
+                <li><a href="/get-started/quickstart.html">Quickstart</a> — from zero to the first row.</li>
+                <li><a href="/get-started/connections.html">Connections</a> — what SeeKi can read today.</li>
+                <li><a href="/get-started/config-reference.html">Config reference</a> — every key in <code>seeki.toml</code>.</li>
+                <li><a href="/get-started/ssh-tunneling.html">SSH tunneling</a> — reach databases behind a bastion.</li>
+              </ul>
+            </section>
+
+            <section class="sk-sitemap__section">
+              <h2>Features</h2>
+              <ul>
+                <li><a href="/features/setup-wizard.html">Setup wizard</a> — the first-run onboarding flow.</li>
+                <li><a href="/features/data-grid.html">Data grid</a> — the spreadsheet at the heart of SeeKi.</li>
+                <li><a href="/features/column-dropdown.html">Column menu</a> — sort, hide, and export from the header.</li>
+                <li><a href="/features/yes-no-badges.html">Yes/No badges</a> — boolean rendering that reads at a glance.</li>
+                <li><a href="/features/null-rendering.html">NULL rendering</a> — the hatched cell, and why.</li>
+                <li><a href="/features/branding.html">Branding</a> — wordmark, colours, and the look of the product.</li>
+              </ul>
+            </section>
+
+            <section class="sk-sitemap__section">
+              <h2>Operate</h2>
+              <ul>
+                <li><a href="/operate/running.html">Running SeeKi</a> — flags, ports, and the runtime shape.</li>
+                <li><a href="/operate/config-locations.html">Config locations</a> — where SeeKi looks for <code>seeki.toml</code>.</li>
+                <li><a href="/operate/logs.html">Logs</a> — log levels and where output goes.</li>
+                <li><a href="/operate/troubleshooting.html">Troubleshooting</a> — common errors, in plain language.</li>
+              </ul>
+            </section>
+
+            <section class="sk-sitemap__section">
+              <h2>Develop</h2>
+              <ul>
+                <li><a href="/develop/architecture.html">Architecture</a> — the data path from HTTP to engine.</li>
+                <li><a href="/develop/frontend-map.html">Frontend map</a> — every Svelte component and what it owns.</li>
+                <li><a href="/develop/adding-a-db-engine.html">Adding a database engine</a> — the step-by-step template.</li>
+                <li><a href="/develop/build-release.html">Build &amp; release</a> — how the single binary is produced.</li>
+              </ul>
+            </section>
+
+            <section class="sk-sitemap__section">
+              <h2>API</h2>
+              <ul>
+                <li><a href="/api/">Overview</a> — base URL, response envelope, error shape.</li>
+                <li><a href="/api/tables.html">Tables</a> — <code>GET /api/tables</code>.</li>
+                <li><a href="/api/columns.html">Columns</a> — <code>GET /api/columns</code>.</li>
+                <li><a href="/api/rows.html">Rows</a> — <code>GET /api/rows</code> with sort, search, and pagination.</li>
+              </ul>
+            </section>
+
+            <section class="sk-sitemap__section">
+              <h2>Project</h2>
+              <ul>
+                <li><a href="/project/changelog.html">Changelog</a> — what shipped, and when.</li>
+                <li><a href="/project/roadmap.html">Roadmap</a> — what ships next.</li>
+                <li><a href="/project/contributing.html">Contributing</a> — dev setup and PR workflow.</li>
+                <li><a href="/project/security.html">Security</a> — how we keep a read-only product read-only.</li>
+              </ul>
+            </section>
           </div>
-        </section>
-
-        <section class="sk-feature-grid" aria-label="What SeeKi is">
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">A spreadsheet, not a console</h3>
-            <p class="sk-feature__body">
-              Tables in the sidebar, rows in the grid, sort and search at the top. Anyone who has opened a spreadsheet
-              already knows how to use it.
-            </p>
-          </article>
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">Read-only, by design</h3>
-            <p class="sk-feature__body">
-              SeeKi never offers to save, edit, or delete. Connect it to production without a second thought — the
-              surface area for accidents is zero.
-            </p>
-          </article>
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">Single binary, local only</h3>
-            <p class="sk-feature__body">
-              One executable runs the backend and serves the embedded frontend on <code>localhost</code>. No cloud,
-              no telemetry, no account.
-            </p>
-          </article>
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">Honest about what it shows</h3>
-            <p class="sk-feature__body">
-              NULL renders as a hatched cell, not an empty one. Booleans render as Yes/No with a label and a shape,
-              not just a colour. What you see is what the database holds.
-            </p>
-          </article>
-        </section>
-
-        <section class="sk-next" aria-label="Next steps">
-          <h2 class="sk-section__title">Where to next</h2>
-          <ul class="sk-next__list">
-            <li><a href="/get-started/quickstart.html"><strong>Quickstart</strong> — from zero to the first row, in one page.</a></li>
-            <li><a href="/get-started/connections.html"><strong>Connections</strong> — PostgreSQL today, SQLite next.</a></li>
-            <li><a href="/features/data-grid.html"><strong>The data grid</strong> — how sorting, search, and column controls behave.</a></li>
-            <li><a href="/project/security.html"><strong>Security</strong> — how we keep a read-only product read-only.</a></li>
-          </ul>
-        </section>
+        </article>
       </main>
 
       <footer class="sk-footer" role="contentinfo">
