@@ -10,6 +10,12 @@ import type {
   TestConnectionResult,
   SetupSaveRequest,
   SetupSaveResponse,
+  VersionInfo,
+  UpdateStatus,
+  CheckResult,
+  WipUploadResult,
+  ApplyResult,
+  RollbackResult,
 } from './types';
 import {
   mockFetchTables,
@@ -211,4 +217,121 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
     throw new Error(message);
   }
   return res.json();
+}
+
+// ── Update Patcher API ──────────────────────────────────────────────────
+
+export async function fetchVersion(): Promise<VersionInfo> {
+  return apiFetch<VersionInfo>('/api/version');
+}
+
+export async function fetchUpdateStatus(): Promise<UpdateStatus> {
+  return apiFetch<UpdateStatus>('/api/update/status');
+}
+
+export async function checkForUpdate(): Promise<CheckResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/update/check', {
+      method: 'POST',
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Update check timed out.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Update check failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function applyUpdate(source: 'release' | 'wip', wipUploadId?: string): Promise<ApplyResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/update/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, wip_upload_id: wipUploadId }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Apply timed out — the server may be restarting.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Apply failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function uploadWipBinary(file: File): Promise<WipUploadResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    res = await fetch('/api/update/wip', {
+      method: 'POST',
+      body: arrayBuffer,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Upload timed out.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Upload failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function rollbackUpdate(): Promise<RollbackResult> {
+  const res = await fetch('/api/update/rollback', { method: 'POST' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Rollback failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function updateSettings(preReleaseChannel: boolean): Promise<void> {
+  const res = await fetch('/api/update/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pre_release_channel: preReleaseChannel }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Settings update failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
 }

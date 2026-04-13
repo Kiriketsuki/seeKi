@@ -5,10 +5,13 @@ mod config;
 mod db;
 mod embed;
 mod ssh;
+mod update;
 #[cfg(test)]
 mod testutil;
 
-use axum::Router;
+use std::sync::Arc;
+
+use axum::{Extension, Router};
 use axum::http::Method;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
@@ -61,8 +64,23 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let update_state = Arc::new(update::UpdateState::new());
+
+    // Spawn a non-blocking background check for updates
+    {
+        let update_bg = Arc::clone(&update_state);
+        tokio::spawn(async move {
+            let pre = {
+                let s = update_bg.settings.lock().await;
+                s.pre_release_channel
+            };
+            let _ = crate::update::github::check_latest(&update_bg.cache, pre, false).await;
+        });
+    }
+
     let app = Router::new()
         .nest("/api", api::router(mode.clone()))
+        .layer(Extension(update_state))
         .layer(localhost_cors())
         .fallback(embed::handler);
 
@@ -86,6 +104,6 @@ fn localhost_cors() -> CorsLayer {
                 false
             }
         }))
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH])
         .allow_headers([axum::http::header::CONTENT_TYPE])
 }
