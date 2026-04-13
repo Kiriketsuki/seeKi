@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Column menu — SeeKi</title>
+    <meta name="description" content="Every column header hides a quiet menu: sort, filter, hide, pin — the per-column controls that keep the toolbar uncluttered." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () { try { var t = localStorage.getItem('sk-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (_) {} })();
+    </script>
+    <style>
+      .sk-demo { position: relative; margin: var(--sk-space-5) 0; padding: 0; background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-lg); overflow: hidden; }
+      .sk-demo__caption { padding: var(--sk-space-3) var(--sk-space-4); font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); border-top: 1px solid var(--sk-border); background: var(--sk-bg); }
+      .cd-wrap { padding: var(--sk-space-6) var(--sk-space-5); position: relative; }
+      table.cd-table { width: 100%; border-collapse: collapse; font-size: var(--sk-fs-sm); font-family: var(--sk-font-mono); }
+      .cd-table thead th {
+        text-align: left; padding: 0.5rem 0.75rem;
+        background: var(--sk-surface-raised);
+        border-bottom: 1px solid var(--sk-border-strong);
+        font-family: var(--sk-font-ui); font-size: var(--sk-fs-xs);
+        text-transform: uppercase; letter-spacing: 0.05em; color: var(--sk-ink);
+        position: relative;
+      }
+      .cd-caret {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.1rem; height: 1.1rem; margin-left: 0.4rem;
+        border-radius: 3px; color: var(--sk-ink-subtle);
+      }
+      .cd-caret.open { background: var(--sk-accent-soft); color: var(--sk-accent-ink); }
+      .cd-table tbody td {
+        padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--sk-border);
+      }
+      .cd-menu {
+        position: absolute;
+        min-width: 18rem;
+        background: var(--sk-surface-raised);
+        border: 1px solid var(--sk-border-strong);
+        border-radius: var(--sk-radius);
+        box-shadow: 0 16px 40px -18px oklch(30% 0.040 240 / 0.35);
+        padding: 0.35rem;
+        z-index: 5;
+      }
+      .cd-menu__section { padding: 0.35rem; }
+      .cd-menu__section + .cd-menu__section { border-top: 1px solid var(--sk-border); }
+      .cd-menu__label {
+        font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
+        color: var(--sk-ink-subtle); padding: 0.25rem 0.5rem; font-weight: 600;
+      }
+      .cd-item {
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.4rem 0.55rem; border-radius: var(--sk-radius-sm);
+        font-size: var(--sk-fs-sm); color: var(--sk-ink); cursor: pointer;
+      }
+      .cd-item:hover { background: var(--sk-surface); }
+      .cd-item.selected { background: var(--sk-accent-soft); color: var(--sk-accent-ink); }
+      .cd-item .icon { width: 1.1rem; text-align: center; color: var(--sk-ink-subtle); font-family: var(--sk-font-mono); }
+      .cd-item.selected .icon { color: var(--sk-accent-ink); }
+      .cd-filter-input {
+        width: 100%; font: inherit; font-size: var(--sk-fs-sm);
+        padding: 0.4rem 0.6rem;
+        background: var(--sk-bg); border: 1px solid var(--sk-border-strong);
+        border-radius: var(--sk-radius-sm); color: var(--sk-ink);
+      }
+      .cd-hint { font-size: var(--sk-fs-xs); color: var(--sk-ink-subtle); padding: 0.3rem 0.55rem; }
+      .spec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--sk-space-4); margin: var(--sk-space-4) 0; }
+      .spec-card {
+        padding: var(--sk-space-4); background: var(--sk-surface-raised);
+        border: 1px solid var(--sk-border); border-radius: var(--sk-radius);
+      }
+      .spec-card h4 { margin: 0 0 var(--sk-space-2); font-size: var(--sk-fs-md); }
+      .spec-card p { margin: 0; color: var(--sk-ink-muted); font-size: var(--sk-fs-sm); }
+    </style>
+  </head>
+  <body data-page="features/column-dropdown">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <nav class="sk-breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a><span class="sk-breadcrumb__sep">/</span>
+            <a href="/sitemap.html#features">Features</a><span class="sk-breadcrumb__sep">/</span>
+            <span>Column menu</span>
+          </nav>
+
+          <h1>Column menu</h1>
+          <p>
+            Every column has a menu. It lives in the header and stays invisible until you want it — click the caret (or press <span class="sk-kbd">Alt</span> + <span class="sk-kbd">↓</span> with focus on the header). The menu is the per-column counterpart to the global toolbar: sort this column, filter this column, hide this column.
+          </p>
+
+          <h2>Opening the menu</h2>
+          <div class="sk-demo">
+            <div class="cd-wrap">
+              <table class="cd-table" aria-hidden="true">
+                <thead>
+                  <tr>
+                    <th>id <span class="cd-caret">▾</span></th>
+                    <th>vehicle <span class="cd-caret open">▾</span></th>
+                    <th>started_at <span class="cd-caret">▾</span></th>
+                    <th>autonomous <span class="cd-caret">▾</span></th>
+                    <th>notes <span class="cd-caret">▾</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>4821</td><td>alpha-07</td><td>2026-04-12 09:14</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td>no incidents</td></tr>
+                  <tr><td>4820</td><td>alpha-03</td><td>2026-04-12 08:51</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--null">NULL</span></td></tr>
+                  <tr><td>4819</td><td>alpha-12</td><td>2026-04-12 08:02</td><td><span class="sk-badge sk-badge--no">No</span></td><td>manual override</td></tr>
+                </tbody>
+              </table>
+              <div class="cd-menu" style="top: 3.2rem; left: 8rem;" role="menu" aria-label="Column: vehicle">
+                <div class="cd-menu__section">
+                  <div class="cd-menu__label">Sort</div>
+                  <div class="cd-item selected"><span class="icon">↑</span>Sort ascending (A → Z)</div>
+                  <div class="cd-item"><span class="icon">↓</span>Sort descending (Z → A)</div>
+                  <div class="cd-item"><span class="icon">×</span>Clear sort</div>
+                </div>
+                <div class="cd-menu__section">
+                  <div class="cd-menu__label">Filter</div>
+                  <input class="cd-filter-input" value="alpha-07" aria-label="Filter vehicle" />
+                  <div class="cd-hint">Matches 38 rows.</div>
+                </div>
+                <div class="cd-menu__section">
+                  <div class="cd-menu__label">Column</div>
+                  <div class="cd-item"><span class="icon">◧</span>Pin to left</div>
+                  <div class="cd-item"><span class="icon">⊘</span>Hide column</div>
+                </div>
+              </div>
+            </div>
+            <p class="sk-demo__caption">The menu anchors under the header with a subtle shadow — solid surface, no blur, so the options stay legible even over the grid.</p>
+          </div>
+
+          <h2>What each section does</h2>
+          <div class="spec-grid">
+            <div class="spec-card">
+              <h4>Sort</h4>
+              <p>Ascending, descending, or clear. The selected item gets the accent background. Sort also happens on header click — this section is the accessible alternative for keyboard users.</p>
+            </div>
+            <div class="spec-card">
+              <h4>Filter</h4>
+              <p>A single input. Whatever you type narrows this column to matching rows. The hint line shows how many rows match — useful for sanity-checking specificity.</p>
+            </div>
+            <div class="spec-card">
+              <h4>Pin to left</h4>
+              <p>Freezes the column so it stays visible when you scroll horizontally. Pin an id column, scroll all the way right, still know which row you&rsquo;re on.</p>
+            </div>
+            <div class="spec-card">
+              <h4>Hide column</h4>
+              <p>Removes the column from the view. It&rsquo;s not destructive — the data is still in the database and can be re-shown from the toolbar&rsquo;s &ldquo;Columns&rdquo; chooser.</p>
+            </div>
+          </div>
+
+          <h2>Per-type filter hints</h2>
+          <p>
+            The filter input adapts to the column type declared by the backend. The control is the same text box — the placeholder and the hint line change:
+          </p>
+          <table class="sk-table">
+            <thead><tr><th>Column type</th><th>Placeholder</th><th>Examples</th></tr></thead>
+            <tbody>
+              <tr><td>text</td><td><code>contains…</code></td><td><code>alpha-</code>, <code>manual override</code></td></tr>
+              <tr><td>integer / numeric</td><td><code>= value or &gt; 10</code></td><td><code>42</code>, <code>&gt; 1000</code>, <code>&lt;= 50</code></td></tr>
+              <tr><td>boolean</td><td><code>yes / no</code></td><td><code>yes</code>, <code>no</code></td></tr>
+              <tr><td>timestamp</td><td><code>2026-04-12</code></td><td><code>2026-04</code>, <code>&gt;= 2026-04-01</code></td></tr>
+              <tr><td>uuid</td><td><code>prefix…</code></td><td><code>7a3f</code></td></tr>
+            </tbody>
+          </table>
+
+          <h2>Keyboard</h2>
+          <ul>
+            <li><span class="sk-kbd">Alt</span> + <span class="sk-kbd">↓</span> — open the menu on the focused header</li>
+            <li><span class="sk-kbd">↑</span> / <span class="sk-kbd">↓</span> — move between items</li>
+            <li><span class="sk-kbd">Enter</span> — activate the highlighted item</li>
+            <li><span class="sk-kbd">Esc</span> — close the menu, return focus to the header</li>
+          </ul>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">No schema tree here</p>
+            <p>The menu is the only per-column surface. There is no separate &ldquo;edit column&rdquo; modal, no schema panel, no type editor. SeeKi is read-only; column metadata is a property of the database, not the product.</p>
+          </div>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/features/data-grid.html">Data grid</a> — the global toolbar&rsquo;s search and the filter row.</li>
+            <li><a href="/features/yes-no-badges.html">Yes/No badges</a> — how boolean filters match <code>yes</code> / <code>no</code>.</li>
+            <li><a href="/features/null-rendering.html">NULL rendering</a> — how to filter for empty cells (<code>is null</code>).</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

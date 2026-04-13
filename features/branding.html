@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Branding — SeeKi</title>
+    <meta name="description" content="SeeKi accepts two strings — title and subtitle — and renders them in the only place it should: the wordmark. Everything else stays neutral so the data stays the hero." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () { try { var t = localStorage.getItem('sk-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (_) {} })();
+    </script>
+    <style>
+      .sk-demo { margin: var(--sk-space-5) 0; padding: 0; background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-lg); overflow: hidden; }
+      .sk-demo__caption { padding: var(--sk-space-3) var(--sk-space-4); font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); border-top: 1px solid var(--sk-border); background: var(--sk-bg); }
+      .brand-bar {
+        display: flex; align-items: center; gap: 0.9rem;
+        padding: 0.75rem 1rem;
+        background: var(--sk-chrome); backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--sk-border);
+      }
+      .brand-mark {
+        width: 1.6rem; height: 1.6rem; border-radius: 6px;
+        background: linear-gradient(135deg, var(--sk-accent), oklch(from var(--sk-accent) calc(l - 0.1) c h));
+        display: grid; place-items: center;
+        font-family: var(--sk-font-mono); font-weight: 700; color: oklch(20% 0.060 55);
+      }
+      .brand-word {
+        font-size: 1.15rem; font-weight: 600; letter-spacing: -0.01em; color: var(--sk-ink);
+      }
+      .brand-sub {
+        font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); padding-left: 0.75rem;
+        border-left: 1px solid var(--sk-border-strong); margin-left: 0.25rem;
+      }
+      .brand-body { padding: var(--sk-space-5); background: var(--sk-bg); }
+      .brand-body p { margin: 0; color: var(--sk-ink-muted); font-size: var(--sk-fs-sm); }
+      .compare {
+        display: grid; grid-template-columns: 1fr 1fr; gap: var(--sk-space-4);
+        margin: var(--sk-space-4) 0;
+      }
+      .compare > div {
+        background: var(--sk-surface-raised);
+        border: 1px solid var(--sk-border);
+        border-radius: var(--sk-radius);
+        overflow: hidden;
+      }
+      .compare h4 {
+        margin: 0; padding: 0.5rem 0.75rem;
+        background: var(--sk-surface); border-bottom: 1px solid var(--sk-border);
+        font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--sk-ink-subtle);
+      }
+      @media (max-width: 700px) { .compare { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body data-page="features/branding">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <nav class="sk-breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a><span class="sk-breadcrumb__sep">/</span>
+            <a href="/sitemap.html#features">Features</a><span class="sk-breadcrumb__sep">/</span>
+            <span>Branding</span>
+          </nav>
+
+          <h1>Branding</h1>
+          <p>
+            SeeKi has an opinion about branding: it should be quiet. The operator opens the app to look at data, not to admire a logo. So the product gives you exactly two knobs — a <strong>title</strong> and a <strong>subtitle</strong> — and puts them in exactly one place: the wordmark in the topbar.
+          </p>
+
+          <h2>The two fields</h2>
+          <p>
+            The setup wizard collects these on <a href="/features/setup-wizard.html#step-3">step 3</a>. They live in <code>seeki.toml</code> under <code>[branding]</code> and are loaded once at launch:
+          </p>
+          <pre class="sk-code"><code>[branding]
+title    = "Fleet Ops"
+subtitle = "My Database"</code></pre>
+
+          <h2>Where they render</h2>
+          <div class="sk-demo">
+            <div class="brand-bar" aria-hidden="true">
+              <span class="brand-mark">F</span>
+              <span class="brand-word">Fleet Ops</span>
+              <span class="brand-sub">My Database</span>
+              <span style="margin-left:auto; font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle);">journeys · 58,403 rows</span>
+            </div>
+            <div class="brand-body">
+              <p>Grid below. The topbar is the <em>only</em> surface that says the customer&rsquo;s name — the sidebar, toolbar, and grid stay neutral.</p>
+            </div>
+            <p class="sk-demo__caption">Title becomes the word, subtitle becomes the thin right-hand label. The brand mark is auto-derived from the title&rsquo;s first letter.</p>
+          </div>
+
+          <h2>What it does <em>not</em> change</h2>
+          <p>
+            Branding intentionally does not touch the colour palette, the fonts, the grid chrome, the status bar, or any semantic colours. Yes/No badges stay green and red; NULL cells stay hatched. This is deliberate — operators trust the visual language to stay constant across deployments.
+          </p>
+          <div class="compare">
+            <div>
+              <h4>title = "Fleet Ops"</h4>
+              <div class="brand-bar">
+                <span class="brand-mark">F</span>
+                <span class="brand-word">Fleet Ops</span>
+                <span class="brand-sub">Example Corp</span>
+              </div>
+            </div>
+            <div>
+              <h4>title = "Orders DB"</h4>
+              <div class="brand-bar">
+                <span class="brand-mark">O</span>
+                <span class="brand-word">Orders DB</span>
+                <span class="brand-sub">finance ops</span>
+              </div>
+            </div>
+          </div>
+
+          <h2>Defaults</h2>
+          <p>
+            If no <code>[branding]</code> block is supplied, the title falls back to <code>SeeKi</code> and the subtitle is omitted. If the wizard is used, its defaults are:
+          </p>
+          <table class="sk-table">
+            <thead><tr><th>Field</th><th>Default</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>title</code></td><td><code>SeeKi</code></td><td>Rendered as <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span> with the accent on the second syllable when the title is the literal string <code>SeeKi</code>. Any other string renders plain.</td></tr>
+              <tr><td><code>subtitle</code></td><td>empty</td><td>If empty, the divider and subtitle label are suppressed entirely — the wordmark sits alone.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Changing it later</h2>
+          <p>
+            Edit the <code>[branding]</code> block in <code>seeki.toml</code> and reload the browser tab. No restart needed; the topbar re-reads on next API handshake. See <a href="/operate/config-locations.html">Config locations</a> for where <code>seeki.toml</code> lives on each platform.
+          </p>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Why no custom colours?</p>
+            <p>Semantic colour (accent for state, green for yes, red for no, hatched for null) carries meaning across every SeeKi instance. Re-tinting those per customer would make a shared visual vocabulary impossible. The wordmark is the right place for personality; the grid is the wrong place.</p>
+          </div>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/features/setup-wizard.html">Setup wizard</a> — the form that collects these fields.</li>
+            <li><a href="/get-started/config-reference.html">Config reference</a> — full <code>seeki.toml</code> schema.</li>
+            <li><a href="/operate/config-locations.html">Config locations</a> — where the file lives per OS.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

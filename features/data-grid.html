@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data grid — SeeKi</title>
+    <meta name="description" content="The data grid is the hero of SeeKi: sort by clicking a header, search the whole table, filter a column, page through rows, and keyboard-navigate — all without SQL." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () { try { var t = localStorage.getItem('sk-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (_) {} })();
+    </script>
+    <style>
+      .sk-demo { margin: var(--sk-space-5) 0; padding: 0; background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-lg); overflow: hidden; }
+      .sk-demo__caption { padding: var(--sk-space-3) var(--sk-space-4); font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); border-top: 1px solid var(--sk-border); background: var(--sk-bg); }
+      /* Mock SeeKi shell inside demo */
+      .dg-toolbar {
+        display: flex; align-items: center; gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--sk-chrome); backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--sk-border);
+      }
+      .dg-search {
+        flex: 1; max-width: 22rem;
+        font: inherit; font-size: var(--sk-fs-sm);
+        padding: 0.35rem 0.6rem 0.35rem 1.7rem;
+        border: 1px solid var(--sk-border-strong); border-radius: var(--sk-radius-sm);
+        background: var(--sk-bg) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") no-repeat 0.45rem center / 0.9rem 0.9rem;
+        color: var(--sk-ink);
+      }
+      .dg-pill {
+        font-family: var(--sk-font-mono); font-size: var(--sk-fs-xs);
+        padding: 0.25rem 0.55rem; border-radius: 999px;
+        background: var(--sk-surface); border: 1px solid var(--sk-border);
+        color: var(--sk-ink-muted);
+      }
+      .dg-pill--live { background: var(--sk-accent-soft); color: var(--sk-accent-ink); border-color: oklch(from var(--sk-accent) l c h / 0.35); }
+      .dg-pill--live::before { content: "●"; margin-right: 0.3rem; color: var(--sk-accent); }
+      .dg-grid { display: grid; grid-template-columns: 200px 1fr; min-height: 20rem; }
+      .dg-side {
+        background: var(--sk-chrome); border-right: 1px solid var(--sk-border);
+        padding: 0.5rem; font-size: var(--sk-fs-sm);
+      }
+      .dg-side h4 { font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--sk-ink-subtle); margin: 0.5rem 0.35rem; font-weight: 600; }
+      .dg-side a {
+        display: block; padding: 0.3rem 0.55rem; margin: 0.1rem 0;
+        border-radius: var(--sk-radius-sm); color: var(--sk-ink-muted);
+        text-decoration: none; font-family: var(--sk-font-mono);
+      }
+      .dg-side a.active { background: var(--sk-accent-soft); color: var(--sk-accent-ink); font-weight: 600; }
+      .dg-main { display: flex; flex-direction: column; min-width: 0; }
+      .dg-table-wrap { flex: 1; overflow: auto; }
+      table.dg-table { width: 100%; border-collapse: collapse; font-size: var(--sk-fs-sm); font-family: var(--sk-font-mono); }
+      .dg-table thead th {
+        position: sticky; top: 0;
+        text-align: left; font-weight: 600; color: var(--sk-ink);
+        padding: 0.45rem 0.7rem;
+        background: var(--sk-surface-raised); border-bottom: 1px solid var(--sk-border-strong);
+        font-family: var(--sk-font-ui); font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.05em;
+        cursor: pointer; user-select: none;
+      }
+      .dg-table thead th .sort { color: var(--sk-ink-subtle); margin-left: 0.3rem; font-weight: 400; }
+      .dg-table thead th.sorted .sort { color: var(--sk-accent); }
+      .dg-table tbody td {
+        padding: 0.4rem 0.7rem; border-bottom: 1px solid var(--sk-border);
+        color: var(--sk-ink); white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .dg-table tbody tr:nth-child(even) td { background: oklch(from var(--sk-surface) calc(l - 0.005) c h); }
+      .dg-table tbody tr:hover td { background: var(--sk-accent-soft); }
+      .dg-table tbody tr.focused td {
+        background: var(--sk-accent-soft);
+        box-shadow: inset 2px 0 0 var(--sk-accent);
+      }
+      td.nullcell {
+        background: var(--sk-hatch), var(--sk-surface) !important;
+        color: var(--sk-ink-subtle); font-style: italic;
+      }
+      .dg-status {
+        display: flex; gap: 1rem; align-items: center;
+        padding: 0.4rem 0.75rem;
+        background: var(--sk-chrome); border-top: 1px solid var(--sk-border);
+        font-size: var(--sk-fs-xs); color: var(--sk-ink-subtle); font-family: var(--sk-font-mono);
+      }
+      .dg-pager { margin-left: auto; display: flex; gap: 0.35rem; }
+      .dg-pager button {
+        font: inherit; font-size: var(--sk-fs-xs); font-family: var(--sk-font-mono);
+        padding: 0.2rem 0.55rem; border-radius: var(--sk-radius-sm);
+        border: 1px solid var(--sk-border); background: var(--sk-bg); color: var(--sk-ink);
+        cursor: pointer;
+      }
+      .dg-pager button[aria-current="page"] { background: var(--sk-accent); color: oklch(20% 0.060 55); border-color: var(--sk-accent); font-weight: 600; }
+      .dg-filter-row td {
+        background: var(--sk-bg) !important;
+        padding: 0.3rem 0.7rem !important;
+      }
+      .dg-filter-row input {
+        width: 100%; font: inherit; font-size: var(--sk-fs-xs); font-family: var(--sk-font-mono);
+        padding: 0.2rem 0.4rem; background: var(--sk-surface);
+        border: 1px solid var(--sk-border); border-radius: var(--sk-radius-sm); color: var(--sk-ink);
+      }
+      .kbd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--sk-space-3); margin: var(--sk-space-4) 0; }
+      .kbd-row {
+        display: flex; justify-content: space-between; align-items: baseline;
+        padding: 0.5rem 0.75rem;
+        background: var(--sk-surface-raised); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-sm);
+      }
+      .kbd-row span:first-child { font-size: var(--sk-fs-sm); color: var(--sk-ink-muted); }
+    </style>
+  </head>
+  <body data-page="features/data-grid">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <nav class="sk-breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a><span class="sk-breadcrumb__sep">/</span>
+            <a href="/sitemap.html#features">Features</a><span class="sk-breadcrumb__sep">/</span>
+            <span>Data grid</span>
+          </nav>
+
+          <h1>Data grid</h1>
+          <p>
+            The data grid is SeeKi. Everything else — the wizard, the sidebar, the status bar — exists so the grid can stay the hero. It feels like a spreadsheet on purpose: click a header to sort, type in the search box to narrow, use the column menu to filter, and page through with the keyboard. No SQL language anywhere.
+          </p>
+
+          <h2>Anatomy</h2>
+          <div class="sk-demo">
+            <div class="dg-toolbar" aria-hidden="true">
+              <input class="dg-search" value="alpha-" />
+              <span class="dg-pill">3 filters</span>
+              <span class="dg-pill dg-pill--live">live</span>
+              <span class="dg-pill" style="margin-left:auto;">journeys</span>
+            </div>
+            <div class="dg-grid">
+              <nav class="dg-side" aria-label="Tables">
+                <h4>Tables</h4>
+                <a href="#">vehicles</a>
+                <a href="#" class="active">journeys</a>
+                <a href="#">drivers</a>
+              </nav>
+              <div class="dg-main">
+                <div class="dg-table-wrap">
+                  <table class="dg-table">
+                    <thead>
+                      <tr>
+                        <th>id <span class="sort">⇅</span></th>
+                        <th>vehicle <span class="sort">⇅</span></th>
+                        <th class="sorted">started_at <span class="sort">↓</span></th>
+                        <th>duration_min <span class="sort">⇅</span></th>
+                        <th>autonomous <span class="sort">⇅</span></th>
+                        <th>notes <span class="sort">⇅</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>4821</td><td>alpha-07</td><td>2026-04-12 09:14</td><td>42</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td>no incidents</td></tr>
+                      <tr class="focused"><td>4820</td><td>alpha-03</td><td>2026-04-12 08:51</td><td>18</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td class="nullcell">NULL</td></tr>
+                      <tr><td>4819</td><td>alpha-12</td><td>2026-04-12 08:02</td><td>73</td><td><span class="sk-badge sk-badge--no">No</span></td><td>manual override at 08:20</td></tr>
+                      <tr><td>4818</td><td>alpha-07</td><td>2026-04-11 17:40</td><td>55</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td class="nullcell">NULL</td></tr>
+                      <tr><td>4817</td><td>alpha-09</td><td>2026-04-11 16:22</td><td>33</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td>rain</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="dg-status" aria-hidden="true">
+                  <span>5 of 58,403 rows</span>
+                  <span>sort: started_at ↓</span>
+                  <div class="dg-pager">
+                    <button>‹</button><button>1</button><button aria-current="page">2</button><button>3</button><button>…</button><button>1,168</button><button>›</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="sk-demo__caption">Translucent chrome floats over the grid; the grid itself stays opaque. The active row has an accent-tinted background with a 2px accent rail on the left.</p>
+          </div>
+
+          <h2>Sort — click a header</h2>
+          <p>
+            One click: ascending. Second click: descending. Third click: unsorted. The column that is currently sorting gets the accent on its arrow — the full column doesn&rsquo;t re-tint, so the cells stay readable. Shift-click adds a secondary sort.
+          </p>
+
+          <h2>Search — narrow everything at once</h2>
+          <p>
+            The toolbar search is global: it scans every visible column in the current table. Results update as you type. The pill next to the search shows how many columns had a match — useful when you search <code>alpha-</code> and want to know if it found the id column, the vehicle column, or both.
+          </p>
+
+          <h2>Filter — scope one column</h2>
+          <p>
+            Search narrows the whole table; a <strong>filter</strong> narrows a single column. Open the column&rsquo;s menu (see <a href="/features/column-dropdown.html">Column menu</a>) and type a value. A filter row appears just under the header:
+          </p>
+          <div class="sk-demo">
+            <div class="dg-grid" style="grid-template-columns: 1fr;">
+              <div class="dg-main">
+                <div class="dg-table-wrap">
+                  <table class="dg-table">
+                    <thead>
+                      <tr>
+                        <th>id</th><th>vehicle</th><th class="sorted">started_at <span class="sort">↓</span></th><th>duration_min</th><th>autonomous</th>
+                      </tr>
+                      <tr class="dg-filter-row">
+                        <td><input placeholder="filter…" /></td>
+                        <td><input value="alpha-07" /></td>
+                        <td><input placeholder="filter…" /></td>
+                        <td><input placeholder="filter…" /></td>
+                        <td><input placeholder="filter…" /></td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>4821</td><td>alpha-07</td><td>2026-04-12 09:14</td><td>42</td><td><span class="sk-badge sk-badge--yes">Yes</span></td></tr>
+                      <tr><td>4818</td><td>alpha-07</td><td>2026-04-11 17:40</td><td>55</td><td><span class="sk-badge sk-badge--yes">Yes</span></td></tr>
+                      <tr><td>4802</td><td>alpha-07</td><td>2026-04-10 14:12</td><td>21</td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <p class="sk-demo__caption">Filter on <code>vehicle = "alpha-07"</code>. Filters compose across columns — each one narrows the visible rows further.</p>
+          </div>
+
+          <h2>Pagination — 500,000 rows, one page at a time</h2>
+          <p>
+            The backend returns a page of rows per request; the grid never tries to hold the whole table in memory. The status bar shows the current page, total pages, and total row count. Arrow buttons, jump-to-first, jump-to-last, and numeric page chips keep you oriented.
+          </p>
+
+          <h2>Keyboard navigation</h2>
+          <p>
+            SeeKi is a tool for reading, which means most sessions are almost mouse-free. Every grid action has a keyboard equivalent, and focus is always visible — the focused row gets the accent-tinted background and a 2px accent rail on the left.
+          </p>
+          <div class="kbd-grid" aria-label="Keyboard shortcuts">
+            <div class="kbd-row"><span>Next row / prev row</span><span><span class="sk-kbd">↓</span> <span class="sk-kbd">↑</span></span></div>
+            <div class="kbd-row"><span>Next / prev column</span><span><span class="sk-kbd">→</span> <span class="sk-kbd">←</span></span></div>
+            <div class="kbd-row"><span>Next / prev page</span><span><span class="sk-kbd">PgDn</span> <span class="sk-kbd">PgUp</span></span></div>
+            <div class="kbd-row"><span>First / last page</span><span><span class="sk-kbd">Home</span> <span class="sk-kbd">End</span></span></div>
+            <div class="kbd-row"><span>Focus search</span><span><span class="sk-kbd">/</span></span></div>
+            <div class="kbd-row"><span>Open column menu</span><span><span class="sk-kbd">Alt</span> + <span class="sk-kbd">↓</span></span></div>
+            <div class="kbd-row"><span>Clear all filters</span><span><span class="sk-kbd">Esc</span> twice</span></div>
+            <div class="kbd-row"><span>Copy cell value</span><span><span class="sk-kbd">Ctrl</span> + <span class="sk-kbd">C</span></span></div>
+          </div>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Live vs static</p>
+            <p>The small <span class="dg-pill dg-pill--live" style="font-size:0.7rem;">live</span> pill means the current view is connected to the database — every page fetch is a round-trip. Disconnect and the pill goes grey; SeeKi continues to show the last page it fetched but will not refresh.</p>
+          </div>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/features/column-dropdown.html">Column menu</a> — per-column sort, filter, and hide.</li>
+            <li><a href="/features/yes-no-badges.html">Yes/No badges</a> — how booleans render.</li>
+            <li><a href="/features/null-rendering.html">NULL rendering</a> — the hatched cell.</li>
+            <li><a href="/develop/frontend-map.html">Frontend map</a> — which Svelte file owns what.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

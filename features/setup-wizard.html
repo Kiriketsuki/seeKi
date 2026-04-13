@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Setup wizard — SeeKi</title>
+    <meta name="description" content="A guided four-step first-run wizard that connects SeeKi to your database, chooses tables, and sets the branding — without a SQL editor in sight." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+    <style>
+      /* Local demo-only chrome for wizard screenshots */
+      .sk-demo {
+        margin: var(--sk-space-5) 0;
+        padding: var(--sk-space-5);
+        background: var(--sk-surface);
+        border: 1px solid var(--sk-border);
+        border-radius: var(--sk-radius-lg);
+      }
+      .sk-demo__caption {
+        margin-top: var(--sk-space-3);
+        font-size: var(--sk-fs-sm);
+        color: var(--sk-ink-subtle);
+      }
+      .wiz-card {
+        background: var(--sk-surface-raised);
+        border: 1px solid var(--sk-border);
+        border-radius: var(--sk-radius);
+        padding: var(--sk-space-5);
+        max-width: 36rem;
+        margin: 0 auto;
+      }
+      .wiz-dots { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: var(--sk-space-4); }
+      .wiz-dot {
+        width: 0.55rem; height: 0.55rem; border-radius: 999px;
+        background: var(--sk-border-strong);
+      }
+      .wiz-dot.current { background: var(--sk-accent); box-shadow: 0 0 0 4px var(--sk-accent-soft); }
+      .wiz-dot.done { background: var(--sk-ink-muted); }
+      .wiz-label { font-size: var(--sk-fs-xs); color: var(--sk-ink-subtle); text-transform: uppercase; letter-spacing: 0.08em; }
+      .wiz-title { font-size: var(--sk-fs-xl); margin: 0.25rem 0 var(--sk-space-4); color: var(--sk-ink); font-weight: 600; }
+      .wiz-field { display: grid; gap: 0.35rem; margin-bottom: var(--sk-space-3); }
+      .wiz-field label { font-size: var(--sk-fs-sm); color: var(--sk-ink-muted); font-weight: 500; }
+      .wiz-field input, .wiz-field select {
+        font: inherit; font-size: var(--sk-fs-sm);
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--sk-border-strong);
+        border-radius: var(--sk-radius-sm);
+        background: var(--sk-bg); color: var(--sk-ink);
+      }
+      .wiz-actions { display: flex; justify-content: space-between; margin-top: var(--sk-space-5); }
+      .wiz-btn {
+        font: inherit; font-size: var(--sk-fs-sm); font-weight: 500;
+        padding: 0.5rem 1rem; border-radius: var(--sk-radius-sm);
+        border: 1px solid var(--sk-border-strong);
+        background: var(--sk-surface); color: var(--sk-ink); cursor: pointer;
+      }
+      .wiz-btn.primary {
+        background: var(--sk-accent); color: oklch(20% 0.060 55); border-color: var(--sk-accent);
+      }
+      .wiz-table-list { display: grid; gap: 0.4rem; max-height: 14rem; overflow: auto; padding: 0.25rem; }
+      .wiz-table-row {
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.5rem 0.7rem;
+        background: var(--sk-bg); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-sm);
+        font-size: var(--sk-fs-sm); font-family: var(--sk-font-mono);
+      }
+      .wiz-table-row.checked { border-color: oklch(from var(--sk-accent) l c h / 0.5); background: var(--sk-accent-soft); }
+      .wiz-check { width: 0.9rem; height: 0.9rem; border: 1.5px solid var(--sk-border-strong); border-radius: 3px; display: inline-block; }
+      .wiz-check.on { background: var(--sk-accent); border-color: var(--sk-accent); position: relative; }
+      .wiz-check.on::after { content: "✓"; color: white; font-size: 0.75rem; position: absolute; inset: -2px 0 0 1px; font-weight: 700; }
+      .wiz-row-count { color: var(--sk-ink-subtle); margin-left: auto; font-family: var(--sk-font-ui); }
+      .wiz-summary {
+        display: grid; gap: 0.65rem;
+        background: var(--sk-bg); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-sm);
+        padding: var(--sk-space-4); font-size: var(--sk-fs-sm);
+      }
+      .wiz-summary dt { color: var(--sk-ink-subtle); font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.06em; }
+      .wiz-summary dd { margin: 0; font-family: var(--sk-font-mono); color: var(--sk-ink); }
+    </style>
+  </head>
+  <body data-page="features/setup-wizard">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <nav class="sk-breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a><span class="sk-breadcrumb__sep">/</span>
+            <a href="/sitemap.html#features">Features</a><span class="sk-breadcrumb__sep">/</span>
+            <span>Setup wizard</span>
+          </nav>
+
+          <h1>Setup wizard</h1>
+          <p>
+            The first time someone opens SeeKi, the wizard takes over. No terminal, no config file, no DSN pasted into a hidden field. Four steps, one at a time — connect, pick tables, brand, confirm. When they finish, SeeKi writes a <code>seeki.toml</code>, drops the wizard, and shows the grid.
+          </p>
+
+          <h2>The four steps</h2>
+          <div class="sk-demo">
+            <div class="wiz-card" aria-hidden="true">
+              <div class="wiz-dots">
+                <span class="wiz-dot done" title="Connection"></span>
+                <span class="wiz-dot done" title="Tables"></span>
+                <span class="wiz-dot current" title="Branding"></span>
+                <span class="wiz-dot" title="Confirm"></span>
+              </div>
+              <p class="wiz-label">Step 3 of 4</p>
+              <h3 class="wiz-title">Brand your app</h3>
+              <div class="wiz-field">
+                <label>Title</label>
+                <input value="Fleet Ops" readonly />
+              </div>
+              <div class="wiz-field">
+                <label>Subtitle (optional)</label>
+                <input value="My Database" readonly />
+              </div>
+              <div class="wiz-actions">
+                <button class="wiz-btn" type="button">Back</button>
+                <button class="wiz-btn primary" type="button">Continue</button>
+              </div>
+            </div>
+            <p class="sk-demo__caption">The wizard on step 3. Completed dots are solid; the current step has the accent ring; future steps stay muted.</p>
+          </div>
+
+          <h3>Step 1 — Connect your database</h3>
+          <p>
+            The user can either paste a URL (<code>postgres://user:pw@host:5432/db</code>) or fill the six fields below: host, port, database, user, password, and an optional SSH tunnel. SSH exposes its own block only when the box is ticked — closed by default so it doesn&rsquo;t intimidate anyone who doesn&rsquo;t need it.
+          </p>
+          <div class="sk-demo">
+            <div class="wiz-card" aria-hidden="true">
+              <div class="wiz-dots">
+                <span class="wiz-dot current"></span>
+                <span class="wiz-dot"></span>
+                <span class="wiz-dot"></span>
+                <span class="wiz-dot"></span>
+              </div>
+              <p class="wiz-label">Step 1 of 4</p>
+              <h3 class="wiz-title">Connect your database</h3>
+              <div class="wiz-field"><label>Connection URL</label><input value="postgres://ops:•••@db.internal:5432/fleet" readonly /></div>
+              <div class="wiz-field"><label>Use SSH tunnel</label><input value="☐ off" readonly style="max-width: 8rem;" /></div>
+              <div class="wiz-actions"><span></span><button class="wiz-btn primary" type="button">Test &amp; continue</button></div>
+            </div>
+            <p class="sk-demo__caption">Connection fields come from <code>SetupStep1Connection.svelte</code>. &ldquo;Test &amp; continue&rdquo; rejects bad credentials in place — the wizard never advances with a connection it can&rsquo;t actually open.</p>
+          </div>
+
+          <h3>Step 2 — Choose tables</h3>
+          <p>
+            The backend introspects the schema and returns every table. The user ticks the ones operations should see. This is the whitelist — everything else is invisible, forever. The row count is shown next to each table so people can sanity-check which ones matter.
+          </p>
+          <div class="sk-demo">
+            <div class="wiz-card" aria-hidden="true">
+              <div class="wiz-dots">
+                <span class="wiz-dot done"></span>
+                <span class="wiz-dot current"></span>
+                <span class="wiz-dot"></span>
+                <span class="wiz-dot"></span>
+              </div>
+              <p class="wiz-label">Step 2 of 4</p>
+              <h3 class="wiz-title">Choose tables</h3>
+              <div class="wiz-table-list">
+                <div class="wiz-table-row checked"><span class="wiz-check on"></span>vehicles <span class="wiz-row-count">142 rows</span></div>
+                <div class="wiz-table-row checked"><span class="wiz-check on"></span>journeys <span class="wiz-row-count">58,403 rows</span></div>
+                <div class="wiz-table-row checked"><span class="wiz-check on"></span>drivers <span class="wiz-row-count">27 rows</span></div>
+                <div class="wiz-table-row"><span class="wiz-check"></span>_prisma_migrations <span class="wiz-row-count">14 rows</span></div>
+                <div class="wiz-table-row"><span class="wiz-check"></span>audit_log_raw <span class="wiz-row-count">1,204,998 rows</span></div>
+              </div>
+              <div class="wiz-actions"><button class="wiz-btn" type="button">Back</button><button class="wiz-btn primary" type="button">Continue</button></div>
+            </div>
+            <p class="sk-demo__caption">The operator checks the three tables they actually work with. Migrations tables and raw audit logs stay off — they&rsquo;d only be noise in the grid.</p>
+          </div>
+
+          <h3>Step 3 — Brand your app</h3>
+          <p>
+            Two text fields: <strong>title</strong> and <strong>subtitle</strong>. This becomes the wordmark in the topbar and the browser tab. It is the only part of SeeKi that <em>looks</em> like the customer&rsquo;s product — everything else stays neutral, so the data stays the hero. See <a href="/features/branding.html">Branding</a> for where those strings end up.
+          </p>
+
+          <h3>Step 4 — Confirm &amp; save</h3>
+          <p>
+            A read-only summary of every decision. If anything is wrong, the user clicks a step dot to jump back. Clicking &ldquo;Save &amp; launch&rdquo; writes <code>seeki.toml</code> to the platform config dir and reloads the page into the grid.
+          </p>
+          <div class="sk-demo">
+            <div class="wiz-card" aria-hidden="true">
+              <div class="wiz-dots">
+                <span class="wiz-dot done"></span>
+                <span class="wiz-dot done"></span>
+                <span class="wiz-dot done"></span>
+                <span class="wiz-dot current"></span>
+              </div>
+              <p class="wiz-label">Step 4 of 4</p>
+              <h3 class="wiz-title">Confirm &amp; save</h3>
+              <dl class="wiz-summary">
+                <div><dt>Connection</dt><dd>postgres://db.internal:5432/fleet</dd></div>
+                <div><dt>SSH tunnel</dt><dd>none</dd></div>
+                <div><dt>Tables</dt><dd>vehicles, journeys, drivers</dd></div>
+                <div><dt>Title</dt><dd>Fleet Ops</dd></div>
+                <div><dt>Subtitle</dt><dd>My Database</dd></div>
+              </dl>
+              <div class="wiz-actions"><button class="wiz-btn" type="button">Back</button><button class="wiz-btn primary" type="button">Save &amp; launch</button></div>
+            </div>
+          </div>
+
+          <h2>What it writes</h2>
+          <p>The wizard is a form for one file. Here is the output for the run above:</p>
+          <pre class="sk-code"><code># seeki.toml — written by the setup wizard
+[connection]
+url = "postgres://ops:${SEEKI_DB_PASSWORD}@db.internal:5432/fleet"
+
+[branding]
+title = "Fleet Ops"
+subtitle = "My Database"
+
+[[tables]]
+name = "vehicles"
+
+[[tables]]
+name = "journeys"
+
+[[tables]]
+name = "drivers"</code></pre>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Re-running the wizard</p>
+            <p>Delete or rename <code>seeki.toml</code> and the wizard appears again on next launch. SeeKi never overwrites an existing config silently.</p>
+          </div>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/get-started/connections.html">Connections</a> — URL vs field mode, SSH tunnel flags.</li>
+            <li><a href="/get-started/config-reference.html">Config reference</a> — every key in <code>seeki.toml</code>.</li>
+            <li><a href="/features/branding.html">Branding</a> — what step 3 actually changes.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

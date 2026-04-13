@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yes/No badges — SeeKi</title>
+    <meta name="description" content="Booleans render as shaped, coloured badges — not raw t/f or 1/0. The badge carries both a hue and a glyph, so colour-blind users and grey-scale screenshots stay readable." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () { try { var t = localStorage.getItem('sk-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (_) {} })();
+    </script>
+    <style>
+      .sk-demo { margin: var(--sk-space-5) 0; padding: var(--sk-space-5); background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-lg); }
+      .sk-demo__caption { margin-top: var(--sk-space-3); font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); }
+      .pair { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
+      .pair .label { font-family: var(--sk-font-mono); color: var(--sk-ink-subtle); font-size: var(--sk-fs-sm); min-width: 8rem; }
+      .xl-badges { display: flex; gap: 1.25rem; flex-wrap: wrap; justify-content: center; padding: var(--sk-space-5) 0; }
+      .xl-badges .sk-badge { font-size: 1.15rem; padding: 0.35em 1.1em; }
+      .mini-grid {
+        width: 100%; border-collapse: collapse; font-size: var(--sk-fs-sm); font-family: var(--sk-font-mono);
+        background: var(--sk-surface-raised); border: 1px solid var(--sk-border); border-radius: var(--sk-radius);
+        overflow: hidden;
+      }
+      .mini-grid th, .mini-grid td { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--sk-border); text-align: left; }
+      .mini-grid thead th {
+        background: var(--sk-surface); font-family: var(--sk-font-ui); font-weight: 600;
+        font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--sk-ink);
+      }
+      .mini-grid tbody tr:last-child td { border-bottom: 0; }
+    </style>
+  </head>
+  <body data-page="features/yes-no-badges">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <nav class="sk-breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a><span class="sk-breadcrumb__sep">/</span>
+            <a href="/sitemap.html#features">Features</a><span class="sk-breadcrumb__sep">/</span>
+            <span>Yes/No badges</span>
+          </nav>
+
+          <h1>Yes/No badges</h1>
+          <p>
+            Booleans are the easiest thing to get wrong in a data grid. Raw <code>t</code>/<code>f</code> looks like database debris; <code>1</code>/<code>0</code> gets confused with integer columns; a green cell with no text fails for colour-blind users. SeeKi renders booleans as shaped pill badges that carry <em>both</em> a colour and a glyph.
+          </p>
+
+          <div class="sk-demo">
+            <div class="xl-badges" aria-hidden="true">
+              <span class="sk-badge sk-badge--yes">Yes</span>
+              <span class="sk-badge sk-badge--no">No</span>
+            </div>
+            <p class="sk-demo__caption">Large view. The glyph (<code>✓</code> / <code>✕</code>) sits inside the pill — not floating beside it — so the badge reads as one atomic unit at any size.</p>
+          </div>
+
+          <h2>Inline — how the grid actually renders them</h2>
+          <div class="sk-demo">
+            <table class="mini-grid" aria-hidden="true">
+              <thead><tr><th>vehicle</th><th>autonomous</th><th>in_service</th><th>needs_attention</th></tr></thead>
+              <tbody>
+                <tr><td>alpha-07</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+                <tr><td>alpha-03</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--no">No</span></td><td><span class="sk-badge sk-badge--yes">Yes</span></td></tr>
+                <tr><td>alpha-12</td><td><span class="sk-badge sk-badge--no">No</span></td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+                <tr><td>alpha-09</td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--yes">Yes</span></td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2>What the backend can send</h2>
+          <p>
+            SeeKi normalises every common boolean encoding the backend might serve. The frontend sees one of two possible rendered outputs: a yes badge or a no badge. (NULL is a separate case — see <a href="/features/null-rendering.html">NULL rendering</a>.)
+          </p>
+          <table class="sk-table">
+            <thead><tr><th>Raw value from DB</th><th>Rendered as</th></tr></thead>
+            <tbody>
+              <tr><td><code>true</code>, <code>t</code>, <code>TRUE</code></td><td><span class="sk-badge sk-badge--yes">Yes</span></td></tr>
+              <tr><td><code>1</code> <small class="sk-subtle">(when column type is boolean)</small></td><td><span class="sk-badge sk-badge--yes">Yes</span></td></tr>
+              <tr><td><code>"yes"</code>, <code>"y"</code></td><td><span class="sk-badge sk-badge--yes">Yes</span></td></tr>
+              <tr><td><code>false</code>, <code>f</code>, <code>FALSE</code></td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+              <tr><td><code>0</code> <small class="sk-subtle">(when column type is boolean)</small></td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+              <tr><td><code>"no"</code>, <code>"n"</code></td><td><span class="sk-badge sk-badge--no">No</span></td></tr>
+              <tr><td><code>NULL</code></td><td><a href="/features/null-rendering.html">hatched NULL cell</a></td></tr>
+            </tbody>
+          </table>
+
+          <h2>Why a glyph <em>and</em> a colour</h2>
+          <p>
+            <strong>Design principle 6</strong> (from <code>.impeccable.md</code>): no information conveyed by colour alone. A yes badge in grey-scale — a printed report, a screenshot pasted into a ticket, a low-contrast monitor — still reads as <code>✓ Yes</code>. A no badge still reads as <code>✕ No</code>. The colour reinforces; it does not carry the meaning by itself.
+          </p>
+
+          <h2>Filtering on booleans</h2>
+          <p>
+            In a column&rsquo;s menu, the filter input for a boolean column accepts plain words:
+          </p>
+          <div class="pair">
+            <span class="label">yes / y / true / t / 1</span>
+            <span>→</span>
+            <span class="sk-badge sk-badge--yes">Yes</span>
+            <span>rows only</span>
+          </div>
+          <div class="pair" style="margin-top: 0.5rem;">
+            <span class="label">no / n / false / f / 0</span>
+            <span>→</span>
+            <span class="sk-badge sk-badge--no">No</span>
+            <span>rows only</span>
+          </div>
+          <p>Clearing the filter restores all three states (yes, no, null).</p>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Nullable booleans</p>
+            <p>Postgres lets a boolean column be null. SeeKi does not flatten that into <span class="sk-badge sk-badge--no">No</span> — a null is genuinely a third state, and it gets the <a href="/features/null-rendering.html">hatched cell</a> treatment instead.</p>
+          </div>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/features/null-rendering.html">NULL rendering</a> — the third boolean state.</li>
+            <li><a href="/features/data-grid.html">Data grid</a> — where the badges appear.</li>
+            <li><a href="/features/column-dropdown.html">Column menu</a> — per-column boolean filter.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

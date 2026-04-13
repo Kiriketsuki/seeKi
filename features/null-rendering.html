@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NULL rendering — SeeKi</title>
+    <meta name="description" content="NULL cells are drawn with a diagonal hatched pattern — the single most distinctive visual cue in SeeKi. An empty cell is never confusable with an empty string." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () { try { var t = localStorage.getItem('sk-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (_) {} })();
+    </script>
+    <style>
+      .sk-demo { margin: var(--sk-space-5) 0; padding: var(--sk-space-5); background: var(--sk-surface); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-lg); }
+      .sk-demo__caption { margin-top: var(--sk-space-3); font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); }
+      .null-swatch {
+        display: grid; place-items: center;
+        width: 8rem; height: 4rem; margin: 0 auto var(--sk-space-3);
+        background: var(--sk-hatch), var(--sk-surface);
+        border: 1px solid var(--sk-border); border-radius: var(--sk-radius);
+        color: var(--sk-ink-subtle); font-style: italic; font-family: var(--sk-font-mono); font-size: var(--sk-fs-sm);
+      }
+      .null-swatch--xl { width: 12rem; height: 6rem; font-size: 1rem; }
+      .mini-grid {
+        width: 100%; border-collapse: collapse; font-size: var(--sk-fs-sm); font-family: var(--sk-font-mono);
+        background: var(--sk-surface-raised); border: 1px solid var(--sk-border); border-radius: var(--sk-radius);
+        overflow: hidden;
+      }
+      .mini-grid th, .mini-grid td { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--sk-border); text-align: left; }
+      .mini-grid thead th {
+        background: var(--sk-surface); font-family: var(--sk-font-ui); font-weight: 600;
+        font-size: var(--sk-fs-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--sk-ink);
+      }
+      .mini-grid tbody tr:last-child td { border-bottom: 0; }
+      td.nullcell {
+        background: var(--sk-hatch), var(--sk-surface);
+        color: var(--sk-ink-subtle); font-style: italic;
+      }
+      .contrast {
+        display: grid; grid-template-columns: 1fr 1fr; gap: var(--sk-space-4);
+      }
+      .contrast > div { padding: var(--sk-space-4); background: var(--sk-surface-raised); border: 1px solid var(--sk-border); border-radius: var(--sk-radius); }
+      .contrast h4 { margin: 0 0 var(--sk-space-2); font-size: var(--sk-fs-sm); color: var(--sk-ink-subtle); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+      .contrast .cell-example { font-family: var(--sk-font-mono); padding: 0.6rem 0.8rem; background: var(--sk-bg); border: 1px solid var(--sk-border); border-radius: var(--sk-radius-sm); }
+      .cell-example.nullish { background: var(--sk-hatch), var(--sk-surface); color: var(--sk-ink-subtle); font-style: italic; }
+      @media (max-width: 700px) { .contrast { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body data-page="features/null-rendering">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <nav class="sk-breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Home</a><span class="sk-breadcrumb__sep">/</span>
+            <a href="/sitemap.html#features">Features</a><span class="sk-breadcrumb__sep">/</span>
+            <span>NULL rendering</span>
+          </nav>
+
+          <h1>NULL rendering</h1>
+          <p>
+            An empty cell is never empty. In SQL, an <em>absent</em> value (<code>NULL</code>) is categorically different from an <em>empty</em> string (<code>''</code>) or a zero — and mistaking one for the other has cost data teams more hours than any other boring bug. SeeKi renders a NULL cell with a diagonal hatched pattern. You cannot scroll past one and think the cell is blank.
+          </p>
+
+          <div class="sk-demo" style="display: grid; place-items: center;">
+            <div class="null-swatch null-swatch--xl" aria-hidden="true">NULL</div>
+            <p class="sk-demo__caption">The hatched NULL cell. Pattern is baked into <code>--sk-hatch</code>; the label is italicised and subtle so the pattern does the talking.</p>
+          </div>
+
+          <h2>In context</h2>
+          <div class="sk-demo">
+            <table class="mini-grid" aria-hidden="true">
+              <thead><tr><th>id</th><th>vehicle</th><th>returned_at</th><th>notes</th><th>rating</th></tr></thead>
+              <tbody>
+                <tr><td>4821</td><td>alpha-07</td><td>2026-04-12 09:56</td><td>no incidents</td><td>5</td></tr>
+                <tr><td>4820</td><td>alpha-03</td><td class="nullcell">NULL</td><td>still out</td><td class="nullcell">NULL</td></tr>
+                <tr><td>4819</td><td>alpha-12</td><td>2026-04-12 09:15</td><td>manual override</td><td>3</td></tr>
+                <tr><td>4818</td><td>alpha-07</td><td>2026-04-11 18:35</td><td></td><td class="nullcell">NULL</td></tr>
+              </tbody>
+            </table>
+            <p class="sk-demo__caption">Row 4820 is still driving — <code>returned_at</code> is genuinely absent. Row 4818 has an empty <code>notes</code> string (legitimately blank) but a null <code>rating</code> — the two render differently, so the distinction survives.</p>
+          </div>
+
+          <h2>NULL vs empty string vs zero</h2>
+          <div class="contrast">
+            <div>
+              <h4>NULL (absent)</h4>
+              <div class="cell-example nullish">NULL</div>
+              <p class="sk-muted" style="font-size: var(--sk-fs-sm); margin-top: 0.5rem;">The value was never set, or was set to SQL NULL.</p>
+            </div>
+            <div>
+              <h4>Empty string</h4>
+              <div class="cell-example"></div>
+              <p class="sk-muted" style="font-size: var(--sk-fs-sm); margin-top: 0.5rem;">The column is a string and is equal to <code>""</code>. Cell is blank, no hatching.</p>
+            </div>
+          </div>
+          <div class="contrast" style="margin-top: var(--sk-space-4);">
+            <div>
+              <h4>Zero (numeric)</h4>
+              <div class="cell-example">0</div>
+              <p class="sk-muted" style="font-size: var(--sk-fs-sm); margin-top: 0.5rem;">A genuine numeric zero. Renders as <code>0</code>, right-aligned with other numbers.</p>
+            </div>
+            <div>
+              <h4>Whitespace</h4>
+              <div class="cell-example">·&nbsp;·&nbsp;·</div>
+              <p class="sk-muted" style="font-size: var(--sk-fs-sm); margin-top: 0.5rem;">A string of spaces. Renders as-is; mid-dots are shown here only for illustration.</p>
+            </div>
+          </div>
+
+          <h2>The pattern, defined</h2>
+          <p>The hatched fill is a single CSS variable (<code>--sk-hatch</code>) so the design can evolve in one place and every NULL cell, null badge, and null swatch follows:</p>
+          <pre class="sk-code"><code>/* assets/css/site.css */
+--sk-hatch: repeating-linear-gradient(
+  135deg,
+  transparent 0 4px,
+  oklch(70% 0.020 240 / 0.30) 4px 5px
+);</code></pre>
+          <p>
+            The 135° angle, 4px + 1px rhythm, and 30% opacity are intentional: visible enough to never miss, subtle enough that a column full of NULLs doesn&rsquo;t vibrate. In dark mode the lightness flips but the geometry stays the same — so screenshots across themes still read as &ldquo;the same pattern.&rdquo;
+          </p>
+
+          <h2>As a badge</h2>
+          <p>
+            When a NULL appears inline in prose or outside a table, SeeKi uses the badge form with the same hatch:
+          </p>
+          <p>
+            A row where the operator left the note field blank looks like
+            <span class="sk-badge sk-badge--null">NULL</span>
+            in a rendered report, not a bare blank.
+          </p>
+
+          <h2>Filtering for NULL</h2>
+          <p>In a column&rsquo;s menu, the filter input accepts these as the &ldquo;only rows where this is null&rdquo; predicate:</p>
+          <table class="sk-table">
+            <thead><tr><th>Input</th><th>Matches</th></tr></thead>
+            <tbody>
+              <tr><td><code>is null</code></td><td>rows where the cell is NULL</td></tr>
+              <tr><td><code>is not null</code></td><td>rows where the cell has any value (including empty string)</td></tr>
+              <tr><td><code>null</code> <small class="sk-subtle">(bare)</small></td><td>also matches <code>is null</code> — common-case shortcut</td></tr>
+            </tbody>
+          </table>
+
+          <div class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Why hatch, not colour?</p>
+            <p>Colour would compete with the semantic palette — accent orange, yes green, no red. A pattern is colour-independent: it survives the dark theme, the light theme, a printed report, and a monochrome screenshot. It is the single visual detail the brief (<code>.impeccable.md</code>) calls out as &ldquo;do not replace.&rdquo;</p>
+          </div>
+
+          <h2>Related</h2>
+          <ul>
+            <li><a href="/features/data-grid.html">Data grid</a> — where NULLs appear.</li>
+            <li><a href="/features/yes-no-badges.html">Yes/No badges</a> — nullable booleans fall through to this page.</li>
+            <li><a href="/features/column-dropdown.html">Column menu</a> — the filter that scopes to <code>is null</code>.</li>
+          </ul>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>
