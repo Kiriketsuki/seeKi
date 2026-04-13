@@ -1,14 +1,16 @@
 name: Release Management
 
 on:
-    pull_request:
+    # Fires on any push to release (merge commits, direct pushes, tag-free cherries)
+    # as well as explicit manual dispatch. The prior pull_request:closed trigger
+    # silently no-ops in some merge paths, so we widen the surface here.
+    push:
         branches:
             - release
-        types: [closed]
+    workflow_dispatch:
 
 jobs:
     create-release:
-        if: github.event.pull_request.merged == true
         runs-on: ubuntu-latest
         permissions:
             contents: write
