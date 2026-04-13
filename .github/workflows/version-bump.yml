@@ -126,23 +126,29 @@ jobs:
                         NEW_VERSION="$YY.$MAJOR.$MINOR.$PATCH"
                         ;;
                       hotfix)
+                        # Increment the alphabetic suffix: "" -> a, a -> b, ..., z -> aa, az -> ba
                         if [ -z "$SUFFIX" ]; then
                           SUFFIX="a"
                         else
-                          SUFFIX=$(python3 -c "
-def inc(s):
-    chars = list(s)
-    i = len(chars) - 1
-    while i >= 0:
-        if chars[i] == 'z':
-            chars[i] = 'a'
-            i -= 1
-        else:
-            chars[i] = chr(ord(chars[i]) + 1)
-            return ''.join(chars)
-    return 'a' + ''.join(chars)
-print(inc('$SUFFIX'))
-")
+                          prefix="$SUFFIX"
+                          result=""
+                          carry=1
+                          while [ -n "$prefix" ] && [ "$carry" -eq 1 ]; do
+                            last="${prefix: -1}"
+                            prefix="${prefix:0:${#prefix}-1}"
+                            if [ "$last" = "z" ]; then
+                              result="a$result"
+                            else
+                              next=$(printf "\\$(printf '%03o' $(($(printf '%d' "'$last") + 1)))")
+                              result="$next$result"
+                              carry=0
+                            fi
+                          done
+                          if [ "$carry" -eq 1 ]; then
+                            SUFFIX="a$prefix$result"
+                          else
+                            SUFFIX="$prefix$result"
+                          fi
                         fi
                         NEW_VERSION="$YY.$MAJOR.$MINOR.$PATCH$SUFFIX"
                         ;;
