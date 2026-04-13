@@ -196,7 +196,22 @@
 
   function handleBeforeSorting(event: CustomEvent<SortEventDetail>) {
     event.preventDefault();
-    onSortChange?.(String(event.detail.column.prop), event.detail.order ?? null);
+    const column = String(event.detail.column.prop);
+
+    // RevoGrid's internal cycle doesn't advance when we preventDefault(),
+    // so we implement our own: unsorted → asc → desc → unsorted
+    let nextDirection: SortDirection | null;
+    if (sortState.column !== column) {
+      nextDirection = 'asc';
+    } else if (sortState.direction === 'asc') {
+      nextDirection = 'desc';
+    } else if (sortState.direction === 'desc') {
+      nextDirection = null;
+    } else {
+      nextDirection = 'asc';
+    }
+
+    onSortChange?.(column, nextDirection);
   }
 
   let gridColumns: ColumnRegular[] = $derived(

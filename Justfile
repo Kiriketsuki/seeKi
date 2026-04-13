@@ -25,3 +25,27 @@ dev-mock:
 build:
     cd frontend && VITE_MOCK=false npm run build
     cargo build --release
+
+# Run E2E tests (builds release binary, starts server, runs Playwright).
+# WARNING: global-setup.ts applies tests/fixtures/seed.sql, which executes
+# `TRUNCATE TABLE vehicle_logs, soc_readings RESTART IDENTITY` before inserting
+# synthetic test data. Always run against a DEDICATED test DB, not production.
+# To skip seeding (pre-populated DB, or to protect existing data):
+#   SEEKI_SKIP_SEED=1 just test-e2e
+test-e2e:
+    cd frontend && VITE_MOCK=false npm run build
+    cargo build --release
+    cd frontend && SEEKI_SKIP_BUILD=1 npx playwright test
+
+# Run E2E tests across all browsers (Chrome + Firefox + WebKit).
+# Same TRUNCATE warning as test-e2e applies.
+test-e2e-all:
+    cd frontend && VITE_MOCK=false npm run build
+    cargo build --release
+    cd frontend && SEEKI_SKIP_BUILD=1 SEEKI_ALL_BROWSERS=1 npx playwright test
+
+# Run E2E tests in Playwright UI mode (interactive debugging)
+test-e2e-ui:
+    cd frontend && VITE_MOCK=false npm run build
+    cargo build --release
+    cd frontend && SEEKI_SKIP_BUILD=1 npx playwright test --ui
