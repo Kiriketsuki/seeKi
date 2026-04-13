@@ -1,0 +1,23 @@
+# docs branch — only index.html + assets/ + future docs/ are tracked.
+# Everything below is leftover from main or local scratch.
+
+target/
+frontend/
+.gitnexus/
+.council/
+.brainstorm/
+.claude/
+.playwright-mcp/
+.env.test
+.env.test.example
+seeki.toml
+council-fix-manifest.json
+
+# Scratch markdown (specs, council logs, MVP notes) from main workspace
+*-spec.md
+*-council-*.md
+2026-*.md
+seeki-mvp-spec.md
+seeki-*.png
+
+.impeccable.md
