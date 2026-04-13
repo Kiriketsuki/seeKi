@@ -5,7 +5,9 @@ use futures::Stream;
 use serde::Serialize;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 
-use super::{ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError};
+use super::{
+    ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError,
+};
 
 /// Result of a connection test — describes a single table visible to the server.
 #[derive(Debug, Serialize)]
@@ -22,16 +24,15 @@ pub async fn test_connection(
     ssh: Option<(&crate::config::SshConfig, &crate::config::SecretsConfig)>,
 ) -> anyhow::Result<Vec<TablePreview>> {
     let (connect_url, _tunnel) = if let Some((ssh_config, secrets)) = ssh {
-        let parsed = url::Url::parse(url)
-            .map_err(|e| anyhow::anyhow!("Invalid database URL: {e}"))?;
+        let parsed =
+            url::Url::parse(url).map_err(|e| anyhow::anyhow!("Invalid database URL: {e}"))?;
         let db_host = parsed
             .host_str()
             .ok_or_else(|| anyhow::anyhow!("Database URL has no host"))?
             .to_string();
         let db_port = parsed.port().unwrap_or(5432);
 
-        let tunnel =
-            crate::ssh::SshTunnel::connect(ssh_config, secrets, &db_host, db_port).await?;
+        let tunnel = crate::ssh::SshTunnel::connect(ssh_config, secrets, &db_host, db_port).await?;
 
         let mut new_url = parsed;
         new_url
@@ -73,8 +74,8 @@ pub async fn test_connection(
         .map(|r| {
             let schema: String = r.get("schema_name");
             let table_name: String = r.get("table_name");
-            let is_system = system_schemas.contains(&schema.as_str())
-                || table_name.starts_with("pg_");
+            let is_system =
+                system_schemas.contains(&schema.as_str()) || table_name.starts_with("pg_");
             let display_name = if schema == "public" {
                 table_name
             } else {
@@ -233,7 +234,10 @@ pub async fn get_columns_bulk(
 /// Validate that a name is safe for use as a double-quoted SQL identifier.
 /// Allows alphanumeric, underscore, hyphen, and space — all safe inside `"..."`.
 fn is_valid_identifier(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
 }
 
 /// Shared WHERE clause and bind values builder for query_rows and export.
@@ -304,7 +308,11 @@ fn build_query_clauses(
                 _ => None,
             };
             if let Some(b) = bool_val {
-                conditions.push(format!("\"{}\" = {}", col_name, if b { "TRUE" } else { "FALSE" }));
+                conditions.push(format!(
+                    "\"{}\" = {}",
+                    col_name,
+                    if b { "TRUE" } else { "FALSE" }
+                ));
             } else {
                 // Non-boolean input on a boolean column → no rows match
                 conditions.push("FALSE".to_string());
@@ -346,10 +354,7 @@ fn build_query_clauses(
 }
 
 /// Query paginated rows from a table with optional sort, search, and per-column filters.
-pub async fn query_rows(
-    pool: &PgPool,
-    params: &RowQueryParams<'_>,
-) -> anyhow::Result<QueryResult> {
+pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
     let table = params.table;
 
     if !is_valid_identifier(table) {
@@ -366,7 +371,10 @@ pub async fn query_rows(
     )?;
 
     // Count total matching rows
-    let count_sql = format!("SELECT COUNT(*) as cnt FROM \"{table}\" {}", qb.where_clause);
+    let count_sql = format!(
+        "SELECT COUNT(*) as cnt FROM \"{table}\" {}",
+        qb.where_clause
+    );
     let mut count_query = sqlx::query(&count_sql);
     for val in &qb.bind_values {
         count_query = count_query.bind(val);
@@ -586,7 +594,10 @@ mod tests {
         assert_eq!(humanize_type("character varying", "varchar"), "Text");
         assert_eq!(humanize_type("integer", "int4"), "Number");
         assert_eq!(humanize_type("boolean", "bool"), "Yes/No");
-        assert_eq!(humanize_type("timestamp with time zone", "timestamptz"), "Date & Time");
+        assert_eq!(
+            humanize_type("timestamp with time zone", "timestamptz"),
+            "Date & Time"
+        );
     }
 
     #[test]

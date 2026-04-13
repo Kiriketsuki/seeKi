@@ -144,11 +144,7 @@ pub async fn test_connection(
 
     match kind {
         DatabaseKind::Postgres => {
-            let ssh_pair = req
-                .ssh
-                .as_ref()
-                .map(wizard_to_ssh)
-                .transpose();
+            let ssh_pair = req.ssh.as_ref().map(wizard_to_ssh).transpose();
 
             let (ssh_config, secrets) = match ssh_pair {
                 Ok(Some(pair)) => (Some(pair.0), Some(pair.1)),
@@ -164,9 +160,7 @@ pub async fn test_connection(
                 }
             };
 
-            let ssh_ref = ssh_config
-                .as_ref()
-                .zip(secrets.as_ref());
+            let ssh_ref = ssh_config.as_ref().zip(secrets.as_ref());
 
             match postgres::test_connection(&req.url, ssh_ref).await {
                 Ok(tables) => {
@@ -408,16 +402,28 @@ pub fn build_config_toml(
     root.insert(
         "server".to_string(),
         toml::Value::Table(toml::value::Table::from_iter([
-            ("host".to_string(), toml::Value::String(req.server.host.clone())),
-            ("port".to_string(), toml::Value::Integer(req.server.port as i64)),
+            (
+                "host".to_string(),
+                toml::Value::String(req.server.host.clone()),
+            ),
+            (
+                "port".to_string(),
+                toml::Value::Integer(req.server.port as i64),
+            ),
         ])),
     );
 
     root.insert(
         "database".to_string(),
         toml::Value::Table(toml::value::Table::from_iter([
-            ("kind".to_string(), toml::Value::String(req.database.kind.clone())),
-            ("url".to_string(), toml::Value::String(req.database.url.clone())),
+            (
+                "kind".to_string(),
+                toml::Value::String(req.database.kind.clone()),
+            ),
+            (
+                "url".to_string(),
+                toml::Value::String(req.database.url.clone()),
+            ),
             (
                 "max_connections".to_string(),
                 toml::Value::Integer(req.database.max_connections as i64),
@@ -449,7 +455,10 @@ pub fn build_config_toml(
             b.insert("title".to_string(), toml::Value::String(title.clone()));
         }
         if let Some(subtitle) = &branding.subtitle {
-            b.insert("subtitle".to_string(), toml::Value::String(subtitle.clone()));
+            b.insert(
+                "subtitle".to_string(),
+                toml::Value::String(subtitle.clone()),
+            );
         }
         if !b.is_empty() {
             root.insert("branding".to_string(), toml::Value::Table(b));
@@ -476,7 +485,10 @@ pub fn build_config_toml(
             ),
         );
         if let Some(key_path) = &ssh.key_path {
-            s.insert("key_path".to_string(), toml::Value::String(key_path.clone()));
+            s.insert(
+                "key_path".to_string(),
+                toml::Value::String(key_path.clone()),
+            );
         }
         root.insert("ssh".to_string(), toml::Value::Table(s));
     }
@@ -484,8 +496,7 @@ pub fn build_config_toml(
     let toml_content =
         toml::to_string_pretty(&root).map_err(|e| format!("Failed to serialize config: {e}"))?;
 
-    AppConfig::parse(&toml_content)
-        .map_err(|e| format!("Generated config is invalid: {e}"))?;
+    AppConfig::parse(&toml_content).map_err(|e| format!("Generated config is invalid: {e}"))?;
 
     Ok(toml_content)
 }
@@ -498,10 +509,7 @@ fn build_secrets_toml(secrets: &SecretsConfig) -> Option<String> {
     }
     let mut ssh_section = toml::value::Table::new();
     if let Some(p) = &secrets.ssh_key_passphrase {
-        ssh_section.insert(
-            "key_passphrase".to_string(),
-            toml::Value::String(p.clone()),
-        );
+        ssh_section.insert("key_passphrase".to_string(), toml::Value::String(p.clone()));
     }
     if let Some(p) = &secrets.ssh_password {
         ssh_section.insert("password".to_string(), toml::Value::String(p.clone()));
@@ -516,10 +524,7 @@ fn write_secrets_file(content: &str) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            ".seeki.secrets",
-            std::fs::Permissions::from_mode(0o600),
-        )?;
+        std::fs::set_permissions(".seeki.secrets", std::fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
 }
@@ -708,7 +713,10 @@ mod tests {
             parsed["database"]["url"].as_str().unwrap(),
             "postgres://user:pass@localhost:5432/mydb"
         );
-        assert_eq!(parsed["database"]["max_connections"].as_integer().unwrap(), 10);
+        assert_eq!(
+            parsed["database"]["max_connections"].as_integer().unwrap(),
+            10
+        );
         AppConfig::parse(&toml_content).expect("generated TOML should parse as AppConfig");
     }
 
@@ -762,7 +770,10 @@ mod tests {
         let toml_content = build_config_toml(&req, &None).expect("should produce TOML");
         let parsed: toml::Value = toml::from_str(&toml_content).unwrap();
         assert_eq!(parsed["branding"]["title"].as_str().unwrap(), "MyApp");
-        assert_eq!(parsed["branding"]["subtitle"].as_str().unwrap(), "Dashboard");
+        assert_eq!(
+            parsed["branding"]["subtitle"].as_str().unwrap(),
+            "Dashboard"
+        );
     }
 
     #[test]
@@ -790,8 +801,7 @@ mod tests {
             branding: None,
         };
 
-        let toml_content =
-            build_config_toml(&req, &Some(ssh_config)).expect("should produce TOML");
+        let toml_content = build_config_toml(&req, &Some(ssh_config)).expect("should produce TOML");
         let parsed: toml::Value = toml::from_str(&toml_content).unwrap();
         assert_eq!(
             parsed["ssh"]["host"].as_str().unwrap(),
@@ -853,7 +863,11 @@ mod tests {
 
         // 200 with {success:false} means deserialization succeeded and the handler ran.
         // A 422 would mean serde rejected the payload due to the missing `server` field.
-        assert_eq!(resp.status(), 200, "should not be a 422 deserialization error");
+        assert_eq!(
+            resp.status(),
+            200,
+            "should not be a 422 deserialization error"
+        );
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["success"], false);
@@ -865,8 +879,7 @@ mod tests {
     }
 
     fn normal_mode() -> SharedAppMode {
-        let pool =
-            sqlx::PgPool::connect_lazy("postgres://test:test@localhost/test").unwrap();
+        let pool = sqlx::PgPool::connect_lazy("postgres://test:test@localhost/test").unwrap();
         let db = crate::db::DatabasePool::Postgres(pool, None);
         let config = AppConfig::parse(
             "[server]\nhost = \"127.0.0.1\"\nport = 3141\n\

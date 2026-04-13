@@ -58,18 +58,22 @@ impl SshTunnel {
             .map_err(|e| anyhow::anyhow!("SSH connection failed: {e}"))?;
 
         let local_addr: SocketAddr = format!("127.0.0.1:{local_port}").parse()?;
-        let remote_addr: SocketAddr = format!("{db_host}:{db_port}")
-            .parse()
-            .map_err(|e: std::net::AddrParseError| {
-                anyhow::anyhow!("Invalid DB address {db_host}:{db_port}: {e}")
-            })?;
+        let remote_addr: SocketAddr =
+            format!("{db_host}:{db_port}")
+                .parse()
+                .map_err(|e: std::net::AddrParseError| {
+                    anyhow::anyhow!("Invalid DB address {db_host}:{db_port}: {e}")
+                })?;
 
         session
             .request_port_forward(openssh::ForwardType::Local, local_addr, remote_addr)
             .await
             .map_err(|e| anyhow::anyhow!("Port forward failed: {e}"))?;
 
-        Ok(Self { session, local_port })
+        Ok(Self {
+            session,
+            local_port,
+        })
     }
 
     pub fn local_port(&self) -> u16 {
