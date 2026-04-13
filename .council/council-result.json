@@ -1,233 +1,73 @@
 {
-  "pr": 30,
-  "title": "epic: Toolbar, Column Management & Export",
-  "motion": "Merge PR #30: epic: Toolbar, Column Management & Export",
-  "format": "1v1, no questioner",
-  "date": "2026-04-10",
+  "motion": "Merge PR #32 after session 3 fixes (commit d72decb). Audit F1 seed auto-apply, F2 filter lower-bound, CD-1 backup safety.",
+  "motion_type": "CODE",
+  "timestamp": "2026-04-12T22:35:00Z",
+  "session": 4,
   "verdict": "CONDITIONAL",
-  "rounds": 7,
-  "session": 9,
+  "confidence": "high",
+  "rounds_completed": 3,
+  "agents": {
+    "ADVOCATE-1": { "status": "completed", "rounds_filed": 3 },
+    "CRITIC-1": { "status": "completed", "rounds_filed": 3 },
+    "CRITIC-2": { "status": "completed", "rounds_filed": 2 },
+    "QUESTIONER": { "status": "completed", "probes": "filed mid-debate" },
+    "ARBITER": { "status": "completed" }
+  },
   "findings": [
     {
-      "id": 1,
-      "description": "aria-haspopup=dialog on columns button without role=dialog on dropdown",
-      "file": "frontend/src/components/Toolbar.svelte:128",
-      "also": "frontend/src/components/ColumnDropdown.svelte:30",
-      "type": "a11y",
-      "severity": "high",
-      "verified": true,
-      "fix": "Added role=dialog aria-label=Column visibility to .dropdown div",
-      "status": "fixed",
-      "session": 1
-    },
-    {
-      "id": 2,
-      "description": "Double horizontal padding: .table-panel + .table-header both apply --sk-space-2xl, misaligning header text vs grid",
-      "file": "frontend/src/components/TableHeader.svelte:24",
-      "also": "frontend/src/App.svelte:576",
-      "type": "layout",
-      "severity": "high",
-      "verified": true,
-      "fix": "Changed .table-header padding to 0; parent .table-panel provides horizontal padding",
-      "status": "fixed",
-      "session": 1
-    },
-    {
-      "id": 3,
-      "description": "Export button always enabled; silently does nothing when no table is selected",
-      "file": "frontend/src/components/Toolbar.svelte:141",
-      "type": "ux",
+      "id": "S4-1",
+      "type": "bug",
       "severity": "medium",
-      "verified": true,
-      "fix": "Added hasTable prop; export button disabled when !hasTable",
-      "status": "fixed",
-      "session": 1
+      "description": "CD-1 regression: the shouldBackup guard compares backup===dst, which fails the orphaned-backup+evolved-config path. If Run #1 teardown crashes then user edits seeki.toml, Run #2 preserves the stale backup and teardown silently overwrites the user's edits.",
+      "file": "frontend/e2e/global-setup.ts",
+      "line": "98-111",
+      "fix_description": "Replace backup-vs-dst comparison with dst-vs-configContent: if DST !== configContent, DST is user config and must be backed up; if DST === configContent, prior run left test config — preserve existing backup. configContent is already in scope at L86.",
+      "verification": "verified",
+      "citations": ["frontend/e2e/global-setup.ts:98-111", "frontend/e2e/global-teardown.ts:43"],
+      "consensus": "unanimous (ADVOCATE-1 conceded)",
+      "status": "merge_blocker"
     },
     {
-      "id": 4,
-      "description": "Ctrl+K blocked when search input focused — no non-destructive keyboard close from field",
-      "file": "frontend/src/App.svelte:110",
-      "type": "ux",
+      "id": "S4-2",
+      "type": "documentation",
       "severity": "medium",
-      "verified": true,
-      "fix": "Added isSearchField check; Ctrl+K passes when target is the search input",
-      "status": "fixed",
-      "session": 1
-    },
-    {
-      "id": 5,
-      "description": "Show All button fires redundant persist when all columns already visible",
-      "file": "frontend/src/components/ColumnDropdown.svelte:39",
-      "type": "ux",
-      "severity": "low",
-      "verified": true,
-      "fix": "Added disabled={hiddenCount === 0}",
-      "status": "fixed",
-      "session": 1
-    },
-    {
-      "id": 6,
-      "description": "Static aria-label on filter/columns buttons overrides dynamic badge count — AT users cannot hear active filter or hidden-column count",
-      "file": "frontend/src/components/Toolbar.svelte:103",
-      "also": "frontend/src/components/Toolbar.svelte:131",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "aria-label='Toggle filters' → aria-label={filterTitle}; aria-label='Manage columns' → aria-label={columnsTitle}",
-      "status": "fixed",
-      "session": 3
-    },
-    {
-      "id": 7,
-      "description": "type=search + custom X button renders two clear controls on Chrome/Safari simultaneously",
-      "file": "frontend/src/App.svelte:505",
-      "type": "ux",
-      "severity": "medium",
-      "verified": true,
-      "fix": "Changed type='search' to type='text'; custom clear button is sole mechanism",
-      "status": "fixed",
-      "session": 3
-    },
-    {
-      "id": 8,
-      "description": "Export button disabled title says 'Export CSV' with no explanation why disabled",
-      "file": "frontend/src/components/Toolbar.svelte:147",
-      "type": "ux",
-      "severity": "low",
-      "verified": true,
-      "fix": "Derived title and aria-label from hasTable: 'Select a table to export' when !hasTable",
-      "status": "fixed",
-      "session": 3
-    },
-    {
-      "id": 9,
-      "description": "role=\"dialog\" on ColumnDropdown without dialog keyboard contract — Disclosure trigger uses aria-expanded (Disclosure pattern) while container used role=\"dialog\" (Dialog pattern); WAI-ARIA §6.6 MUST behaviors not implemented",
-      "file": "frontend/src/components/ColumnDropdown.svelte:30",
-      "also": "frontend/src/components/Toolbar.svelte:128-133",
-      "type": "a11y",
-      "severity": "high",
-      "verified": true,
-      "fix": "Replaced role=\"dialog\" with role=\"region\"; Disclosure Button pattern now consistent end-to-end",
-      "status": "fixed",
-      "session": 4
-    },
-    {
-      "id": 10,
-      "description": "Search button static aria-label=\"Search\" not updated when filter/columns were given dynamic labels in session 3",
-      "file": "frontend/src/components/Toolbar.svelte:91",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "aria-label=\"Search\" → aria-label={searchTitle}; searchTitle derived prop already existed",
-      "status": "fixed",
-      "session": 4
-    },
-    {
-      "id": 11,
-      "description": "aria-label on role-less <div class=\"tool-indicator\"> is invisible to screen readers — lucide SVG children are aria-hidden by default, leaving AT with no way to read current sort state",
-      "file": "frontend/src/components/Toolbar.svelte:114",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "Added role=\"img\" to the sort indicator div; aria-label is now effective on a named graphic element",
-      "status": "fixed",
-      "session": 5
-    },
-    {
-      "id": 12,
-      "description": "Missing aria-controls on columns disclosure trigger — no programmatic link from trigger to ColumnDropdown region; AT users cannot jump directly from button to panel",
-      "file": "frontend/src/components/Toolbar.svelte:130",
-      "also": "frontend/src/components/ColumnDropdown.svelte:30",
-      "type": "a11y",
-      "severity": "low",
-      "verified": true,
-      "fix": "Added id=\"columns-panel\" to ColumnDropdown root and aria-controls=\"columns-panel\" to trigger button",
-      "status": "fixed",
-      "session": 5
-    },
-    {
-      "id": 13,
-      "description": "searchTitle derived from searchActive (searchVisible || searchQuery.length > 0) rather than searchVisible — when bar is collapsed but search term is active, label says 'Close search' but clicking opens the bar",
-      "file": "frontend/src/components/Toolbar.svelte:59",
-      "also": "frontend/src/App.svelte:227-234",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "Changed derivation basis from searchActive to searchVisible; label now matches the action toggleSearch() will perform",
-      "status": "fixed",
-      "session": 6
-    },
-    {
-      "id": 14,
-      "description": "searchTitle in Toolbar.svelte derived from searchVisible which was never added as a prop — S6 fix changed the variable name in the derivation but did not wire searchVisible as a Toolbar prop; searchTitle permanently evaluated to 'Open search (Ctrl+K)' at runtime",
-      "file": "frontend/src/components/Toolbar.svelte:59",
-      "also": "frontend/src/App.svelte:481",
-      "type": "a11y",
-      "severity": "high",
-      "verified": true,
-      "fix": "Added searchVisible?: boolean = false to Toolbar props; passed searchVisible={searchVisible} from App.svelte; removed dead ::-webkit-search-cancel-button CSS (input is type=text not type=search)",
-      "status": "fixed",
-      "session": 7
-    },
-    {
-      "id": 15,
-      "description": "Search button aria-label ignored searchActive when panel is closed — AT users could not tell rows were filtered; only 'Open search (Ctrl+K)' was announced regardless of active-filter state",
-      "file": "frontend/src/components/Toolbar.svelte:61",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "Three-way derived label: 'Search active — open search bar (Ctrl+K)' when !searchVisible && searchActive; searchActive prop already present at L:20",
-      "status": "fixed",
-      "session": 8
-    },
-    {
-      "id": 16,
-      "description": "Dead CSS: .search-panel transition and .search-panel.active transform never fire — {#if} removes DOM node before transitions can play; translateY(0) was CSS default, opacity never changed",
-      "file": "frontend/src/App.svelte:585",
-      "type": "dead-code",
-      "severity": "low",
-      "verified": true,
-      "fix": "Removed .search-panel transition and .search-panel.active { transform: translateY(0) } rules",
-      "status": "fixed",
-      "session": 8
-    },
-    {
-      "id": 17,
-      "description": "Search button missing aria-expanded and aria-controls — columns button was fixed in sessions 1/5 but search button controlling <div class=search-panel> had no ARIA disclosure linkage; AT users could not determine if search panel was open",
-      "file": "frontend/src/components/Toolbar.svelte:86",
-      "also": "frontend/src/App.svelte:500",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "Added aria-expanded={searchVisible} and aria-controls='search-panel' to search button; added id='search-panel' to .search-panel div",
-      "status": "fixed",
-      "session": 9
-    },
-    {
-      "id": 18,
-      "description": "filterTitle says 'Filters active (0)' when filter panel is open but no filters are entered — self-contradictory label, button glows teal while label implies zero activity",
-      "file": "frontend/src/components/Toolbar.svelte:68",
-      "type": "ux",
-      "severity": "low",
-      "verified": true,
-      "fix": "Four-way derivation: open+active → 'Close filters — N active'; open+empty → 'Close filters'; closed+active → 'Filters active (N) — open panel'; closed+empty → 'Toggle filters'",
-      "status": "fixed",
-      "session": 9
-    },
-    {
-      "id": 19,
-      "description": "Filter button missing aria-expanded — search button (F17) and columns button both carry aria-expanded; filter button at Toolbar.svelte:112-126 toggles filtersVisible but exposes no programmatic expanded/collapsed state; carry-forward miss from session 9",
-      "file": "frontend/src/components/Toolbar.svelte:115",
-      "type": "a11y",
-      "severity": "medium",
-      "verified": true,
-      "fix": "Added aria-expanded={filtersVisible} to filter button; aria-controls waived (no id target exists — filter inputs render inline in RevoGrid column headers)",
-      "status": "fixed",
-      "session": 10
+      "description": "Justfile test-e2e recipe omits destructive-operation warning. d72decb added TRUNCATE + INSERT on every run; Justfile:33 invocation gives no signal before data destruction. Before d72decb the suite was read-only.",
+      "file": "Justfile",
+      "line": "29-33",
+      "fix_description": "Add comment warning that test-e2e truncates vehicle_logs and soc_readings; recommend SEEKI_SKIP_SEED=1 for non-dedicated DBs.",
+      "verification": "verified",
+      "citations": ["Justfile:29-33", "tests/fixtures/seed.sql:28", "frontend/e2e/global-setup.ts:175"],
+      "consensus": "severity disputed by ADVOCATE-1; arbiter ruled as condition",
+      "status": "merge_blocker"
     }
   ],
-  "merge_conditions": "All 19 findings fixed across 10 sessions. svelte-check passes 0 errors 0 warnings.",
-  "test_command": "cd frontend && npx svelte-check",
-  "session": 10,
-  "rounds": 9
+  "critical_discoveries": [],
+  "non_blocker_followups": [
+    {
+      "id": "FU-1",
+      "description": "Credential guard at global-setup.ts:171 omits !pass check — unset SEEKI_TEST_DB_PASSWORD produces generic psql auth error instead of specific 'password not set' message",
+      "severity": "low"
+    },
+    {
+      "id": "FU-2",
+      "description": "Filter upper-bound uses toBeLessThanOrEqual(initialTotal) — with seed data the reduction is strict; toBeLessThan(initialTotal) would give a tighter assertion",
+      "file": "frontend/e2e/data-grid.spec.ts",
+      "line": 133,
+      "severity": "low"
+    }
+  ],
+  "resolved_in_session": [
+    "F1 partial-seed risk (Playwright aborts on globalSetup failure — tests never run against empty DB)",
+    "CD-1 inverted-logic framing (scenarios 1-3 correct; only orphaned-backup path regresses)",
+    "O-4 loud failure under SEEKI_SKIP_SEED=1 is correct behavior",
+    "O-2 teardown-without-DB-cleanup is conventional for dedicated test DBs",
+    "O-3 empty-password guard — imprecise diagnostic, not silent failure"
+  ],
+  "prior_session_status": {
+    "session_1": "6 findings, all fixed",
+    "session_2": "2 findings, all fixed",
+    "session_3": "3 findings + 1 Critical Discovery, all applied in d72decb (verified intact; S4-1 is a regression in the CD-1 fix itself, not in other session-3 fixes)"
+  },
+  "recommendation_file": "2026-04-12-223500-council-pr32-session4.md",
+  "summary": "Session 4 auditing d72decb surfaced two findings: S4-1 (merge blocker, unanimous) is a regression in the CD-1 fix — the shouldBackup guard fails on the orphaned-backup+evolved-config path, destroying user-edited configs. S4-2 (arbiter-ruled condition) is a documentation gap: Justfile introduces a new destructive operation without warning. Both are addressable in the same PR. Core F1/F2/seed idempotency fixes verified correct. No Critical Discoveries."
 }
