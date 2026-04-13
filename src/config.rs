@@ -177,10 +177,20 @@ pub fn display_name_table(schema: &str, table: &str, config: &DisplayConfig) -> 
         .unwrap_or_else(|| casualify(table, false))
 }
 
-pub fn display_name_column(table: &str, column: &str, config: &DisplayConfig) -> String {
+pub fn display_name_column(
+    schema: &str,
+    table: &str,
+    column: &str,
+    config: &DisplayConfig,
+) -> String {
+    // Lookup order mirrors display_name_table: qualified key ("schema.table") → bare
+    // name → casualify fallback. Prevents column overrides from colliding across
+    // schemas that share a table name.
+    let qualified = format!("{schema}.{table}");
     config
         .columns
-        .get(table)
+        .get(&qualified)
+        .or_else(|| config.columns.get(table))
         .and_then(|columns| columns.get(column))
         .cloned()
         .unwrap_or_else(|| casualify(column, true))
@@ -514,7 +524,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn column_display_name_uses_title_case_heuristic() {
         assert_eq!(
-            display_name_column("my_table", "some_column", &DisplayConfig::default()),
+            display_name_column("public", "my_table", "some_column", &DisplayConfig::default()),
             "Some Column"
         );
     }
@@ -522,7 +532,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn column_display_name_drops_id_suffix() {
         assert_eq!(
-            display_name_column("vehicles_log", "supervisor_id", &DisplayConfig::default()),
+            display_name_column("public", "vehicles_log", "supervisor_id", &DisplayConfig::default()),
             "Supervisor"
         );
     }
@@ -532,7 +542,7 @@ subtitle = "Fleet Telemetry"
         let config = AppConfig::parse(FULL_CONFIG).expect("full config should parse");
 
         assert_eq!(
-            display_name_column("vehicles_log", "posn_lat", &config.display),
+            display_name_column("public", "vehicles_log", "posn_lat", &config.display),
             "Latitude"
         );
     }
@@ -606,7 +616,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn casualify_preserves_all_caps_segments() {
         assert_eq!(
-            display_name_column("t", "GPS_LATITUDE", &DisplayConfig::default()),
+            display_name_column("public", "t", "GPS_LATITUDE", &DisplayConfig::default()),
             "GPS LATITUDE"
         );
     }
@@ -623,7 +633,7 @@ subtitle = "Fleet Telemetry"
     fn casualify_handles_id_only_column() {
         // "_id" with drop_id_suffix strips to "" — fallback returns raw name
         assert_eq!(
-            display_name_column("t", "_id", &DisplayConfig::default()),
+            display_name_column("public", "t", "_id", &DisplayConfig::default()),
             "_id"
         );
     }
@@ -631,14 +641,17 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn casualify_handles_bare_id_column() {
         assert_eq!(
-            display_name_column("t", "id", &DisplayConfig::default()),
+            display_name_column("public", "t", "id", &DisplayConfig::default()),
             "Id"
         );
     }
 
     #[test]
     fn casualify_handles_empty_string() {
-        assert_eq!(display_name_column("t", "", &DisplayConfig::default()), "");
+        assert_eq!(
+            display_name_column("public", "t", "", &DisplayConfig::default()),
+            ""
+        );
     }
 
     #[test]

@@ -479,6 +479,20 @@ pub fn build_config_toml(
     if let Some(tables_cfg) = &req.tables
         && let Some(include) = &tables_cfg.include
     {
+        for entry in include {
+            let (schema_part, table_part) = match entry.split_once('.') {
+                Some((s, t)) => (Some(s), t),
+                None => (None, entry.as_str()),
+            };
+            if let Some(s) = schema_part
+                && !postgres::is_valid_identifier(s)
+            {
+                return Err(format!("Invalid schema in tables.include: {entry}"));
+            }
+            if !postgres::is_valid_identifier(table_part) {
+                return Err(format!("Invalid table name in tables.include: {entry}"));
+            }
+        }
         let arr = toml::Value::Array(
             include
                 .iter()

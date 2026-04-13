@@ -100,7 +100,8 @@ async fn get_display_config(
             .unwrap_or_default()
             .into_iter()
             .map(|c| {
-                let display = display_name_column(&table.name, &c.name, &state.config.display);
+                let display =
+                    display_name_column(&table.schema, &table.name, &c.name, &state.config.display);
                 (
                     c.name,
                     ColumnDisplayConfig {
@@ -174,7 +175,7 @@ async fn get_columns(
     let columns: Vec<serde_json::Value> = raw_columns
         .into_iter()
         .map(|c| {
-            let display = display_name_column(&table, &c.name, &state.config.display);
+            let display = display_name_column(&schema, &table, &c.name, &state.config.display);
             serde_json::json!({
                 "name": c.name,
                 "display_name": display,
@@ -277,7 +278,7 @@ async fn export_csv(
     let columns = state.db.get_columns(&schema, &table).await?;
     let display_headers: Vec<String> = columns
         .iter()
-        .map(|c| display_name_column(&table, &c.name, &state.config.display))
+        .map(|c| display_name_column(&schema, &table, &c.name, &state.config.display))
         .collect();
 
     let display_table = display_name_table(&schema, &table, &state.config.display)
@@ -703,7 +704,7 @@ mod tests {
 
         let headers: Vec<String> = columns
             .iter()
-            .map(|c| display_name_column("vehicles_log", &c.name, &config))
+            .map(|c| display_name_column("public", "vehicles_log", &c.name, &config))
             .collect();
 
         assert_eq!(headers, vec!["Supervisor", "Latitude"]);
