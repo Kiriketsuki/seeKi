@@ -48,6 +48,8 @@ anyhow = "1"
 dirs-next = "2"
 openssh = { version = "0.10", features = ["native-mux"] }
 url = "2"
+ssh-key = { version = "0.6", features = ["encryption", "ed25519", "rsa"] }
+tempfile = "3"
 
 [dev-dependencies]
 http-body-util = "0.1.3"
