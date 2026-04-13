@@ -46,3 +46,6 @@ council-fix-manifest.json
 
 # Stray spec files at repo root (specs belong in docs/specs/)
 /*-spec.md
+
+# Stray screenshots at repo root
+/seeki-*.png
