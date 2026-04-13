@@ -148,6 +148,7 @@ test.describe('Data Grid — Filtering', () => {
 
     // We need at least 2 columns to test multiple filters
     if (filterCount < 2) {
+      console.warn('[e2e] Multi-filter AND coverage skipped: loaded table has fewer than 2 filterable columns. If running against a real DB (SEEKI_SKIP_SEED=1), point at a table with 2+ columns to exercise this assertion.');
       test.skip();
       return;
     }
@@ -217,6 +218,7 @@ test.describe('Data Grid — Pagination', () => {
     const totalRows = await seeki.getTotalRows();
 
     if (totalRows <= 50) {
+      console.warn('[e2e] Pagination coverage skipped: loaded table has 50 or fewer rows. If running against a real DB (SEEKI_SKIP_SEED=1), point at a table with >50 rows to exercise this assertion.');
       test.skip();
       return;
     }
