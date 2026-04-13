@@ -8,13 +8,13 @@ authors = ["Jovian Lim <kiriketsuki@gmail.com>"]
 
 [dependencies]
 # Web framework
-axum = { version = "0.8", features = ["macros", "multipart"] }
+axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 
 # Database drivers
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "migrate", "chrono", "uuid", "rust_decimal"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "rust_decimal"] }
 rust_decimal = { version = "1", features = ["serde-str"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["serde"] }
@@ -51,18 +51,5 @@ url = "2"
 ssh-key = { version = "0.6", features = ["encryption", "ed25519", "rsa"] }
 tempfile = "3"
 
-# Update patcher
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-sha2 = "0.10"
-getrandom = "0.2"
-
 [dev-dependencies]
 http-body-util = "0.1.3"
-
-[build-dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
