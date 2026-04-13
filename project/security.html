@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Security — SeeKi</title>
+    <meta name="description" content="How SeeKi stays a read-only product: identifier validation, parameterised values, config handling, and how to report a vulnerability." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body data-page="project-security">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/project/security.html" aria-current="page">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <header class="sk-page-header">
+            <p class="sk-page-header__kicker">Project</p>
+            <h1 class="sk-page-header__title">Security</h1>
+            <p class="sk-page-header__lede">SeeKi touches production databases. The defaults assume that, and the code is written to keep a read-only product read-only.</p>
+          </header>
+
+          <section>
+            <h2>Threat model, in one paragraph</h2>
+            <p>SeeKi runs locally, binds to <code>127.0.0.1</code>, and talks to databases you already have credentials for. The risks we take seriously are: a crafted URL or header that turns a SELECT into something more destructive; secrets leaking out of the config file; and a logic mistake that ever issues a write. Everything below is a control against one of those.</p>
+          </section>
+
+          <section>
+            <h2>SQL injection — identifier whitelist</h2>
+            <p>Table and column names cannot be bound as SQL parameters, so they are interpolated as strings. Every such name passes a whitelist before it reaches a query. The check lives in <code>src/db/postgres.rs</code> and refuses anything outside a small, double-quote-safe alphabet:</p>
+<pre class="sk-code"><code>/// Validate that a name is safe for use as a double-quoted SQL identifier.
+/// Allows alphanumeric, underscore, hyphen, and space — all safe inside `"..."`.
+fn is_valid_identifier(name: &amp;str) -&gt; bool {
+    !name.is_empty()
+        &amp;&amp; name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
+}</code></pre>
+            <p>Every identifier is validated twice: once for its shape, once against the actual schema returned by introspection. A request is rejected if either check fails:</p>
+<pre class="sk-code"><code>for col_name in filters.keys() {
+    if !is_valid_identifier(col_name) {
+        return Err(ValidationError(format!("Invalid filter column name: {col_name}")).into());
+    }
+    if !valid_column_names.contains(col_name.as_str()) {
+        return Err(ValidationError(format!("Unknown filter column: {col_name}")).into());
+    }
+}</code></pre>
+            <p>The same pair of checks runs for sort columns before they are interpolated into the <code>ORDER BY</code> clause. A name that is shaped right but does not exist in the schema is still refused.</p>
+            <aside class="sk-callout sk-callout--warn">
+              <p class="sk-callout__title">Rule for new engines</p>
+              <p>Any new database backend (SQLite is next) must route identifiers through an equivalent whitelist <em>before</em> string interpolation. No <code>format!</code>-ing a user-supplied name into SQL without the check. If the check is missing, the PR does not merge.</p>
+            </aside>
+          </section>
+
+          <section>
+            <h2>Parameterised values</h2>
+            <p>Filter values, search strings, pagination offsets, and every other user-supplied <em>value</em> travel through <a href="https://github.com/launchbadge/sqlx" rel="noopener"><code>sqlx</code></a> bind parameters. The code never builds a SQL string by concatenating a value; it builds the SQL with placeholders and hands the values to the driver. That keeps the parser on the database side from ever re-interpreting a value as code.</p>
+            <p>In practice this means every <code>sqlx::query(...)</code> call in <code>db/postgres.rs</code> pairs each <code>$1</code>, <code>$2</code>, … with a matching <code>.bind(value)</code>. A review that spots a raw value inside a SQL literal is a review that requests changes.</p>
+          </section>
+
+          <section>
+            <h2>No secrets in the repository</h2>
+            <ul>
+              <li><strong><code>seeki.toml</code> is gitignored.</strong> It is where your database URL and credentials live. The repository ships <code>seeki.toml.example</code> as a template; the real file is created by the <a href="/features/setup-wizard.html">setup wizard</a> or by hand, and it never gets committed.</li>
+              <li><strong>Credentials are not logged.</strong> The server logs table names and row counts, not connection strings. If you see a URL in a log, that is a bug — open an issue.</li>
+              <li><strong>SSH keys are read from disk, not embedded.</strong> When tunnelling, SeeKi points at a key file you already have. Paths are in the config; the key material stays in your home directory.</li>
+              <li><strong>Do not paste config into bug reports.</strong> Redact the URL before filing. The maintainers will ask for the schema name or error message, not the password.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Read-only by construction</h2>
+            <ul>
+              <li>Every SQL statement in <code>db/postgres.rs</code> is a <code>SELECT</code> or a catalog read (<code>information_schema</code>, <code>pg_catalog</code>). There is no <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>TRUNCATE</code>, or DDL anywhere in the binary.</li>
+              <li>The HTTP surface mirrors that: <code>GET /api/tables</code>, <code>GET /api/columns</code>, <code>GET /api/rows</code>. There is no mutating verb and no endpoint that accepts a body larger than a query string.</li>
+              <li>Operators who want belt-and-braces enforcement should connect SeeKi with a read-only database role. The app will not issue a write, but a role with only <code>SELECT</code> privileges turns the invariant into a hard constraint the database checks.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Network surface</h2>
+            <ul>
+              <li>The server binds to <code>127.0.0.1:3141</code> by default. It is not reachable from another machine unless you change the bind address yourself.</li>
+              <li>There is no built-in authentication. If you expose the port to other hosts, put a reverse proxy with auth in front of it. An auth module is on the <a href="/project/roadmap.html">roadmap</a>, not in the current build.</li>
+              <li>Errors are returned as structured JSON with human-readable messages. Stack traces and query text stay on the server side.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Responsible disclosure</h2>
+            <p>If you find a vulnerability, please do not open a public issue. Email the maintainer directly:</p>
+            <ul>
+              <li><strong>Contact</strong> — <a href="mailto:security@seeki.dev">security@seeki.dev</a>.</li>
+              <li><strong>What to include</strong> — a description, a reproducer (smallest useful case), the affected version from <code>VERSION</code>, and the platform you hit it on.</li>
+              <li><strong>What to expect</strong> — an acknowledgement within a few days, a fix plan, and credit in the changelog once the fix ships, unless you prefer to stay anonymous.</li>
+            </ul>
+            <p>Low-severity and hardening suggestions can go in a regular GitHub issue.</p>
+          </section>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

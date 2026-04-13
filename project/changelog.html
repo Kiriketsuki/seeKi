@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Changelog — SeeKi</title>
+    <meta name="description" content="What has shipped in SeeKi, grouped by epic, with links to every commit." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body data-page="project-changelog">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/project/changelog.html" aria-current="page">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <header class="sk-page-header">
+            <p class="sk-page-header__kicker">Project</p>
+            <h1 class="sk-page-header__title">Changelog</h1>
+            <p class="sk-page-header__lede">What has shipped on <code>main</code>, grouped by the epic that carried it. Each entry links to the commit on GitHub.</p>
+          </header>
+
+          <section>
+            <h2>v0.1 — the MVP</h2>
+            <p>Six epics, merged in order. Together they turn an empty repository into a single binary that reads a PostgreSQL database and renders it as a spreadsheet.</p>
+
+            <h3>Foundations</h3>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/8623b96" rel="noopener"><code>8623b96</code></a> — Initial commit.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/f973368" rel="noopener"><code>f973368</code></a> — feat: scaffold SeeKi project structure.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/aeb1b72" rel="noopener"><code>aeb1b72</code></a> — docs: research findings from the initial brainstorm.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/2f1655d" rel="noopener"><code>2f1655d</code></a> — docs: README, MVP spec, licence, project instructions.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/c72b098" rel="noopener"><code>c72b098</code></a> — ci: pipeline in place, docs deployment pointed at the <code>docs</code> branch.</li>
+            </ul>
+
+            <h3>Epic #27 — Backend API &amp; Config</h3>
+            <p>The server-side surface: TOML-driven configuration, a PostgreSQL pool, and the <code>/api/tables</code>, <code>/api/columns</code>, <code>/api/rows</code> endpoints that everything else consumes.</p>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/fb5cd59" rel="noopener"><code>fb5cd59</code></a> — epic: Backend API &amp; Config (#27).</li>
+            </ul>
+
+            <h3>Epic #28 — Frontend Scaffold &amp; Integration</h3>
+            <p>Svelte 5 project wired into <code>frontend/</code>, embedded into the Rust binary via <code>rust-embed</code>, proxied during development.</p>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/d6f81f0" rel="noopener"><code>d6f81f0</code></a> — epic: Frontend Scaffold &amp; Integration (#28).</li>
+            </ul>
+
+            <h3>Epic #29 — Data Grid &amp; Table Navigation</h3>
+            <p>The hero surface: RevoGrid-backed grid, table list, paginated row fetch, hatched NULL cells, Yes/No badges.</p>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/e706582" rel="noopener"><code>e706582</code></a> — epic: Data Grid &amp; Table Navigation (#29).</li>
+            </ul>
+
+            <h3>Epic #30 — Toolbar, Column Management &amp; Export</h3>
+            <p>Sort, search, column hide/show, and CSV export, all driven from the grid header — no SQL surface introduced.</p>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/0931d26" rel="noopener"><code>0931d26</code></a> — epic: Toolbar, Column Management &amp; Export (#30).</li>
+            </ul>
+
+            <h3>Epic #31 — First-Run Setup Wizard</h3>
+            <p>On first launch, walk a non-technical user from no config file to a working connection without them ever seeing a TOML syntax error.</p>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/2a653d5" rel="noopener"><code>2a653d5</code></a> — epic: First-Run Setup Wizard (#31).</li>
+            </ul>
+
+            <h3>Epic #32 — End-to-End QA</h3>
+            <p>Playwright coverage of the golden paths, the QA checklist in <code>QA-CHECKLIST.md</code>, and the numeric-precision and Safari-date fixes that fell out of it.</p>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/465a493" rel="noopener"><code>465a493</code></a> — epic: End-to-End QA (#32).</li>
+            </ul>
+
+            <h3>Brand refresh</h3>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/bc6d510" rel="noopener"><code>bc6d510</code></a> — chore: redesign logo, favicon, and brand mark (#54).</li>
+            </ul>
+
+            <h3>Release plumbing &amp; fixes</h3>
+            <ul>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/600e236" rel="noopener"><code>600e236</code></a> — ci: manual version bump to 26.0.0.1.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/c0f0345" rel="noopener"><code>c0f0345</code></a> — ci: rewrite autobump to use push trigger, version backdated to 26.5.0.1.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/648be8c" rel="noopener"><code>648be8c</code></a> — fix(ci): <code>mkdir frontend/dist</code> before <code>cargo check</code> / <code>cargo test</code>.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/87cbbee" rel="noopener"><code>87cbbee</code></a> — fix(ci): satisfy newer clippy lints and <code>cargo fmt</code>.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/e1fae49" rel="noopener"><code>e1fae49</code></a> — chore: gitignore council and root spec artifacts.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/bfca99b" rel="noopener"><code>bfca99b</code></a> — chore: gitignore stray screenshot PNGs at the repo root.</li>
+              <li><a href="https://github.com/Kiriketsuki/seeKi/commit/7be9cae" rel="noopener"><code>7be9cae</code></a> — fix(ci): repair the version-bump workflow YAML parse error.</li>
+            </ul>
+          </section>
+
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Where the authoritative log lives</p>
+            <p>This page is a curated read. For the full commit history, including merge commits and PR conversation, see <a href="https://github.com/Kiriketsuki/seeKi/commits/main" rel="noopener">the <code>main</code> branch on GitHub</a>.</p>
+          </aside>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

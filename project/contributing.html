@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contributing — SeeKi</title>
+    <meta name="description" content="How to get SeeKi building locally, which branch names we use, and what a good pull request looks like." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body data-page="project-contributing">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link" href="/project/roadmap.html">Roadmap</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/project/contributing.html" aria-current="page">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <header class="sk-page-header">
+            <p class="sk-page-header__kicker">Project</p>
+            <h1 class="sk-page-header__title">Contributing</h1>
+            <p class="sk-page-header__lede">How to get SeeKi running on your machine, which conventions we ask you to follow, and what a reviewer will look for before merging.</p>
+          </header>
+
+          <section>
+            <h2>Dev setup</h2>
+            <p>SeeKi is one Rust binary that embeds a Svelte frontend. You need both toolchains on your machine, but only once.</p>
+
+            <h3>Prerequisites</h3>
+            <ul>
+              <li><strong>Rust</strong> — edition 2024, so <code>rustc</code> 1.85 or newer. Install via <a href="https://rustup.rs" rel="noopener">rustup</a>.</li>
+              <li><strong>Node runtime</strong> — <a href="https://bun.sh" rel="noopener">Bun</a> is the default; <code>npm</code> works as a fallback. The frontend has no lockfile preference, both produce the same tree.</li>
+              <li><strong>A PostgreSQL</strong> you can point at. The Chinook sample database is enough.</li>
+            </ul>
+
+            <h3>First build</h3>
+<pre class="sk-code"><code># clone and enter the repo
+git clone https://github.com/Kiriketsuki/seeKi.git
+cd seeKi
+
+# install frontend deps
+cd frontend
+bun install      # or: npm install
+bun run build    # or: npm run build
+cd ..
+
+# build and run the binary
+cargo run</code></pre>
+            <p>The first launch opens the <a href="/features/setup-wizard.html">setup wizard</a> — point it at your PostgreSQL, then the grid is live at <code>http://127.0.0.1:3141</code>.</p>
+
+            <h3>Iteration loop</h3>
+            <ul>
+              <li><code>cargo check</code> — fastest feedback on Rust edits.</li>
+              <li><code>cargo test</code> — run before opening a PR.</li>
+              <li><code>cargo clippy</code> — lints the CI enforces. Warnings are errors on CI.</li>
+              <li><code>cargo fmt</code> — formatting is checked too.</li>
+              <li><code>cd frontend &amp;&amp; bun run dev</code> — hot-reload the Svelte side while the Rust server runs.</li>
+            </ul>
+
+            <aside class="sk-callout sk-callout--tip">
+              <p class="sk-callout__title">CI expects <code>frontend/dist/</code></p>
+              <p><code>rust-embed</code> reads from <code>frontend/dist/</code> at compile time. If <code>cargo check</code> fails with a missing-directory error, run <code>bun run build</code> in <code>frontend/</code> (or just <code>mkdir frontend/dist</code> for a pure-Rust change).</p>
+            </aside>
+          </section>
+
+          <section>
+            <h2>Branch naming</h2>
+            <p>Every branch starts with a type prefix, lowercase and kebab-cased. The GitHub automation creates branches in this shape for labelled issues; human branches should match.</p>
+            <table class="sk-table">
+              <thead>
+                <tr><th scope="col">Prefix</th><th scope="col">When to use</th><th scope="col">Example</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>feat/</code></td><td>Net-new user-visible behaviour.</td><td><code>feat/sqlite-engine</code></td></tr>
+                <tr><td><code>fix/</code></td><td>A bug with a reproducer.</td><td><code>fix/safari-date-parsing</code></td></tr>
+                <tr><td><code>refactor/</code></td><td>Internal reshuffle, no behaviour change.</td><td><code>refactor/extract-query-builder</code></td></tr>
+                <tr><td><code>docs/</code></td><td>Documentation-only changes.</td><td><code>docs/contributing-page</code></td></tr>
+                <tr><td><code>test/</code></td><td>Tests only, production code untouched.</td><td><code>test/row-pagination-edges</code></td></tr>
+                <tr><td><code>chore/</code></td><td>Tooling, dependencies, repo housekeeping.</td><td><code>chore/bump-sqlx</code></td></tr>
+                <tr><td><code>perf/</code></td><td>Measured performance improvements.</td><td><code>perf/column-list-caching</code></td></tr>
+                <tr><td><code>ci/</code></td><td>Workflow, actions, release pipeline.</td><td><code>ci/autobump-on-push</code></td></tr>
+                <tr><td><code>hotfix/</code></td><td>Urgent patch to a released version.</td><td><code>hotfix/wizard-crash-on-empty-db</code></td></tr>
+                <tr><td><code>epic/</code></td><td>Long-lived integration branch for a tracked epic.</td><td><code>epic/29-data-grid</code></td></tr>
+              </tbody>
+            </table>
+            <p>Branches created from issues include the issue number: <code>feat/42-saved-views</code>.</p>
+          </section>
+
+          <section>
+            <h2>Conventional commits</h2>
+            <p>Commit subjects follow <a href="https://www.conventionalcommits.org/en/v1.0.0/" rel="noopener">Conventional Commits</a>. Same prefixes as the branch types, with optional scope.</p>
+<pre class="sk-code"><code>&lt;type&gt;[(scope)]: &lt;description&gt;
+
+[optional body]
+
+[optional footer(s)]</code></pre>
+
+            <p>Good subjects are imperative, sentence-case, and fit on one line under 72 characters. Examples pulled from <code>main</code>:</p>
+            <ul>
+              <li><code>fix(ci): repair version-bump workflow YAML parse error</code></li>
+              <li><code>epic: End-to-End QA (#32)</code></li>
+              <li><code>chore: Redesign logo, favicon, and brand mark (#54)</code></li>
+              <li><code>feat: scaffold SeeKi project structure</code></li>
+            </ul>
+            <p>The body is where the <em>why</em> goes. If the change is obvious from the diff, skip the body — do not restate the subject.</p>
+          </section>
+
+          <section>
+            <h2>Pull request workflow</h2>
+            <ol>
+              <li><strong>Open or claim an issue.</strong> Anything bigger than a typo fix starts as an issue so the scope is written down before the branch is cut.</li>
+              <li><strong>Branch from <code>main</code>.</strong> Use the naming convention above. Long-lived epic branches are the exception — they live until their PR merges.</li>
+              <li><strong>Keep the diff focused.</strong> One concern per PR. If you find an unrelated bug, open a second PR.</li>
+              <li><strong>Run the checks locally.</strong> <code>cargo fmt</code>, <code>cargo clippy</code>, <code>cargo test</code>, and <code>bun run build</code> in <code>frontend/</code>. CI runs the same, but catching them locally saves a round trip.</li>
+              <li><strong>Fill the PR description.</strong> State what changed, why, and how you tested it. Link the issue with <code>Closes #N</code>.</li>
+              <li><strong>Walk the QA checklist.</strong> For anything that touches the grid, wizard, or export flows, step through <code>QA-CHECKLIST.md</code>. Note which items you covered in the PR description.</li>
+              <li><strong>Wait for review.</strong> Default to squash-merge. A PR needs CI green plus one review before it lands.</li>
+            </ol>
+          </section>
+
+          <section>
+            <h2>What a reviewer is looking for</h2>
+            <ul>
+              <li><strong>Read-only integrity.</strong> No new code path mutates the target database. No <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, or DDL — ever.</li>
+              <li><strong>No SQL surfaced to users.</strong> Every new UI affordance uses spreadsheet vocabulary: sort, search, filter, show, hide, export.</li>
+              <li><strong>Identifier validation.</strong> Anything that interpolates a table or column name into SQL passes through the whitelist in <a href="/project/security.html">Security</a>. Values use <code>sqlx</code> bind parameters.</li>
+              <li><strong>Tests that fail without your change.</strong> Bug fixes add a reproducer; features add happy-path and one edge case.</li>
+              <li><strong>Design fidelity.</strong> Frontend changes respect the <code>--sk-*</code> token system and the <code>.impeccable.md</code> brief. No new hardcoded colours, no glass on interior surfaces.</li>
+              <li><strong>Commit hygiene.</strong> Atomic commits with Conventional Commit subjects. If you lost the thread mid-PR, <code>git rebase -i</code> before review.</li>
+              <li><strong>Docs in the same PR.</strong> If you changed the UI or the config, update the matching page under <code>/get-started</code>, <code>/features</code>, or <code>/operate</code>.</li>
+            </ul>
+          </section>
+
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Code of conduct</p>
+            <p>Be kind, be specific, and assume the person on the other end is trying. Reviews are about the code, not the author.</p>
+          </aside>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>

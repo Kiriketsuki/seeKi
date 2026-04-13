@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Roadmap — SeeKi</title>
+    <meta name="description" content="What has shipped, what is in flight, and what comes next for SeeKi." />
+    <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('sk-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body data-page="project-roadmap">
+    <div class="sk-shell">
+      <header class="sk-topbar sk-glass" role="banner">
+        <a class="sk-topbar__brand sk-brand" href="/" aria-label="SeeKi — home">
+          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
+          <span class="sk-topbar__tagline">read-only database browser</span>
+        </a>
+        <div class="sk-topbar__actions">
+          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
+            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
+          </button>
+          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+        </div>
+      </header>
+
+      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
+        <nav class="sk-sidebar__nav" aria-label="Documentation">
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Get Started</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/get-started/install.html">Install</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/quickstart.html">Quickstart</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/connections.html">Connections</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/config-reference.html">Config reference</a></li>
+              <li><a class="sk-sidebar__link" href="/get-started/ssh-tunneling.html">SSH tunneling</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Features</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/features/setup-wizard.html">Setup wizard</a></li>
+              <li><a class="sk-sidebar__link" href="/features/data-grid.html">Data grid</a></li>
+              <li><a class="sk-sidebar__link" href="/features/column-dropdown.html">Column menu</a></li>
+              <li><a class="sk-sidebar__link" href="/features/yes-no-badges.html">Yes/No badges</a></li>
+              <li><a class="sk-sidebar__link" href="/features/null-rendering.html">NULL rendering</a></li>
+              <li><a class="sk-sidebar__link" href="/features/branding.html">Branding</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Operate</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/operate/running.html">Running SeeKi</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/config-locations.html">Config locations</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/logs.html">Logs</a></li>
+              <li><a class="sk-sidebar__link" href="/operate/troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Develop</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/develop/architecture.html">Architecture</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/frontend-map.html">Frontend map</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/adding-a-db-engine.html">Adding a database engine</a></li>
+              <li><a class="sk-sidebar__link" href="/develop/build-release.html">Build &amp; release</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">API</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/api/">Overview</a></li>
+              <li><a class="sk-sidebar__link" href="/api/tables.html">Tables</a></li>
+              <li><a class="sk-sidebar__link" href="/api/columns.html">Columns</a></li>
+              <li><a class="sk-sidebar__link" href="/api/rows.html">Rows</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Project</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/project/changelog.html">Changelog</a></li>
+              <li><a class="sk-sidebar__link sk-sidebar__link--active" href="/project/roadmap.html" aria-current="page">Roadmap</a></li>
+              <li><a class="sk-sidebar__link" href="/project/contributing.html">Contributing</a></li>
+              <li><a class="sk-sidebar__link" href="/project/security.html">Security</a></li>
+            </ul>
+          </section>
+          <section class="sk-sidebar__section">
+            <h2 class="sk-sidebar__heading">Reference</h2>
+            <ul class="sk-sidebar__list">
+              <li><a class="sk-sidebar__link" href="/sitemap.html">Sitemap</a></li>
+            </ul>
+          </section>
+        </nav>
+      </aside>
+
+      <main class="sk-content" role="main">
+        <article class="sk-prose">
+          <header class="sk-page-header">
+            <p class="sk-page-header__kicker">Project</p>
+            <h1 class="sk-page-header__title">Roadmap</h1>
+            <p class="sk-page-header__lede">Where SeeKi is, where it is going, and what is parked for later. Short horizons only — anything past the next version is an intention, not a promise.</p>
+          </header>
+
+          <aside class="sk-callout sk-callout--note">
+            <p class="sk-callout__title">Subject to change</p>
+            <p>Everything below the <em>Shipped</em> section is a plan, not a commitment. Priorities shift with real-world use. If a line item matters to you, open an issue — user context changes the ranking.</p>
+          </aside>
+
+          <section>
+            <h2>Shipped — v0.1</h2>
+            <p>The MVP. A single Rust binary that opens a PostgreSQL database and renders it as a spreadsheet, with no SQL surfaced to the user.</p>
+            <ul>
+              <li>Backend API &amp; config (<a href="https://github.com/Kiriketsuki/seeKi/pull/27" rel="noopener">#27</a>) — TOML config, PostgreSQL pool, <code>/api/tables</code>, <code>/api/columns</code>, <code>/api/rows</code>.</li>
+              <li>Frontend scaffold &amp; integration (<a href="https://github.com/Kiriketsuki/seeKi/pull/28" rel="noopener">#28</a>) — Svelte 5, embedded into the binary at build time.</li>
+              <li>Data grid &amp; table navigation (<a href="https://github.com/Kiriketsuki/seeKi/pull/29" rel="noopener">#29</a>) — RevoGrid, paginated rows, hatched NULL cells, Yes/No badges.</li>
+              <li>Toolbar, column management &amp; export (<a href="https://github.com/Kiriketsuki/seeKi/pull/30" rel="noopener">#30</a>) — sort, search, hide/show, CSV export.</li>
+              <li>First-run setup wizard (<a href="https://github.com/Kiriketsuki/seeKi/pull/31" rel="noopener">#31</a>) — no-TOML-required onboarding for non-technical users.</li>
+              <li>End-to-end QA (<a href="https://github.com/Kiriketsuki/seeKi/pull/32" rel="noopener">#32</a>) — Playwright suite plus the <code>QA-CHECKLIST.md</code> gate, with numeric-precision and Safari-date fixes.</li>
+              <li>Logo, favicon, and brand mark refresh (<a href="https://github.com/Kiriketsuki/seeKi/pull/54" rel="noopener">#54</a>).</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>In flight</h2>
+            <p>Work that is actively being carved up and merged on top of v0.1.</p>
+            <ul>
+              <li><strong>Documentation site.</strong> The page you are reading. Get Started, Features, Operate, Develop, API, and Project sections, all built against <code>/assets/css/site.css</code>.</li>
+              <li><strong>Release packaging.</strong> Version-bump workflow is stabilising after the last run of CI fixes. Goal: one tagged artefact per <code>main</code> push without hand-editing <code>VERSION</code>.</li>
+              <li><strong>Post-QA polish.</strong> Small, targeted fixes raised during the end-to-end pass — column dropdown focus, export error surface, setup-wizard keyboard flow.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Next up — v0.2</h2>
+            <p>A single headline item and the pieces that fall out of it.</p>
+            <ul>
+              <li><strong>SQLite engine.</strong> Second database backend, matching the PostgreSQL contract: <code>list_tables</code>, <code>get_columns</code>, <code>query_rows</code>. Unlocks local-file workflows (Chinook, bundled reports, Airtable exports) without a running server.</li>
+              <li>New <code>DatabaseKind::Sqlite</code> variant and <code>DatabasePool</code> arm — see <a href="/develop/adding-a-db-engine.html">Adding a database engine</a>.</li>
+              <li>Setup-wizard path for <em>Open a SQLite file</em> — a file picker, not a connection string.</li>
+              <li>Connection-test parity with the PostgreSQL flow: a table preview, row estimates, system-table flagging.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Ideas pile</h2>
+            <p>Parked. None of these are committed to a version — they exist so the next conversation can start from something written down instead of from scratch.</p>
+            <ul>
+              <li><strong>MySQL / MariaDB engine.</strong> Third backend. Mostly a mechanical follow to SQLite.</li>
+              <li><strong>Saved views.</strong> Remember a table's sort + hidden columns + search between runs, per connection.</li>
+              <li><strong>Row detail drawer.</strong> A single-row side panel that wraps long text and pretty-prints JSON columns.</li>
+              <li><strong>Foreign-key hop.</strong> Click a key to open the parent row in a new tab of the grid, still read-only.</li>
+              <li><strong>Export formats.</strong> JSON and Parquet alongside CSV, driven from the same column-aware export pipeline.</li>
+              <li><strong>Auth module.</strong> The <code>src/auth/</code> placeholder exists for a reason — bearer-token or OIDC in front of the HTTP server for shared deployments.</li>
+              <li><strong>Column width persistence.</strong> Survive a page reload without re-dragging.</li>
+              <li><strong>Query history (still no SQL surface).</strong> A read-only log of which table + sort + search a user visited, for their own reference.</li>
+            </ul>
+          </section>
+        </article>
+      </main>
+
+      <footer class="sk-footer" role="contentinfo">
+        <div class="sk-footer__inner">
+          <span class="sk-footer__brand">SeeKi</span>
+          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
+          <nav class="sk-footer__links" aria-label="Footer">
+            <a href="/sitemap.html">Sitemap</a>
+            <a href="/project/contributing.html">Contributing</a>
+            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/assets/js/theme.js" defer></script>
+  </body>
+</html>
