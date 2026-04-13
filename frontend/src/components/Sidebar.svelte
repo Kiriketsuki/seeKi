@@ -31,11 +31,16 @@
   <div class="header">
     {#if !collapsed}
       <div class="branding">
-        <span class="title">{title}</span>
+        <div class="title-row">
+          <img class="mark" src="/logo-mark.svg" alt="" aria-hidden="true" width="20" height="20" />
+          <span class="title">{title}</span>
+        </div>
         {#if subtitle}
           <span class="subtitle">{subtitle}</span>
         {/if}
       </div>
+    {:else}
+      <img class="mark mark-collapsed" src="/logo-mark.svg" alt="SeeKi" width="20" height="20" />
     {/if}
     <button class="toggle" onclick={handleToggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
       {#if collapsed}
@@ -97,6 +102,18 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    min-width: 0;
+  }
+
+  .mark {
+    flex-shrink: 0;
+    display: block;
   }
 
   .title {
