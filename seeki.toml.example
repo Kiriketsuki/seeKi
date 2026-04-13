@@ -6,6 +6,9 @@ port = 3141
 kind = "postgres"
 url = "postgres://user:password@localhost:5432/mydb"
 max_connections = 5
+# Schemas to expose. Omit or leave unset to default to ["public"].
+# System schemas (pg_catalog, information_schema, pg_*) are never included.
+# schemas = ["public", "reporting"]
 
 # Optional table exposure controls. If `include` is set, only those tables are
 # shown. `exclude` is applied after `include`, so you can start broad and trim.
