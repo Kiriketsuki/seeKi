@@ -409,6 +409,7 @@ fn wizard_to_ssh(w: &SshWizardConfig) -> Result<(SshConfig, SecretsConfig), Stri
         username: w.username.clone(),
         auth_method,
         key_path: w.key_path.clone(),
+        known_hosts: Default::default(),
     };
     let secrets = SecretsConfig {
         ssh_key_passphrase: w.key_passphrase.clone(),
@@ -952,6 +953,7 @@ mod tests {
             username: "admin".to_string(),
             auth_method: SshAuthMethod::Key,
             key_path: Some("/home/user/.ssh/id_rsa".to_string()),
+            known_hosts: Default::default(),
         };
 
         let req = SaveConfigRequest {
