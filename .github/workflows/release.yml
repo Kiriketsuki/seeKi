@@ -1,116 +1,174 @@
 name: Release Management
 
 on:
-    # Fires on any push to release (merge commits, direct pushes, tag-free cherries)
-    # as well as explicit manual dispatch. The prior pull_request:closed trigger
-    # silently no-ops in some merge paths, so we widen the surface here.
-    push:
-        branches:
-            - release
-    workflow_dispatch:
+  # Trigger only after the CI workflow completes successfully on the release
+  # branch. This eliminates the sleep+poll race where check-runs may not yet
+  # be registered when the gate job runs.
+  workflow_run:
+    workflows: ["CI"]
+    branches:
+      - release
+    types:
+      - completed
+  workflow_dispatch:
 
 jobs:
-    create-release:
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v6
-              with:
-                  ref: release
-                  fetch-depth: 0
+  # ── Gate: only proceed if CI passed ────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    # For workflow_run triggers, block if CI did not succeed.
+    # workflow_dispatch bypasses this check (manual override).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: CI passed
+        run: echo "CI workflow completed successfully — proceeding with release."
 
-            - name: Read version
-              id: get_version
-              run: |
-                  if [ ! -f VERSION ]; then
-                    echo "Error: No VERSION file found"
-                    exit 1
-                  fi
+  # ── Prepare: sync VERSION, create tag ──────────────────────────────
+  prepare:
+    name: Prepare Release
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+          fetch-depth: 0
 
-                  VERSION=$(cat VERSION | tr -d '[:space:]')
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-                  echo "Creating release for version: $VERSION"
+      - name: Read and sync VERSION
+        id: version
+        run: |
+          git fetch origin main
+          MAIN_VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          RELEASE_VERSION=$(cat VERSION | tr -d '[:space:]')
 
-                  # Parse version components
-                  if [[ $VERSION =~ ^([0-9]{2})\.([0-9]+)\.([0-9]+)\.([0-9]+)([a-zA-Z]*)$ ]]; then
-                    YY="${BASH_REMATCH[1]}"
-                    MAJOR="${BASH_REMATCH[2]}"
-                    MINOR="${BASH_REMATCH[3]}"
-                    PATCH="${BASH_REMATCH[4]}"
-                    SUFFIX="${BASH_REMATCH[5]}"
-                    echo "year=20$YY" >> $GITHUB_OUTPUT
-                    echo "major=$MAJOR" >> $GITHUB_OUTPUT
-                    echo "minor=$MINOR" >> $GITHUB_OUTPUT
-                    echo "patch=$PATCH" >> $GITHUB_OUTPUT
-                  fi
+          if [ "$MAIN_VERSION" != "$RELEASE_VERSION" ]; then
+            echo "Syncing VERSION from main: $MAIN_VERSION"
+            echo "$MAIN_VERSION" > VERSION
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add VERSION
+            git diff --cached --quiet || {
+              git commit -m "ci: sync version $MAIN_VERSION from main [skip ci]"
+              git push origin release
+            }
+          fi
 
-            - name: Sync VERSION from main
-              run: |
-                  git fetch origin main
-                  MAIN_VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
-                  RELEASE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
-                  if [ "$MAIN_VERSION" != "$RELEASE_VERSION" ]; then
-                    echo "Syncing VERSION from main: $MAIN_VERSION"
-                    echo "$MAIN_VERSION" > VERSION
+      - name: Create git tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists, skipping."
+          else
+            git tag -a "v$VERSION" -m "Release version $VERSION"
+            git push origin "v$VERSION"
+          fi
 
-                    if [ -f package.json ]; then
-                      sed -i "s/\"version\": \".*\"/\"version\": \"$MAIN_VERSION\"/" package.json
-                    fi
+  # ── Build: matrix of target architectures ──────────────────────────
+  build:
+    name: Build (${{ matrix.target }})
+    needs: prepare
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            artifact: seeki-x86_64-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            artifact: seeki-x86_64-linux-musl
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
 
-                    find . -maxdepth 4 -name "pyproject.toml" \
-                      -not -path "*/node_modules/*" \
-                      -not -path "*/.pio/*" \
-                      -not -path "*/vendor/*" \
-                      -not -path "*/.venv/*" | while read -r f; do
-                      if grep -q '^version' "$f"; then
-                        sed -i "s/^version = \".*\"/version = \"$MAIN_VERSION\"/" "$f"
-                      fi
-                    done
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-                    git config user.name "github-actions[bot]"
-                    git config user.email "github-actions[bot]@users.noreply.github.com"
-                    git add -A
-                    git diff --cached --quiet || {
-                      git commit -m "ci: sync version $MAIN_VERSION from main [skip ci]"
-                      git push origin release
-                    }
+      - name: Install musl tools (musl target only)
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-                    echo "version=$MAIN_VERSION" >> $GITHUB_OUTPUT
-                  fi
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
 
-            - name: Create git tag
-              run: |
-                  VERSION=$(cat VERSION | tr -d '[:space:]')
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Ensure frontend/dist exists
+        run: mkdir -p frontend/dist
 
-                  if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-                    echo "Tag v$VERSION already exists, skipping."
-                  else
-                    git tag -a "v$VERSION" -m "Release version $VERSION"
-                    git push origin "v$VERSION"
-                  fi
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
 
-            - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: v${{ steps.get_version.outputs.version }}
-                  name: Release v${{ steps.get_version.outputs.version }}
-                  body: |
-                      ## Release v${{ steps.get_version.outputs.version }}
+      - name: Rename binary
+        run: |
+          cp target/${{ matrix.target }}/release/seeki ${{ matrix.artifact }}
+          chmod +x ${{ matrix.artifact }}
 
-                      **Version**: `${{ steps.get_version.outputs.version }}`
-                      **Year**: ${{ steps.get_version.outputs.year }}
+      - name: Generate SHA256
+        run: |
+          sha256sum ${{ matrix.artifact }} | awk '{print $1}' > ${{ matrix.artifact }}.sha256
+          echo "SHA256: $(cat ${{ matrix.artifact }}.sha256)"
 
-                      ### Version Components
-                      - **Epics (Major)**: ${{ steps.get_version.outputs.major }}
-                      - **Features (Minor)**: ${{ steps.get_version.outputs.minor }}
-                      - **Tasks/Bugs (Patch)**: ${{ steps.get_version.outputs.patch }}
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
 
-                      ### Changes
-                      ${{ github.event.pull_request.body }}
-                  draft: false
-                  prerelease: false
+  # ── Release: collect artifacts and publish ──────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect binaries
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f | while read f; do
+            cp "$f" release-assets/
+          done
+          ls -la release-assets/
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Release ${{ needs.prepare.outputs.tag }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(needs.prepare.outputs.version, 'a') || contains(needs.prepare.outputs.version, 'b') || contains(needs.prepare.outputs.version, 'rc') }}
+          files: release-assets/*
