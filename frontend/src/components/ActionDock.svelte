@@ -95,7 +95,7 @@
   });
 </script>
 
-<div class="action-dock" aria-label="Table actions" bind:this={shell}>
+<div class="action-dock" role="group" aria-label="Table actions" bind:this={shell}>
   <div class="dock-surface" class:panel-open={panelOpen}>
     <div class="dock-panels" class:panel-open={panelOpen}>
       {#if searchVisible}
