@@ -152,7 +152,7 @@
       {/if}
 
       {#if columnsOpen}
-        <div class="dock-panel dock-panel--columns">
+        <div id="columns-panel" class="dock-panel dock-panel--columns">
           <ColumnDropdown
             {columns}
             {columnVisibility}
