@@ -107,8 +107,14 @@ pub async fn check_latest(
     }
 }
 
+/// Hard cap on release asset download size (512 MB). Prevents a malicious or
+/// compromised release from exhausting local disk. Current release binaries
+/// are ~20 MB, so this gives ~25x headroom without risking DoS.
+const MAX_RELEASE_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+
 /// Download an asset to `dest`, streaming to avoid high memory usage.
 /// Downloads to a temporary `.tmp` file first, then renames atomically on success.
+/// Aborts if the asset exceeds [`MAX_RELEASE_ASSET_BYTES`].
 pub async fn download_asset(url: &str, dest: &Path) -> anyhow::Result<()> {
     use tokio::io::AsyncWriteExt;
 
@@ -125,12 +131,29 @@ pub async fn download_asset(url: &str, dest: &Path) -> anyhow::Result<()> {
 
     let result: anyhow::Result<()> = async {
         let resp = client.get(url).send().await?.error_for_status()?;
+
+        // Reject early if the server advertises a too-large Content-Length.
+        if let Some(len) = resp.content_length()
+            && len > MAX_RELEASE_ASSET_BYTES
+        {
+            anyhow::bail!(
+                "Release asset is {len} bytes, exceeds cap of {MAX_RELEASE_ASSET_BYTES} bytes"
+            );
+        }
+
         let mut stream = resp.bytes_stream();
         let mut file = tokio::fs::File::create(&tmp_dest).await?;
+        let mut written: u64 = 0;
 
         use futures::StreamExt;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
+            written = written.saturating_add(chunk.len() as u64);
+            if written > MAX_RELEASE_ASSET_BYTES {
+                anyhow::bail!(
+                    "Release asset exceeded cap of {MAX_RELEASE_ASSET_BYTES} bytes mid-download"
+                );
+            }
             file.write_all(&chunk).await?;
         }
         file.flush().await?;

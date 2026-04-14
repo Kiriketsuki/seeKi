@@ -72,6 +72,52 @@ pub async fn apply_binary(new_binary: &Path, current: &Path) -> anyhow::Result<(
     Ok(())
 }
 
+/// Like [`apply_binary`], but consumes an already-verified in-memory buffer
+/// rather than a source path. Writing the staged binary directly from bytes
+/// closes the TOCTOU window that would otherwise exist between a
+/// hash-by-path and a subsequent copy-by-path (an attacker with write access
+/// to the source path could swap the file between the two reads).
+pub async fn apply_binary_bytes(bytes: &[u8], current: &Path) -> anyhow::Result<()> {
+    let prev = prev_path(current);
+    let staging = {
+        let mut s = current.as_os_str().to_owned();
+        s.push(".new");
+        PathBuf::from(s)
+    };
+
+    // 1. Write bytes to staging path (current untouched)
+    std::fs::write(&staging, bytes)?;
+
+    // 2. Mark executable on the staged copy
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&staging, perms)?;
+    }
+
+    // 3. Move current aside
+    std::fs::rename(current, &prev)?;
+
+    // 4. Move staged binary into place
+    if let Err(e) = std::fs::rename(&staging, current) {
+        if let Err(restore_err) = std::fs::rename(&prev, current) {
+            tracing::error!(
+                error = %restore_err,
+                "CRITICAL: failed to restore original binary from .prev"
+            );
+        }
+        return Err(e.into());
+    }
+
+    tracing::info!(
+        new_sha256 = %compute_sha256(current)?,
+        "Binary updated successfully (from verified bytes)"
+    );
+
+    Ok(())
+}
+
 /// Swap the current binary back to the previous version:
 ///
 /// 1. Rename current → `.tmp`

@@ -162,6 +162,7 @@ pub async fn apply_update(
                 let sha256_url = format!("{}.sha256", &asset.browser_download_url);
                 match github::download_sha256(&sha256_url).await {
                     Ok(expected) => {
+                        let expected = expected.trim().to_ascii_lowercase();
                         let actual = swap::compute_sha256(&dest)?;
                         if actual != expected {
                             let _ = std::fs::remove_file(&dest);
@@ -211,16 +212,41 @@ pub async fn apply_update(
                 ));
             }
 
-            // Look for the staged file by naming convention
+            // F4 (server-persisted): look up the SHA256 we recorded at upload
+            // time. The client never supplies the expected digest — a
+            // same-user attacker who could tamper with the staged file could
+            // also recompute a matching hash, so round-tripping the digest
+            // through the client would be defense-theatre rather than
+            // defense-in-depth.
+            let expected_sha256 = {
+                let mut manifests = update.wip_manifests.lock().await;
+                manifests.remove(&upload_id).ok_or_else(|| {
+                    AppError::not_found(format!(
+                        "WIP upload '{upload_id}' not found (no server manifest)"
+                    ))
+                })?
+            };
+
+            // Read, hash, and compare in one pass so the bytes we install are
+            // the exact bytes we verified — closes TOCTOU between verify and
+            // apply.
             let tmp_dir = std::env::temp_dir();
             let wip_path = tmp_dir.join(format!("seeki-wip-{upload_id}"));
-            if !wip_path.exists() {
-                return Err(AppError::not_found(format!(
-                    "WIP upload '{upload_id}' not found"
-                )));
-            }
+            let bytes = match crate::update::wip::verify_staged_wip(&wip_path, &expected_sha256) {
+                crate::update::wip::VerifyWipOutcome::Ok(b) => b,
+                crate::update::wip::VerifyWipOutcome::Missing => {
+                    return Err(AppError::not_found(format!(
+                        "WIP upload '{upload_id}' staged file is missing"
+                    )));
+                }
+                crate::update::wip::VerifyWipOutcome::Mismatch { expected, actual } => {
+                    return Err(AppError::bad_request(format!(
+                        "SHA256 mismatch for WIP upload: staged file has been tampered with — expected {expected}, got {actual} — file discarded"
+                    )));
+                }
+            };
 
-            swap::apply_binary(&wip_path, &current_path).await?;
+            swap::apply_binary_bytes(&bytes, &current_path).await?;
 
             // Clean up staged file
             let _ = std::fs::remove_file(&wip_path);
@@ -241,9 +267,17 @@ pub async fn apply_update(
 // ── POST /api/update/wip ────────────────────────────────────────────────────
 
 pub async fn upload_wip(
+    Extension(update): Extension<Arc<UpdateState>>,
     body: bytes::Bytes,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let upload = crate::update::wip::stage_upload(body).await?;
+
+    // Record the server-computed SHA256 so the apply handler can verify the
+    // staged file without trusting any client-supplied digest.
+    {
+        let mut manifests = update.wip_manifests.lock().await;
+        manifests.insert(upload.upload_id.clone(), upload.sha256.clone());
+    }
 
     Ok(Json(serde_json::json!({
         "upload_id": upload.upload_id,

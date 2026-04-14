@@ -3,6 +3,7 @@ pub mod swap;
 pub mod version;
 pub mod wip;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -60,6 +61,13 @@ pub struct UpdateState {
     pub settings: Mutex<UpdateSettings>,
     pub swap_lock: Mutex<()>,
     pub shutdown: std::sync::Arc<tokio::sync::Notify>,
+    /// Server-side record of each staged WIP upload's SHA256, keyed by
+    /// `upload_id`. Populated by the upload handler and consumed (removed) by
+    /// the apply handler so the expected digest is never round-tripped through
+    /// the client — this closes the same-user tampering loophole that would
+    /// otherwise let an attacker swap the staged file and send the matching
+    /// recomputed hash on apply.
+    pub wip_manifests: Mutex<HashMap<String, String>>,
 }
 
 impl UpdateState {
@@ -69,6 +77,7 @@ impl UpdateState {
             settings: Mutex::new(UpdateSettings::load()),
             swap_lock: Mutex::new(()),
             shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
+            wip_manifests: Mutex::new(HashMap::new()),
         }
     }
 }
