@@ -230,8 +230,32 @@ fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String
         .collect()
 }
 
+/// Reject the pre-PR-#72 `sort_column` / `sort_direction` query params with a clear
+/// deprecation message so saved bookmarks fail loudly instead of silently returning
+/// unsorted data.
+fn reject_legacy_sort_params(all_params: &HashMap<String, String>) -> Result<(), AppError> {
+    if all_params.contains_key("sort_column") || all_params.contains_key("sort_direction") {
+        return Err(AppError::bad_request(
+            "`sort_column` and `sort_direction` are no longer supported. \
+             Use `?sort=<column>:asc` (comma-separated for multi-column).",
+        ));
+    }
+    Ok(())
+}
+
 fn trim_ascii_whitespace(value: &str) -> &str {
     value.trim_matches(|c: char| c.is_ascii_whitespace())
+}
+
+/// Cap user-controlled strings before echoing them in 400 error messages.
+/// Prevents unbounded payload reflection in error responses and log lines.
+fn truncate_for_error(value: &str) -> String {
+    const MAX: usize = 64;
+    if value.chars().count() <= MAX {
+        return value.to_string();
+    }
+    let truncated: String = value.chars().take(MAX).collect();
+    format!("{truncated}…")
 }
 
 fn parse_sort_param(sort: Option<&str>, columns: &[ColumnInfo]) -> anyhow::Result<Vec<SortEntry>> {
@@ -254,23 +278,25 @@ fn parse_sort_param(sort: Option<&str>, columns: &[ColumnInfo]) -> anyhow::Resul
             return Err(ValidationError("Malformed sort segment: empty segment".into()).into());
         }
 
+        let safe_segment = truncate_for_error(segment);
         let (column_part, direction_part) = segment
             .split_once(':')
-            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {segment}")))?;
+            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {safe_segment}")))?;
         let column = trim_ascii_whitespace(column_part);
         let direction = trim_ascii_whitespace(direction_part);
 
         if column.is_empty() || direction.is_empty() {
-            return Err(ValidationError(format!("Malformed sort segment: {segment}")).into());
+            return Err(ValidationError(format!("Malformed sort segment: {safe_segment}")).into());
         }
         if !is_valid_identifier(column) {
-            return Err(
-                ValidationError(format!("Invalid sort column name in segment: {segment}")).into(),
-            );
+            return Err(ValidationError(format!(
+                "Invalid sort column name in segment: {safe_segment}"
+            ))
+            .into());
         }
         if !valid_columns.contains(column) {
             return Err(
-                ValidationError(format!("Unknown sort column in segment: {segment}")).into(),
+                ValidationError(format!("Unknown sort column in segment: {safe_segment}")).into(),
             );
         }
         let direction = if direction.eq_ignore_ascii_case("asc") {
@@ -278,14 +304,16 @@ fn parse_sort_param(sort: Option<&str>, columns: &[ColumnInfo]) -> anyhow::Resul
         } else if direction.eq_ignore_ascii_case("desc") {
             SortDirection::Desc
         } else {
-            return Err(
-                ValidationError(format!("Invalid sort direction in segment: {segment}")).into(),
-            );
+            return Err(ValidationError(format!(
+                "Invalid sort direction in segment: {safe_segment}"
+            ))
+            .into());
         };
         if !seen_columns.insert(column.to_string()) {
-            return Err(
-                ValidationError(format!("Duplicate sort column in segment: {segment}")).into(),
-            );
+            return Err(ValidationError(format!(
+                "Duplicate sort column in segment: {safe_segment}"
+            ))
+            .into());
         }
 
         parsed.push(SortEntry {
@@ -328,6 +356,7 @@ async fn get_rows(
         )));
     }
     let columns = load_table_columns(&state, &schema, &table).await?;
+    reject_legacy_sort_params(&all_params)?;
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, MAX_PAGE_SIZE);
     let filters = parse_filters(&all_params);
@@ -367,6 +396,7 @@ async fn export_csv(
         .ok_or_else(|| AppError::bad_request("CSV export not supported for this database type"))?
         .clone();
 
+    reject_legacy_sort_params(&all_params)?;
     let filters = parse_filters(&all_params);
     let columns = load_table_columns(&state, &schema, &table).await?;
     let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
@@ -828,6 +858,45 @@ mod tests {
     fn parse_sort_param_rejects_trailing_comma() {
         let err = parse_sort_param(Some("id:asc,"), &test_columns()).unwrap_err();
         assert!(err.to_string().contains("empty segment"));
+    }
+
+    #[test]
+    fn parse_sort_param_truncates_long_segment_in_error_message() {
+        let long_column = "a".repeat(500);
+        let sort = format!("{long_column}:asc");
+        let err = parse_sort_param(Some(&sort), &test_columns()).unwrap_err();
+        let msg = err.to_string();
+        // Error should contain truncated value (64 chars + ellipsis), not the full 500-char input
+        assert!(msg.contains("…"), "expected ellipsis in: {msg}");
+        assert!(
+            msg.len() < 200,
+            "error message should be capped, got {} chars",
+            msg.len()
+        );
+    }
+
+    #[test]
+    fn reject_legacy_sort_params_flags_sort_column() {
+        let mut params = HashMap::new();
+        params.insert("sort_column".into(), "id".into());
+        let err = reject_legacy_sort_params(&params).unwrap_err();
+        assert_eq!(err.status, axum::http::StatusCode::BAD_REQUEST);
+        assert!(err.message.contains("sort_column"));
+    }
+
+    #[test]
+    fn reject_legacy_sort_params_flags_sort_direction() {
+        let mut params = HashMap::new();
+        params.insert("sort_direction".into(), "asc".into());
+        assert!(reject_legacy_sort_params(&params).is_err());
+    }
+
+    #[test]
+    fn reject_legacy_sort_params_passes_modern_params() {
+        let mut params = HashMap::new();
+        params.insert("sort".into(), "id:asc".into());
+        params.insert("page".into(), "1".into());
+        assert!(reject_legacy_sort_params(&params).is_ok());
     }
 
     #[test]
