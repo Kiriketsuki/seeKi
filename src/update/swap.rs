@@ -122,7 +122,7 @@ pub fn schedule_exit(shutdown: &std::sync::Arc<tokio::sync::Notify>) {
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         tracing::info!("Initiating graceful shutdown for update/rollback…");
-        shutdown.notify_waiters();
+        shutdown.notify_one();
     });
 }
 

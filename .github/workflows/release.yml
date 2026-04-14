@@ -22,9 +22,19 @@ jobs:
           echo "Checking CI status for $SHA..."
           # Give CI a moment if it was just pushed
           sleep 10
-          STATUS=$(gh api repos/${{ github.repository }}/commits/$SHA/status --jq '.state' 2>/dev/null || echo "unknown")
-          if [ "$STATUS" != "success" ]; then
-            echo "::error::CI status is '$STATUS' — release blocked. Push fixes and retry."
+          # Use the Checks API (GitHub Actions posts here, not the legacy Statuses API).
+          # Consider all check-runs: if any conclusion is not "success" or "neutral"/"skipped", block.
+          CONCLUSIONS=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name != "CI Gate") | .conclusion]' 2>/dev/null || echo "[]")
+          echo "Check-run conclusions: $CONCLUSIONS"
+          FAILED=$(echo "$CONCLUSIONS" | jq '[.[] | select(. != "success" and . != "neutral" and . != "skipped" and . != null)] | length')
+          PENDING=$(echo "$CONCLUSIONS" | jq '[.[] | select(. == null)] | length')
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::One or more check-runs failed — release blocked."
+            exit 1
+          fi
+          if [ "$PENDING" -gt 0 ]; then
+            echo "::error::One or more check-runs still in progress — release blocked. Wait and retry."
             exit 1
           fi
         env:

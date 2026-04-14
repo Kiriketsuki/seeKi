@@ -179,7 +179,10 @@ pub async fn apply_update(
                     }
                 }
             } else {
-                tracing::warn!("No SHA256 sidecar in release assets — skipping verification");
+                let _ = std::fs::remove_file(&dest);
+                return Err(AppError::bad_request(
+                    "Release is missing a SHA256 sidecar — refusing to apply an unverified binary",
+                ));
             }
 
             swap::apply_binary(&dest, &current_path).await?;
