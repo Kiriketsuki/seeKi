@@ -1,5 +1,5 @@
 import type { ColumnRegular } from '@revolist/svelte-datagrid';
-import type { ColumnInfo, SortState } from './types';
+import type { ColumnInfo, SortDirection, SortState } from './types';
 
 const INTEGER_TYPES = new Set([
   'smallint',
@@ -83,14 +83,33 @@ export function columnWidth(col: ColumnInfo): number {
 
 export function sortStateToConfig(
   sortState: SortState,
-): Record<string, SortState['direction']> | undefined {
-  if (!sortState.column || !sortState.direction) {
+): Record<string, SortDirection> | undefined {
+  if (sortState.length === 0) {
     return undefined;
   }
 
-  return {
-    [sortState.column]: sortState.direction,
-  };
+  return Object.fromEntries(
+    sortState.map((entry) => [entry.column, entry.direction]),
+  ) as Record<string, SortDirection>;
+}
+
+export function cycleSort(sortState: SortState, column: string): SortState {
+  const index = sortState.findIndex((entry) => entry.column === column);
+
+  if (index === -1) {
+    return [{ column, direction: 'asc' }, ...sortState];
+  }
+
+  const current = sortState[index];
+  if (current.direction === 'asc') {
+    return [
+      { column, direction: 'desc' },
+      ...sortState.slice(0, index),
+      ...sortState.slice(index + 1),
+    ];
+  }
+
+  return sortState.filter((entry) => entry.column !== column);
 }
 
 export function getColumnDisplayName(column: ColumnInfo): string {
