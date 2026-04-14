@@ -7,7 +7,7 @@
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
+  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus, fetchUpdateStatus } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
     TableInfo,
@@ -17,9 +17,11 @@
     SortState,
     FilterState,
     SortDirection,
+    UpdateStatus,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import SetupWizard from './components/SetupWizard.svelte';
+  import SettingsPanel from './components/SettingsPanel.svelte';
 
   let tables: TableInfo[] = $state([]);
   let selectedSchema: string = $state('');
@@ -44,6 +46,9 @@
   let columnsOpen: boolean = $state(false);
   let columnVisibility: Record<string, boolean> = $state({});
   let searchInputEl: HTMLInputElement | null = $state(null);
+  let settingsOpen: boolean = $state(false);
+  let updateAvailable: boolean = $state(false);
+  let updateStatus: UpdateStatus | null = $state(null);
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let selectRequestId = 0;
@@ -90,6 +95,11 @@
       if (tables.length > 0) {
         await selectTable(tables[0]);
       }
+      // Non-critical: check for update availability in the background
+      fetchUpdateStatus().then(status => {
+        updateStatus = status;
+        updateAvailable = status.update_available;
+      }).catch(() => {}); // silently fail — update check is non-critical
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to connect to database';
     } finally {
@@ -458,6 +468,8 @@
       onToggle={() => sidebarCollapsed = !sidebarCollapsed}
       title="SeeKi"
       subtitle=""
+      {updateAvailable}
+      onSettingsClick={() => settingsOpen = true}
     >
       {#if !sidebarCollapsed}
         <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
@@ -473,6 +485,11 @@
       </div>
     </main>
   </div>
+  <SettingsPanel
+    bind:open={settingsOpen}
+    initialStatus={updateStatus}
+    onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
+  />
 {:else}
   <div class="layout">
     <Sidebar
@@ -480,6 +497,8 @@
       onToggle={() => sidebarCollapsed = !sidebarCollapsed}
       title={displayConfig?.branding?.title ?? 'SeeKi'}
       subtitle={displayConfig?.branding?.subtitle ?? ''}
+      {updateAvailable}
+      onSettingsClick={() => settingsOpen = true}
     >
       {#if !sidebarCollapsed}
         <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
@@ -569,6 +588,11 @@
       />
     </main>
   </div>
+  <SettingsPanel
+    bind:open={settingsOpen}
+    initialStatus={updateStatus}
+    onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
+  />
 {/if}
 
 <style>

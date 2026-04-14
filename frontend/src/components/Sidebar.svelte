@@ -2,6 +2,7 @@
   import { type Snippet } from 'svelte';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { SIDEBAR_COLLAPSED_KEY } from '../lib/constants';
+  import SettingsGear from './SettingsGear.svelte';
 
 
   let {
@@ -9,12 +10,16 @@
     onToggle,
     title = 'SeeKi',
     subtitle = '',
+    updateAvailable = false,
+    onSettingsClick = () => {},
     children,
   }: {
     collapsed: boolean;
     onToggle: () => void;
     title: string;
     subtitle: string;
+    updateAvailable?: boolean;
+    onSettingsClick?: () => void;
     children?: Snippet;
   } = $props();
 
@@ -59,7 +64,12 @@
 
   {#if !collapsed}
     <div class="footer">
-      Powered by SeeKi
+      <span class="footer-text">Powered by SeeKi</span>
+      <SettingsGear {updateAvailable} onclick={onSettingsClick} />
+    </div>
+  {:else}
+    <div class="footer footer-collapsed">
+      <SettingsGear {updateAvailable} onclick={onSettingsClick} />
     </div>
   {/if}
 </aside>
@@ -159,10 +169,24 @@
   }
 
   .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: var(--sk-space-md) var(--sk-space-lg);
     font-size: var(--sk-font-size-xs);
     color: var(--sk-faded);
     border-top: 1px solid var(--sk-border-lighter);
     white-space: nowrap;
+    gap: var(--sk-space-sm);
+  }
+
+  .footer-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .footer-collapsed {
+    justify-content: center;
+    padding: var(--sk-space-md);
   }
 </style>

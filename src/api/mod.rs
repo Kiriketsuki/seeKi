@@ -1,4 +1,5 @@
 pub mod setup;
+pub mod update;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +10,7 @@ use axum::{
     extract::{Path, Query},
     http::header,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +29,12 @@ pub fn router(mode: SharedAppMode) -> Router {
         .route("/status", get(status))
         .route("/setup/test-connection", post(setup::test_connection))
         .route("/setup/save", post(setup::save_config))
+        .route("/version", get(update::get_version))
+        .route("/update/status", get(update::get_update_status))
+        .route("/update/check", post(update::check_update))
+        .route("/update/settings", patch(update::update_settings))
+        // The three mutating update endpoints are gated by bearer-token auth.
+        .merge(update::protected_update_router())
         .layer(Extension(mode))
 }
 
@@ -474,27 +481,27 @@ fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &st
 }
 
 // Simple error type for API responses
-struct AppError {
+pub(super) struct AppError {
     status: axum::http::StatusCode,
     message: String,
 }
 
 impl AppError {
-    fn not_found(message: impl Into<String>) -> Self {
+    pub(super) fn not_found(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::NOT_FOUND,
             message: message.into(),
         }
     }
 
-    fn bad_request(message: impl Into<String>) -> Self {
+    pub(super) fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::BAD_REQUEST,
             message: message.into(),
         }
     }
 
-    fn service_unavailable(message: impl Into<String>) -> Self {
+    pub(super) fn service_unavailable(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
