@@ -109,5 +109,5 @@ fn localhost_cors() -> CorsLayer {
             }
         }))
         .allow_methods([Method::GET, Method::POST, Method::PATCH])
-        .allow_headers([axum::http::header::CONTENT_TYPE])
+        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
 }

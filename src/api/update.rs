@@ -267,10 +267,10 @@ pub async fn apply_update(
                 }
             };
 
-            swap::apply_binary_bytes(&bytes, &current_path).await?;
-
-            // Clean up staged file
+            let apply_result = swap::apply_binary_bytes(&bytes, &current_path).await;
+            // Always clean up the staged file, regardless of apply outcome
             let _ = std::fs::remove_file(&wip_path);
+            apply_result?;
 
             swap::schedule_exit(&update.shutdown);
 

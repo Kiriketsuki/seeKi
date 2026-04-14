@@ -13,44 +13,11 @@ use std::path::{Path, PathBuf};
 pub struct UpdateToken(String);
 
 impl UpdateToken {
-    /// Generate a fresh random token (64 lowercase hex characters = 256 bits).
+    /// Generate a fresh random token (64 lowercase hex characters = 256 bits from OS CSPRNG).
     pub fn generate() -> Self {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        // Use a combination of sources for entropy since we avoid heavy
-        // dependencies.  For a local-only management endpoint this is
-        // acceptable; the token is still 128 bits of process-specific entropy
-        // that an attacker on the same machine would need to read from disk.
-        let mut entropy = [0u8; 16];
-        // Mix system time nanos
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_nanos();
-        let pid = std::process::id();
-        // Mix thread ID via hasher
-        let tid = {
-            let mut h = DefaultHasher::new();
-            std::thread::current().id().hash(&mut h);
-            h.finish()
-        };
-        // Combine all sources into entropy bytes
-        let nanos_b = nanos.to_le_bytes();
-        let pid_b = pid.to_le_bytes();
-        let tid_b = tid.to_le_bytes();
-        entropy[0..4].copy_from_slice(&nanos_b);
-        entropy[4..8].copy_from_slice(&pid_b);
-        entropy[8..16].copy_from_slice(&tid_b);
-
-        // Hash with SHA-256 to spread entropy across 32 bytes, then hex-encode.
-        use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        h.update(&entropy);
-        // Second pass: mix in the process start time approximation.
-        h.update(nanos.to_le_bytes());
-        let digest = h.finalize();
-        let token = format!("{digest:x}");
+        let mut bytes = [0u8; 32];
+        getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
+        let token = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
         Self(token)
     }
 
@@ -70,14 +37,21 @@ impl UpdateToken {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, &token.0)?;
-
-        // Set mode 0600 so only the owner can read the token file.
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(path, perms)?;
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)?;
+            f.write_all(token.0.as_bytes())?;
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(path, &token.0)?;
         }
 
         tracing::info!(path = %path.display(), "Generated new update token");
@@ -184,6 +158,49 @@ mod tests {
 
         let t = UpdateToken::load_or_create(&path).unwrap();
         assert!(!t.0.is_empty(), "must generate a token when file is blank");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// CSPRNG non-repetition: two independently generated tokens must differ.
+    /// A collision here would require 2^-256 probability — if this fires the
+    /// OS CSPRNG is broken.
+    #[test]
+    fn generate_csprng_non_repetition() {
+        let t1 = UpdateToken::generate();
+        let t2 = UpdateToken::generate();
+        assert_ne!(
+            t1.0, t2.0,
+            "two successive generate() calls must produce distinct tokens (CSPRNG collision)"
+        );
+    }
+
+    /// Atomic mode-0600 creation: the token file must be created with
+    /// permissions 0600 in a single atomic open so there is no window where
+    /// the file is readable by other users.
+    #[cfg(unix)]
+    #[test]
+    fn load_or_create_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let path = dir.join(format!("seeki-test-token-mode-{nanos}"));
+        let _ = std::fs::remove_file(&path);
+
+        UpdateToken::load_or_create(&path).unwrap();
+
+        let meta = std::fs::metadata(&path).unwrap();
+        let mode = meta.permissions().mode();
+        // Mask to lower 12 bits (type bits are in the upper portion)
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "token file must be created with mode 0600, got {mode:#o}"
+        );
+
         let _ = std::fs::remove_file(&path);
     }
 }
