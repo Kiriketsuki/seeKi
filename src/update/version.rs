@@ -235,8 +235,14 @@ mod tests {
 
     #[test]
     fn reject_digit_only_suffix() {
-        assert!("26.5.0.31".parse::<SeekiVersion>().is_err()
-            || "26.5.0.31".parse::<SeekiVersion>().unwrap().suffix.is_empty());
+        assert!(
+            "26.5.0.31".parse::<SeekiVersion>().is_err()
+                || "26.5.0.31"
+                    .parse::<SeekiVersion>()
+                    .unwrap()
+                    .suffix
+                    .is_empty()
+        );
     }
 
     // ── Ordering tests ───────────────────────────────────────────────────────

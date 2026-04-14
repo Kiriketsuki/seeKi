@@ -5,14 +5,14 @@ mod config;
 mod db;
 mod embed;
 mod ssh;
-mod update;
 #[cfg(test)]
 mod testutil;
+mod update;
 
 use std::sync::Arc;
 
-use axum::{Extension, Router};
 use axum::http::Method;
+use axum::{Extension, Router};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
 
@@ -109,5 +109,8 @@ fn localhost_cors() -> CorsLayer {
             }
         }))
         .allow_methods([Method::GET, Method::POST, Method::PATCH])
-        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::AUTHORIZATION,
+        ])
 }

@@ -8,10 +8,10 @@ use axum::response::Response;
 use axum::{Extension, Json, extract::Request};
 use serde::Deserialize;
 
+use crate::update::UpdateState;
 use crate::update::github;
 use crate::update::swap;
 use crate::update::version::SeekiVersion;
-use crate::update::UpdateState;
 
 use super::AppError;
 
@@ -56,9 +56,7 @@ pub async fn get_update_status(
     let cached = update.cache.latest().await;
     let current = SeekiVersion::current();
     let current_path = swap::current_exe_path().ok();
-    let previous_exists = current_path
-        .as_ref()
-        .is_some_and(|p| swap::has_previous(p));
+    let previous_exists = current_path.as_ref().is_some_and(|p| swap::has_previous(p));
 
     let (latest, update_available) = if let Some(release) = cached {
         let tag = release.tag_name.trim_start_matches('v');
@@ -166,9 +164,7 @@ pub async fn apply_update(
             };
             let release = github::check_latest(&update.cache, pre, false)
                 .await?
-                .ok_or_else(|| {
-                    AppError::bad_request("No release available — run check first")
-                })?;
+                .ok_or_else(|| AppError::bad_request("No release available — run check first"))?;
 
             let asset = github::select_asset(&release.assets).ok_or_else(|| {
                 AppError::bad_request("No compatible binary found in release assets")
@@ -187,18 +183,17 @@ pub async fn apply_update(
             // Download the binary into memory and hash it in one streaming pass.
             // This eliminates both the TOCTOU window (no double-read of a temp
             // file) and any temp-file leak (no file to clean up on error).
-            let (bytes, actual_sha256) =
-                github::download_asset_bytes(&asset.browser_download_url)
-                    .await
-                    .map_err(|e| AppError::bad_request(format!("Download failed: {e}")))?;
+            let (bytes, actual_sha256) = github::download_asset_bytes(&asset.browser_download_url)
+                .await
+                .map_err(|e| AppError::bad_request(format!("Download failed: {e}")))?;
 
             // Download and compare the expected SHA256 sidecar.
             let sha256_url = format!("{}.sha256", &asset.browser_download_url);
-            let expected_sha256 = github::download_sha256(&sha256_url)
-                .await
-                .map_err(|e| AppError::bad_request(format!(
+            let expected_sha256 = github::download_sha256(&sha256_url).await.map_err(|e| {
+                AppError::bad_request(format!(
                     "SHA256 sidecar exists but download failed — aborting for safety: {e}"
-                )))?;
+                ))
+            })?;
             let expected_sha256 = expected_sha256.trim().to_ascii_lowercase();
 
             if actual_sha256 != expected_sha256 {
@@ -225,8 +220,8 @@ pub async fn apply_update(
             })?;
 
             // F01: Validate upload_id — must be exactly 8 lowercase hex characters
-            let is_valid_id = upload_id.len() == 8
-                && upload_id.chars().all(|c| c.is_ascii_hexdigit());
+            let is_valid_id =
+                upload_id.len() == 8 && upload_id.chars().all(|c| c.is_ascii_hexdigit());
             if !is_valid_id {
                 return Err(AppError::bad_request(
                     "Invalid upload ID — expected 8 hex characters",
@@ -247,14 +242,11 @@ pub async fn apply_update(
             // staged file is tampered/missing (both terminal for this upload).
             let expected_sha256 = {
                 let manifests = update.wip_manifests.lock().await;
-                manifests
-                    .get(&upload_id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        AppError::not_found(format!(
-                            "WIP upload '{upload_id}' not found (no server manifest)"
-                        ))
-                    })?
+                manifests.get(&upload_id).cloned().ok_or_else(|| {
+                    AppError::not_found(format!(
+                        "WIP upload '{upload_id}' not found (no server manifest)"
+                    ))
+                })?
             };
 
             // Read, hash, and compare in one pass so the bytes we install are

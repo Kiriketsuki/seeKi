@@ -199,7 +199,10 @@ mod tests {
     #[test]
     fn validates_elf_valid_header() {
         let hdr = valid_elf64_header();
-        assert!(validate_elf(&hdr).is_ok(), "valid ELF64 x86_64 header must pass");
+        assert!(
+            validate_elf(&hdr).is_ok(),
+            "valid ELF64 x86_64 header must pass"
+        );
     }
 
     #[test]
@@ -279,7 +282,10 @@ mod tests {
         std::fs::write(&path, tampered).unwrap();
 
         match verify_staged_wip(&path, &expected) {
-            VerifyWipOutcome::Mismatch { expected: e, actual } => {
+            VerifyWipOutcome::Mismatch {
+                expected: e,
+                actual,
+            } => {
                 assert_eq!(e, expected);
                 assert_ne!(actual, expected);
                 assert_eq!(actual, sha256_hex(tampered));

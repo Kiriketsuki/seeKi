@@ -77,9 +77,7 @@ pub async fn check_latest(
     force: bool,
 ) -> anyhow::Result<Option<GitHubRelease>> {
     // Serve from cache when possible
-    if !force
-        && let Some(cached) = cache.latest().await
-    {
+    if !force && let Some(cached) = cache.latest().await {
         return Ok(Some(cached));
     }
 
@@ -230,7 +228,13 @@ pub async fn download_sha256(url: &str) -> anyhow::Result<String> {
         .timeout(Duration::from_secs(30))
         .build()?;
 
-    let body = client.get(url).send().await?.error_for_status()?.text().await?;
+    let body = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
     // Format is typically "<hex>  <filename>" or just "<hex>"
     let hex = body
         .split_whitespace()
@@ -252,9 +256,7 @@ pub fn select_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-async fn fetch_latest_stable(
-    client: &reqwest::Client,
-) -> anyhow::Result<Option<GitHubRelease>> {
+async fn fetch_latest_stable(client: &reqwest::Client) -> anyhow::Result<Option<GitHubRelease>> {
     let url = format!("{GITHUB_API_BASE}/latest");
     let resp = client.get(&url).send().await?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
@@ -268,7 +270,11 @@ async fn fetch_latest_stable(
 async fn fetch_newest_prerelease(
     client: &reqwest::Client,
 ) -> anyhow::Result<Option<GitHubRelease>> {
-    let resp = client.get(GITHUB_API_BASE).send().await?.error_for_status()?;
+    let resp = client
+        .get(GITHUB_API_BASE)
+        .send()
+        .await?
+        .error_for_status()?;
     let releases: Vec<GitHubRelease> = resp.json().await?;
     // The first entry from the list endpoint is the most recent release
     Ok(releases.into_iter().next())

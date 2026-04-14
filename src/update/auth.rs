@@ -114,8 +114,15 @@ mod tests {
     #[test]
     fn generate_produces_64_char_hex() {
         let t = UpdateToken::generate();
-        assert_eq!(t.0.len(), 64, "token must be 64 hex chars (256 bits from OS CSPRNG)");
-        assert!(t.0.chars().all(|c| c.is_ascii_hexdigit()), "token must be hex");
+        assert_eq!(
+            t.0.len(),
+            64,
+            "token must be 64 hex chars (256 bits from OS CSPRNG)"
+        );
+        assert!(
+            t.0.chars().all(|c| c.is_ascii_hexdigit()),
+            "token must be hex"
+        );
     }
 
     #[test]
