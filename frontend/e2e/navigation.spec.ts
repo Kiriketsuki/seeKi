@@ -56,21 +56,22 @@ test.describe('Navigation — Table Switching', () => {
 
     // Sort a column on the first table — wait for sorted data
     const firstHeader = page.locator('[role="columnheader"]').first();
-    const rowsLoaded = seeki.pendingRowsResponse();
+    let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
-    await rowsLoaded;
+    let rowsResponse = await rowsLoaded;
 
-    // Verify sort is active via the toolbar sort indicator (light DOM)
-    const sortIndicator = page.locator('.tool-indicator');
-    await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
+    // Verify the sort request included sort params
+    expect(rowsResponse.request().url()).toContain('sort_direction=asc');
 
     // Switch to the second table
     const secondTableName = tableNames[1];
+    rowsLoaded = seeki.pendingRowsResponse();
     await seeki.selectTable(secondTableName);
-    await seeki.waitForGridLoaded();
+    rowsResponse = await rowsLoaded;
 
-    // Verify sort is reset — toolbar indicator should show "No active sort"
-    await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
+    // Verify sort is reset on table switch — the new rows request should be clean
+    expect(rowsResponse.request().url()).not.toContain('sort_direction=');
+    expect(rowsResponse.request().url()).not.toContain('sort_column=');
   });
 });
 
