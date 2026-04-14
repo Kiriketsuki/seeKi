@@ -123,6 +123,17 @@ pub async fn apply_binary_bytes(bytes: &[u8], current: &Path) -> anyhow::Result<
         return Err(e.into());
     }
 
+    // 5. fsync the parent directory so both rename(2) calls above are durable.
+    // sync_all() on the staging file at step 1 only durabilises file content —
+    // directory entries are a separate fsync target. Without this, a crash
+    // between steps 3 and 4 can leave `current` absent and `.new` stranded,
+    // unrecoverable for non-technical users.
+    if let Some(parent) = current.parent()
+        && let Ok(dir) = std::fs::File::open(parent)
+    {
+        let _ = dir.sync_all();
+    }
+
     tracing::info!(
         new_sha256 = %compute_sha256(current)?,
         "Binary updated successfully (from verified bytes)"
@@ -135,7 +146,8 @@ pub async fn apply_binary_bytes(bytes: &[u8], current: &Path) -> anyhow::Result<
 ///
 /// 1. Rename current → `.tmp`
 /// 2. Rename `.prev` → current (with recovery on failure)
-/// 3. Rename `.tmp` → `.prev` (non-critical cleanup)
+/// 3. Delete `.tmp` (the rolled-back-from binary) to prevent reinstallation of
+///    a known-bad artefact. After rollback, has_previous() returns false.
 pub async fn rollback(current: &Path) -> anyhow::Result<()> {
     let prev = prev_path(current);
     if !prev.exists() {

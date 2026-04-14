@@ -47,22 +47,47 @@ impl UpdateToken {
             // an empty 0o644 file at `path` would otherwise receive the regenerated
             // token in a world-readable file. If the file already exists (e.g. a
             // stale empty file from a previous run), remove it first and retry.
-            let open_result = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(path);
-            let mut f = match open_result {
-                Ok(f) => f,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    std::fs::remove_file(path)?;
-                    std::fs::OpenOptions::new()
+            // Bounded retry on AlreadyExists: if a concurrent process wins the
+            // create race between our remove_file and re-open, try again a few
+            // times before giving up. Keeps the 0o600 guarantee via create_new.
+            let mut f = {
+                let mut last_err: Option<std::io::Error> = None;
+                let mut opened = None;
+                for _ in 0..4 {
+                    match std::fs::OpenOptions::new()
                         .write(true)
                         .create_new(true)
                         .mode(0o600)
-                        .open(path)?
+                        .open(path)
+                    {
+                        Ok(file) => {
+                            opened = Some(file);
+                            break;
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                            if let Err(rm_err) = std::fs::remove_file(path) {
+                                last_err = Some(rm_err);
+                                break;
+                            }
+                            last_err = Some(e);
+                            continue;
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
                 }
-                Err(e) => return Err(e.into()),
+                match opened {
+                    Some(f) => f,
+                    None => {
+                        return Err(last_err
+                            .unwrap_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::AlreadyExists,
+                                    "token file create_new exhausted retries",
+                                )
+                            })
+                            .into());
+                    }
+                }
             };
             f.write_all(token.0.as_bytes())?;
         }
