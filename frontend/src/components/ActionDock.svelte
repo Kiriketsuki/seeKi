@@ -110,6 +110,7 @@
               placeholder="Search all text columns..."
               value={searchTerm}
               oninput={onSearchInput}
+              disabled={controlsDisabled}
               aria-label="Search rows"
             />
             <button

@@ -15,8 +15,6 @@
   /* Glass surfaces */
   --sk-glass-sidebar: rgba(255, 255, 255, 0.5);
   --sk-glass-sidebar-blur: blur(20px);
-  --sk-glass-toolbar: rgba(255, 255, 255, 0.4);
-  --sk-glass-toolbar-blur: blur(20px);
   --sk-glass-grid: rgba(255, 255, 255, 0.55);
   --sk-glass-grid-blur: blur(24px);
   --sk-glass-statusbar: rgba(255, 255, 255, 0.4);
