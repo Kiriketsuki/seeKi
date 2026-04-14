@@ -509,6 +509,7 @@
       columnVisibility={columnVisibility}
       hiddenColumnCount={hiddenColumnCount}
       hasTable={!!selectedTable}
+      sortCount={sortState.length}
       onToggleSearch={toggleSearch}
       onToggleFilters={toggleFilters}
       onToggleColumns={toggleColumns}
@@ -516,6 +517,7 @@
       onShowAllColumns={handleShowAllColumns}
       onCloseColumns={closeColumns}
       onExport={exportCsv}
+      onClearSort={() => handleSortChange([])}
     />
     <main class="main">
       <div class="table-panel">

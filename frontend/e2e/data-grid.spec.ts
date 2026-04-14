@@ -133,6 +133,67 @@ test.describe('Data Grid — Sorting', () => {
 
     expect(visibleIds).toEqual(['200', '195', '190', '185', '180']);
   });
+
+  test('shift-click stacks a second sort column; non-shift click resets to single sort', async ({
+    page,
+    seeki,
+  }) => {
+    const headers = page.locator('[role="columnheader"]');
+    const headerCount = await headers.count();
+    test.skip(headerCount < 2, 'Test requires at least 2 columns');
+
+    const first = headers.nth(0);
+    const second = headers.nth(1);
+    const firstSort = first.locator('.sk-grid-header__sort');
+    const secondSort = second.locator('.sk-grid-header__sort');
+
+    // Sort column 0 ascending
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await first.click();
+    await rowsLoaded;
+    await expect(firstSort).toHaveText('↑');
+
+    // Shift-click column 1 → stacked sort, priority superscripts appear
+    rowsLoaded = seeki.pendingRowsResponse();
+    await second.click({ modifiers: ['Shift'] });
+    await rowsLoaded;
+    await expect(firstSort).toHaveText('↑1');
+    await expect(secondSort).toHaveText('↑2');
+
+    // Non-shift click on a 3rd column (or same col 1 without shift) should drop the stack
+    // to a single-column sort — ranks disappear.
+    rowsLoaded = seeki.pendingRowsResponse();
+    const target = headerCount >= 3 ? headers.nth(2) : first;
+    await target.click();
+    await rowsLoaded;
+    // After reset there should be exactly one sorted header. Glyph should not contain a rank digit.
+    const anyRanked = page.locator('.sk-grid-header__sort-rank');
+    await expect(anyRanked).toHaveCount(0);
+  });
+
+  test('toolbar sort-count badge appears and clears all sorts', async ({ page, seeki }) => {
+    const firstHeader = page.locator('[role="columnheader"]').first();
+
+    // No sort → no sort tool button
+    let sortClearButton = page.locator('button.tool-button[aria-label*="Sorted by"]');
+    await expect(sortClearButton).toHaveCount(0);
+
+    // Apply a sort
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await firstHeader.click();
+    await rowsLoaded;
+
+    // Toolbar sort button should appear with count = 1
+    sortClearButton = page.locator('button.tool-button[aria-label*="Sorted by 1 column"]');
+    await expect(sortClearButton).toBeVisible();
+
+    // Click it → sort cleared, button disappears
+    rowsLoaded = seeki.pendingRowsResponse();
+    await sortClearButton.click();
+    await rowsLoaded;
+    await expect(page.locator('button.tool-button[aria-label*="Sorted by"]')).toHaveCount(0);
+    await expect(firstHeader.locator('.sk-grid-header__sort')).toHaveCount(0);
+  });
 });
 
 test.describe('Data Grid — Filtering', () => {

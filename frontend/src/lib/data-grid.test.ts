@@ -3,6 +3,7 @@ import {
   formatCellValue,
   columnWidth,
   cycleSort,
+  replaceSort,
   sortStateToConfig,
   getColumnDisplayName,
   buildSortableColumn,
@@ -285,6 +286,48 @@ describe('cycleSort', () => {
       { column: 'a', direction: 'asc' },
       { column: 'c', direction: 'desc' },
     ]);
+  });
+});
+
+describe('replaceSort', () => {
+  it('returns a single-column asc sort when column is not yet sorted', () => {
+    expect(replaceSort([], 'name')).toEqual([{ column: 'name', direction: 'asc' }]);
+  });
+
+  it('replaces any existing multi-sort with a new single-column asc sort', () => {
+    expect(
+      replaceSort(
+        [
+          { column: 'a', direction: 'asc' },
+          { column: 'b', direction: 'desc' },
+        ],
+        'c',
+      ),
+    ).toEqual([{ column: 'c', direction: 'asc' }]);
+  });
+
+  it('cycles the existing ascending sort to descending and drops other columns', () => {
+    expect(
+      replaceSort(
+        [
+          { column: 'a', direction: 'asc' },
+          { column: 'b', direction: 'asc' },
+        ],
+        'a',
+      ),
+    ).toEqual([{ column: 'a', direction: 'desc' }]);
+  });
+
+  it('returns an empty sort when the target column was descending (full cycle)', () => {
+    expect(
+      replaceSort(
+        [
+          { column: 'a', direction: 'desc' },
+          { column: 'b', direction: 'asc' },
+        ],
+        'a',
+      ),
+    ).toEqual([]);
   });
 });
 
