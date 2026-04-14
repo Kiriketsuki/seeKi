@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Download, Filter, LayoutGrid, Search } from 'lucide-svelte';
+  import { ArrowUpDown, Download, Filter, LayoutGrid, Search } from 'lucide-svelte';
   import ColumnDropdown from './ColumnDropdown.svelte';
   import type { ColumnInfo } from '../lib/types';
 
@@ -14,6 +14,7 @@
     columnVisibility = {},
     hiddenColumnCount = 0,
     hasTable = false,
+    sortCount = 0,
     onToggleSearch,
     onToggleFilters,
     onToggleColumns,
@@ -21,6 +22,7 @@
     onShowAllColumns,
     onCloseColumns,
     onExport,
+    onClearSort,
   }: {
     filtersVisible?: boolean;
     activeFilterCount?: number;
@@ -31,6 +33,7 @@
     columnVisibility: Record<string, boolean>;
     hiddenColumnCount?: number;
     hasTable?: boolean;
+    sortCount?: number;
     onToggleSearch?: () => void;
     onToggleFilters?: () => void;
     onToggleColumns?: () => void;
@@ -38,7 +41,16 @@
     onShowAllColumns?: () => void;
     onCloseColumns?: () => void;
     onExport?: () => void;
+    onClearSort?: () => void;
   } = $props();
+
+  let sortTitle = $derived(
+    sortCount === 0
+      ? ''
+      : sortCount === 1
+        ? 'Sorted by 1 column — click to clear'
+        : `Sorted by ${sortCount} columns — click to clear`
+  );
 
   let searchTitle = $derived(
     searchVisible
@@ -107,6 +119,21 @@
         {/if}
       </span>
     </button>
+
+    {#if sortCount > 0}
+      <button
+        type="button"
+        class="tool-button active"
+        aria-label={sortTitle}
+        title={sortTitle}
+        onclick={() => onClearSort?.()}
+      >
+        <span class="icon-stack">
+          <ArrowUpDown size={16} />
+          <span class="badge">{sortCount}</span>
+        </span>
+      </button>
+    {/if}
 
     <div class="separator" aria-hidden="true"></div>
 
