@@ -239,13 +239,22 @@ pub async fn apply_update(
             // also recompute a matching hash, so round-tripping the digest
             // through the client would be defense-theatre rather than
             // defense-in-depth.
+            //
+            // We clone the digest rather than removing the manifest entry so
+            // that transient apply failures do not burn the upload_id — the
+            // client can retry without re-uploading. The manifest is only
+            // removed after apply succeeds, or after verify determines the
+            // staged file is tampered/missing (both terminal for this upload).
             let expected_sha256 = {
-                let mut manifests = update.wip_manifests.lock().await;
-                manifests.remove(&upload_id).ok_or_else(|| {
-                    AppError::not_found(format!(
-                        "WIP upload '{upload_id}' not found (no server manifest)"
-                    ))
-                })?
+                let manifests = update.wip_manifests.lock().await;
+                manifests
+                    .get(&upload_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        AppError::not_found(format!(
+                            "WIP upload '{upload_id}' not found (no server manifest)"
+                        ))
+                    })?
             };
 
             // Read, hash, and compare in one pass so the bytes we install are
@@ -256,11 +265,15 @@ pub async fn apply_update(
             let bytes = match crate::update::wip::verify_staged_wip(&wip_path, &expected_sha256) {
                 crate::update::wip::VerifyWipOutcome::Ok(b) => b,
                 crate::update::wip::VerifyWipOutcome::Missing => {
+                    // Staged file is gone — the upload_id is unusable regardless.
+                    update.wip_manifests.lock().await.remove(&upload_id);
                     return Err(AppError::not_found(format!(
                         "WIP upload '{upload_id}' staged file is missing"
                     )));
                 }
                 crate::update::wip::VerifyWipOutcome::Mismatch { expected, actual } => {
+                    // verify_staged_wip has already deleted the tampered file.
+                    update.wip_manifests.lock().await.remove(&upload_id);
                     return Err(AppError::bad_request(format!(
                         "SHA256 mismatch for WIP upload: staged file has been tampered with — expected {expected}, got {actual} — file discarded"
                     )));
@@ -270,6 +283,14 @@ pub async fn apply_update(
             let apply_result = swap::apply_binary_bytes(&bytes, &current_path).await;
             // Always clean up the staged file, regardless of apply outcome
             let _ = std::fs::remove_file(&wip_path);
+            if apply_result.is_ok() {
+                // Apply succeeded — the upload has served its purpose.
+                update.wip_manifests.lock().await.remove(&upload_id);
+            }
+            // On apply error, leave the manifest in place so the client can
+            // retry by re-uploading (which overwrites the entry). The staged
+            // file has already been removed above, so retry always requires a
+            // fresh upload body — this is expected.
             apply_result?;
 
             swap::schedule_exit(&update.shutdown);
