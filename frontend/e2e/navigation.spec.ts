@@ -54,23 +54,22 @@ test.describe('Navigation — Table Switching', () => {
     const tableNames = await seeki.getSidebarTableNames();
     test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
 
-    // Sort a column on the first table — wait for sorted data
     const firstHeader = page.locator('[role="columnheader"]').first();
+    const firstHeaderState = firstHeader.locator('.sk-grid-header');
     const rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     await rowsLoaded;
 
-    // Verify sort is active via the toolbar sort indicator (light DOM)
-    const sortIndicator = page.locator('.tool-indicator');
-    await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
+    const sortGlyph = firstHeader.locator('.sk-grid-header__sort');
+    await expect(sortGlyph).toHaveText('↑');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
 
-    // Switch to the second table
     const secondTableName = tableNames[1];
     await seeki.selectTable(secondTableName);
     await seeki.waitForGridLoaded();
 
-    // Verify sort is reset — toolbar indicator should show "No active sort"
-    await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
+    await expect(page.locator('.sk-grid-header__sort')).toHaveCount(0);
+    await expect(page.locator('[role="columnheader"]').first().locator('.sk-grid-header')).not.toHaveAttribute('aria-sort');
   });
 });
 

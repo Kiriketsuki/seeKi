@@ -1,20 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    ArrowUpDown,
-    ChevronDown,
-    ChevronUp,
-    Download,
-    Filter,
-    LayoutGrid,
-    Search,
-  } from 'lucide-svelte';
+  import { Download, Filter, LayoutGrid, Search } from 'lucide-svelte';
   import ColumnDropdown from './ColumnDropdown.svelte';
-  import type { ColumnInfo, SortState } from '../lib/types';
+  import type { ColumnInfo } from '../lib/types';
 
   let {
-    sortState,
-    sortDescription,
     filtersVisible = false,
     activeFilterCount = 0,
     searchActive = false,
@@ -32,8 +22,6 @@
     onCloseColumns,
     onExport,
   }: {
-    sortState: SortState;
-    sortDescription?: string;
     filtersVisible?: boolean;
     activeFilterCount?: number;
     searchActive?: boolean;
@@ -51,12 +39,6 @@
     onCloseColumns?: () => void;
     onExport?: () => void;
   } = $props();
-
-  let sortLabel = $derived.by(() => {
-    if (sortDescription) return sortDescription;
-    if (!sortState.column || !sortState.direction) return 'No active sort';
-    return `${sortState.column} ${sortState.direction}`;
-  });
 
   let searchTitle = $derived(
     searchVisible
@@ -125,16 +107,6 @@
         {/if}
       </span>
     </button>
-
-    <div class="tool-indicator" role="img" aria-label={sortLabel} title={sortLabel}>
-      {#if sortState.direction === 'asc'}
-        <ChevronUp size={16} />
-      {:else if sortState.direction === 'desc'}
-        <ChevronDown size={16} />
-      {:else}
-        <ArrowUpDown size={16} />
-      {/if}
-    </div>
 
     <div class="separator" aria-hidden="true"></div>
 
@@ -205,8 +177,7 @@
     box-shadow: var(--sk-shadow-card);
   }
 
-  .tool-button,
-  .tool-indicator {
+  .tool-button {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -244,12 +215,6 @@
     opacity: 0.4;
     cursor: not-allowed;
     pointer-events: none;
-  }
-
-  .tool-indicator {
-    pointer-events: none;
-    color: var(--sk-secondary-strong);
-    background: rgba(255, 255, 255, 0.35);
   }
 
   .separator {
