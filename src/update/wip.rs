@@ -2,8 +2,19 @@ use std::path::PathBuf;
 
 use sha2::{Digest, Sha256};
 
-/// ELF magic bytes: `\x7fELF`
+/// ELF magic bytes at offset 0: `\x7fELF`
 const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
+/// ELF64 header is 64 bytes.
+const ELF64_HEADER_LEN: usize = 64;
+/// EI_CLASS offset (byte 4): 2 = ELFCLASS64
+const EI_CLASS_OFFSET: usize = 4;
+const ELFCLASS64: u8 = 2;
+/// EI_DATA offset (byte 5): 1 = ELFDATA2LSB (little-endian)
+const EI_DATA_OFFSET: usize = 5;
+const ELFDATA2LSB: u8 = 1;
+/// e_machine offset (bytes 18-19, LE): 0x003E = x86_64
+const E_MACHINE_OFFSET: usize = 18;
+const EM_X86_64: u16 = 0x003E;
 
 /// Result of staging a WIP binary upload.
 pub struct WipUpload {
@@ -14,13 +25,44 @@ pub struct WipUpload {
     pub path: PathBuf,
 }
 
-/// Validate that `data` begins with the ELF magic header.
+/// Validate that `data` is a valid x86_64 ELF64 little-endian binary.
+///
+/// Checks performed (in order):
+/// - Length ≥ 64 (full ELF64 header must be present)
+/// - Magic `0x7F 'E' 'L' 'F'` at offset 0
+/// - EI_CLASS = 2 (ELFCLASS64) at offset 4
+/// - EI_DATA = 1 (ELFDATA2LSB, little-endian) at offset 5
+/// - e_machine = 0x003E (x86_64) at offsets 18-19 (LE)
 pub fn validate_elf(data: &[u8]) -> Result<(), String> {
-    if data.len() < 4 {
-        return Err("File too small to be a valid ELF binary".to_string());
+    if data.len() < ELF64_HEADER_LEN {
+        return Err(format!(
+            "File is too small to contain a full ELF64 header: {} bytes (need at least {ELF64_HEADER_LEN})",
+            data.len()
+        ));
     }
     if data[..4] != ELF_MAGIC {
-        return Err("File is not a valid ELF binary (bad magic bytes)".to_string());
+        return Err(format!(
+            "Bad ELF magic: expected [7f 45 4c 46], got [{:02x} {:02x} {:02x} {:02x}]",
+            data[0], data[1], data[2], data[3]
+        ));
+    }
+    let ei_class = data[EI_CLASS_OFFSET];
+    if ei_class != ELFCLASS64 {
+        return Err(format!(
+            "EI_CLASS is {ei_class}, expected {ELFCLASS64} (ELFCLASS64) — only 64-bit ELF binaries are supported"
+        ));
+    }
+    let ei_data = data[EI_DATA_OFFSET];
+    if ei_data != ELFDATA2LSB {
+        return Err(format!(
+            "EI_DATA is {ei_data}, expected {ELFDATA2LSB} (ELFDATA2LSB / little-endian) — only little-endian binaries are supported"
+        ));
+    }
+    let e_machine = u16::from_le_bytes([data[E_MACHINE_OFFSET], data[E_MACHINE_OFFSET + 1]]);
+    if e_machine != EM_X86_64 {
+        return Err(format!(
+            "e_machine is 0x{e_machine:04x}, expected 0x{EM_X86_64:04x} (x86_64) — only x86_64 binaries are supported"
+        ));
     }
     Ok(())
 }
@@ -135,9 +177,75 @@ mod tests {
         p
     }
 
+    /// Build a minimal valid ELF64 LE x86_64 header (64 zero bytes with
+    /// fields set appropriately).
+    fn valid_elf64_header() -> Vec<u8> {
+        let mut buf = vec![0u8; 64];
+        // ELF magic
+        buf[0] = 0x7f;
+        buf[1] = b'E';
+        buf[2] = b'L';
+        buf[3] = b'F';
+        // EI_CLASS = ELFCLASS64
+        buf[4] = 2;
+        // EI_DATA = ELFDATA2LSB
+        buf[5] = 1;
+        // e_machine at offsets 18-19, LE: 0x003E = x86_64
+        buf[18] = 0x3E;
+        buf[19] = 0x00;
+        buf
+    }
+
     #[test]
-    fn validates_elf_magic() {
-        assert!(validate_elf(b"\x7fELF\x02\x01\x01\x00").is_ok());
+    fn validates_elf_valid_header() {
+        let hdr = valid_elf64_header();
+        assert!(validate_elf(&hdr).is_ok(), "valid ELF64 x86_64 header must pass");
+    }
+
+    #[test]
+    fn validates_elf_too_small() {
+        // Less than 64 bytes
+        let short = vec![0x7f, b'E', b'L', b'F', 2, 1, 0, 0];
+        let err = validate_elf(&short).unwrap_err();
+        assert!(err.contains("too small"), "got: {err}");
+    }
+
+    #[test]
+    fn validates_elf_bad_magic() {
+        let mut hdr = valid_elf64_header();
+        hdr[0] = 0x4d; // 'M' — Windows PE
+        let err = validate_elf(&hdr).unwrap_err();
+        assert!(err.contains("magic") || err.contains("ELF"), "got: {err}");
+    }
+
+    #[test]
+    fn validates_elf_wrong_class() {
+        let mut hdr = valid_elf64_header();
+        hdr[4] = 1; // ELFCLASS32
+        let err = validate_elf(&hdr).unwrap_err();
+        assert!(err.contains("EI_CLASS"), "got: {err}");
+    }
+
+    #[test]
+    fn validates_elf_wrong_data_encoding() {
+        let mut hdr = valid_elf64_header();
+        hdr[5] = 2; // ELFDATA2MSB (big-endian)
+        let err = validate_elf(&hdr).unwrap_err();
+        assert!(err.contains("EI_DATA"), "got: {err}");
+    }
+
+    #[test]
+    fn validates_elf_wrong_machine() {
+        let mut hdr = valid_elf64_header();
+        // Set e_machine to ARM64 (0x00B7)
+        hdr[18] = 0xB7;
+        hdr[19] = 0x00;
+        let err = validate_elf(&hdr).unwrap_err();
+        assert!(err.contains("e_machine"), "got: {err}");
+    }
+
+    #[test]
+    fn validates_elf_non_elf_bytes() {
         assert!(validate_elf(b"MZ\x90\x00").is_err());
         assert!(validate_elf(b"abc").is_err());
     }

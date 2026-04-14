@@ -30,6 +30,11 @@ pub fn has_previous(current: &Path) -> bool {
 /// 4. Rename `.new` → current (with recovery on failure)
 ///
 /// The caller is responsible for triggering a process exit/restart.
+///
+/// Note: the release apply path now uses [`apply_binary_bytes`] to avoid a
+/// TOCTOU window. This function is retained for cases where the source is
+/// already on disk (e.g. a pre-downloaded file).
+#[allow(dead_code)]
 pub async fn apply_binary(new_binary: &Path, current: &Path) -> anyhow::Result<()> {
     let prev = prev_path(current);
     let staging = {

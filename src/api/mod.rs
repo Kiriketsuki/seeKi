@@ -32,10 +32,9 @@ pub fn router(mode: SharedAppMode) -> Router {
         .route("/version", get(update::get_version))
         .route("/update/status", get(update::get_update_status))
         .route("/update/check", post(update::check_update))
-        .route("/update/apply", post(update::apply_update))
-        .route("/update/wip", update::wip_route())
-        .route("/update/rollback", post(update::rollback))
         .route("/update/settings", patch(update::update_settings))
+        // The three mutating update endpoints are gated by bearer-token auth.
+        .merge(update::protected_update_router())
         .layer(Extension(mode))
 }
 

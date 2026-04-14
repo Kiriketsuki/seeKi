@@ -2,7 +2,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::DefaultBodyLimit;
-use axum::{Extension, Json};
+use axum::http::StatusCode;
+use axum::middleware::Next;
+use axum::response::Response;
+use axum::{Extension, Json, extract::Request};
 use serde::Deserialize;
 
 use crate::update::github;
@@ -11,6 +14,28 @@ use crate::update::version::SeekiVersion;
 use crate::update::UpdateState;
 
 use super::AppError;
+
+// ── Auth middleware ───────────────────────────────────────────────────────────
+
+/// Axum middleware that verifies the `Authorization: Bearer <token>` header
+/// against the server-held update token.  Applied only to the mutating update
+/// endpoints: `/update/apply`, `/update/wip`, `/update/rollback`.
+pub async fn require_update_token(
+    Extension(update): Extension<Arc<UpdateState>>,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let token_value = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+
+    match token_value {
+        Some(candidate) if update.token.verify(candidate) => Ok(next.run(req).await),
+        _ => Err(StatusCode::UNAUTHORIZED),
+    }
+}
 
 // ── GET /api/version ─────────────────────────────────────────────────────────
 
@@ -149,47 +174,43 @@ pub async fn apply_update(
                 AppError::bad_request("No compatible binary found in release assets")
             })?;
 
-            // Download to a temp file
-            let tmp_dir = std::env::temp_dir();
-            let dest = tmp_dir.join(format!("seeki-update-{}", &release.tag_name));
-            github::download_asset(&asset.browser_download_url, &dest).await?;
-
-            // SHA-256 verification: mandatory when sidecar asset exists
+            // Require the SHA256 sidecar to be present in the release manifest
+            // before downloading anything — fail fast if the release is incomplete.
             let sha256_asset_name = format!("{}.sha256", &asset.name);
             let has_sha256_asset = release.assets.iter().any(|a| a.name == sha256_asset_name);
-
-            if has_sha256_asset {
-                let sha256_url = format!("{}.sha256", &asset.browser_download_url);
-                match github::download_sha256(&sha256_url).await {
-                    Ok(expected) => {
-                        let expected = expected.trim().to_ascii_lowercase();
-                        let actual = swap::compute_sha256(&dest)?;
-                        if actual != expected {
-                            let _ = std::fs::remove_file(&dest);
-                            return Err(AppError::bad_request(format!(
-                                "SHA256 mismatch: expected {expected}, got {actual}"
-                            )));
-                        }
-                        tracing::info!("SHA256 verified: {actual}");
-                    }
-                    Err(e) => {
-                        let _ = std::fs::remove_file(&dest);
-                        return Err(AppError::bad_request(format!(
-                            "SHA256 sidecar exists but download failed — aborting for safety: {e}"
-                        )));
-                    }
-                }
-            } else {
-                let _ = std::fs::remove_file(&dest);
+            if !has_sha256_asset {
                 return Err(AppError::bad_request(
                     "Release is missing a SHA256 sidecar — refusing to apply an unverified binary",
                 ));
             }
 
-            swap::apply_binary(&dest, &current_path).await?;
+            // Download the binary into memory and hash it in one streaming pass.
+            // This eliminates both the TOCTOU window (no double-read of a temp
+            // file) and any temp-file leak (no file to clean up on error).
+            let (bytes, actual_sha256) =
+                github::download_asset_bytes(&asset.browser_download_url)
+                    .await
+                    .map_err(|e| AppError::bad_request(format!("Download failed: {e}")))?;
 
-            // Clean up temp download
-            let _ = std::fs::remove_file(&dest);
+            // Download and compare the expected SHA256 sidecar.
+            let sha256_url = format!("{}.sha256", &asset.browser_download_url);
+            let expected_sha256 = github::download_sha256(&sha256_url)
+                .await
+                .map_err(|e| AppError::bad_request(format!(
+                    "SHA256 sidecar exists but download failed — aborting for safety: {e}"
+                )))?;
+            let expected_sha256 = expected_sha256.trim().to_ascii_lowercase();
+
+            if actual_sha256 != expected_sha256 {
+                return Err(AppError::bad_request(format!(
+                    "SHA256 mismatch: expected {expected_sha256}, got {actual_sha256}"
+                )));
+            }
+            tracing::info!(sha256 = %actual_sha256, "Release binary SHA256 verified");
+
+            // Install: the bytes we verified are the exact bytes installed — no
+            // second read, no TOCTOU.
+            swap::apply_binary_bytes(&bytes, &current_path).await?;
 
             swap::schedule_exit(&update.shutdown);
 
@@ -330,4 +351,23 @@ pub async fn update_settings(
 /// Helper to construct the WIP upload route with a 100 MB body limit.
 pub fn wip_route() -> axum::routing::MethodRouter {
     axum::routing::post(upload_wip).layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+}
+
+/// Build an `axum::Router` containing the three mutating update endpoints
+/// protected by the `require_update_token` middleware:
+///
+/// - `POST /update/apply`
+/// - `POST /update/wip`  (100 MB body limit)
+/// - `POST /update/rollback`
+///
+/// The returned router is intended to be merged into the main API router.
+pub fn protected_update_router() -> axum::Router {
+    use axum::middleware;
+    use axum::routing::post;
+
+    axum::Router::new()
+        .route("/update/apply", post(apply_update))
+        .route("/update/wip", wip_route())
+        .route("/update/rollback", post(rollback))
+        .layer(middleware::from_fn(require_update_token))
 }

@@ -115,6 +115,11 @@ const MAX_RELEASE_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 /// Download an asset to `dest`, streaming to avoid high memory usage.
 /// Downloads to a temporary `.tmp` file first, then renames atomically on success.
 /// Aborts if the asset exceeds [`MAX_RELEASE_ASSET_BYTES`].
+///
+/// Note: the release apply path now uses [`download_asset_bytes`] to avoid a
+/// TOCTOU window. This function is retained for cases where streaming to disk
+/// is necessary (e.g. very large assets).
+#[allow(dead_code)]
 pub async fn download_asset(url: &str, dest: &Path) -> anyhow::Result<()> {
     use tokio::io::AsyncWriteExt;
 
@@ -169,6 +174,53 @@ pub async fn download_asset(url: &str, dest: &Path) -> anyhow::Result<()> {
     }
 
     result
+}
+
+/// Download a release asset into memory, returning `(bytes, sha256_hex)`.
+///
+/// Streams the response into a `Vec<u8>`, computing SHA-256 on the fly so that
+/// the digest covers the exact bytes that will be installed — no temp file,
+/// no TOCTOU between verify and apply.  Aborts if the download would exceed
+/// [`MAX_RELEASE_ASSET_BYTES`].
+pub async fn download_asset_bytes(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
+    use sha2::{Digest, Sha256};
+
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(300))
+        .build()?;
+
+    let resp = client.get(url).send().await?.error_for_status()?;
+
+    // Reject early if the server advertises a too-large Content-Length.
+    if let Some(len) = resp.content_length()
+        && len > MAX_RELEASE_ASSET_BYTES
+    {
+        anyhow::bail!(
+            "Release asset is {len} bytes, exceeds cap of {MAX_RELEASE_ASSET_BYTES} bytes"
+        );
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::with_capacity(32 * 1024 * 1024); // 32 MB initial
+    let mut hasher = Sha256::new();
+    let mut total: u64 = 0;
+
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        total = total.saturating_add(chunk.len() as u64);
+        if total > MAX_RELEASE_ASSET_BYTES {
+            anyhow::bail!(
+                "Release asset exceeded cap of {MAX_RELEASE_ASSET_BYTES} bytes mid-download"
+            );
+        }
+        hasher.update(&chunk);
+        buf.extend_from_slice(&chunk);
+    }
+
+    let sha256 = format!("{:x}", hasher.finalize());
+    Ok((buf, sha256))
 }
 
 /// Download the `.sha256` sidecar file and return the hex digest (first token).

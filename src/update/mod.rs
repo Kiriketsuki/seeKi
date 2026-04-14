@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod github;
 pub mod swap;
 pub mod version;
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+pub use auth::UpdateToken;
 pub use github::ReleaseCache;
 #[allow(unused_imports)]
 pub use version::SeekiVersion;
@@ -68,16 +70,26 @@ pub struct UpdateState {
     /// otherwise let an attacker swap the staged file and send the matching
     /// recomputed hash on apply.
     pub wip_manifests: Mutex<HashMap<String, String>>,
+    /// Bearer token that must be supplied in the `Authorization` header when
+    /// calling the mutating update endpoints (`/update/apply`, `/update/wip`,
+    /// `/update/rollback`).
+    pub token: UpdateToken,
 }
 
 impl UpdateState {
     pub fn new() -> Self {
+        let token = UpdateToken::load_or_create(&UpdateToken::default_path())
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "Failed to load/create update token from disk — generating ephemeral token");
+                UpdateToken::generate()
+            });
         Self {
             cache: ReleaseCache::new(),
             settings: Mutex::new(UpdateSettings::load()),
             swap_lock: Mutex::new(()),
             shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
             wip_manifests: Mutex::new(HashMap::new()),
+            token,
         }
     }
 }
