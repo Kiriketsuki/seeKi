@@ -16,7 +16,6 @@
     DisplayConfig,
     SortState,
     FilterState,
-    SortDirection,
     UpdateStatus,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
@@ -38,7 +37,7 @@
   let error: string | null = $state(null);
   let tableError: string | null = $state(null);
   let currentPage: number = $state(1);
-  let sortState: SortState = $state({ column: null, direction: null });
+  let sortState: SortState = $state([]);
   let filtersVisible: boolean = $state(false);
   let filters: FilterState = $state({});
   let searchTerm: string = $state('');
@@ -69,16 +68,6 @@
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
-  let sortLabel = $derived.by(() => {
-    if (!sortState.column || !sortState.direction) {
-      return 'No active sort';
-    }
-
-    const currentColumn = columns.find((column) => column.name === sortState.column);
-    const displayName = currentColumn?.display_name ?? sortState.column;
-    return `${displayName} ${sortState.direction}`;
-  });
-
   onMount(async () => {
     try {
       const status = await fetchStatus();
@@ -169,6 +158,16 @@
       clearTimeout(searchDebounceId);
       searchDebounceId = null;
     }
+  }
+
+  function serializeSortState(nextSortState: SortState): string | undefined {
+    if (nextSortState.length === 0) {
+      return undefined;
+    }
+
+    return nextSortState
+      .map(({ column, direction }) => `${column}:${direction}`)
+      .join(',');
   }
 
   function normalizeColumnVisibility(
@@ -265,7 +264,7 @@
 
   async function selectTable(table: TableInfo) {
     const myRequest = ++selectRequestId;
-    const resetSortState: SortState = { column: null, direction: null };
+    const resetSortState: SortState = [];
     const resetFilters: FilterState = {};
     selectedSchema = table.schema;
     selectedTable = table.name;
@@ -307,9 +306,9 @@
     nextSearchTerm: string = searchTerm,
   ): FetchRowsParams {
     const params: FetchRowsParams = { page };
-    if (nextSortState.column && nextSortState.direction) {
-      params.sort_column = nextSortState.column;
-      params.sort_direction = nextSortState.direction;
+    const sort = serializeSortState(nextSortState);
+    if (sort != null) {
+      params.sort = sort;
     }
 
     const activeFilters = Object.fromEntries(
@@ -360,12 +359,9 @@
     await loadRows(page);
   }
 
-  function handleSortChange(column: string, direction: SortDirection | null) {
+  function handleSortChange(nextSortState: SortState) {
     clearFilterDebounce();
     clearSearchDebounce();
-    const nextSortState: SortState = direction
-      ? { column, direction }
-      : { column: null, direction: null };
     sortState = nextSortState;
     void loadRows(1, nextSortState);
   }
@@ -438,8 +434,7 @@
 
     const params = buildRowsParams(1);
     const searchParams = new URLSearchParams();
-    if (params.sort_column) searchParams.set('sort_column', params.sort_column);
-    if (params.sort_direction) searchParams.set('sort_direction', params.sort_direction);
+    if (params.sort) searchParams.set('sort', params.sort);
     if (params.search) searchParams.set('search', params.search);
     if (params.filters) {
       for (const [col, val] of Object.entries(params.filters)) {
@@ -505,8 +500,6 @@
       {/if}
     </Sidebar>
     <Toolbar
-      sortState={sortState}
-      sortDescription={sortLabel}
       filtersVisible={filtersVisible}
       activeFilterCount={activeFilterCount}
       searchActive={searchActive}

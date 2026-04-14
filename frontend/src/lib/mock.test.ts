@@ -87,6 +87,26 @@ describe('mockFetchRows', () => {
     expect(result.page).toBe(1);
     expect(result.page_size).toBe(50);
   });
+
+  it('supports multi-column sort', () => {
+    const result = mockFetchRows('public', 'users', {
+      page_size: 200,
+      sort: 'role:asc,id:desc',
+    });
+
+    for (let i = 1; i < result.rows.length; i += 1) {
+      const prev = result.rows[i - 1];
+      const curr = result.rows[i];
+      const prevRole = String(prev.role ?? '');
+      const currRole = String(curr.role ?? '');
+
+      if (prevRole === currRole) {
+        expect(Number(prev.id)).toBeGreaterThanOrEqual(Number(curr.id));
+      } else {
+        expect(prevRole <= currRole).toBe(true);
+      }
+    }
+  });
 });
 
 describe('mockFetchDisplayConfig', () => {

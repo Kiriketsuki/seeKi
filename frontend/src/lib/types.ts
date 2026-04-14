@@ -24,10 +24,12 @@ export interface QueryResult {
 
 export type SortDirection = 'asc' | 'desc';
 
-export interface SortState {
-  column: string | null;
-  direction: SortDirection | null;
+export interface SortEntry {
+  column: string;
+  direction: SortDirection;
 }
+
+export type SortState = SortEntry[];
 
 export type FilterState = Record<string, string>;
 

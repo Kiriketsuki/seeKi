@@ -89,8 +89,7 @@ export async function fetchColumns(
 export interface FetchRowsParams {
   page?: number;
   page_size?: number;
-  sort_column?: string;
-  sort_direction?: string;
+  sort?: string;
   search?: string;
   filters?: Record<string, string>;
 }
@@ -105,10 +104,7 @@ export async function fetchRows(
   if (params?.page != null) searchParams.set('page', String(params.page));
   if (params?.page_size != null)
     searchParams.set('page_size', String(params.page_size));
-  if (params?.sort_column)
-    searchParams.set('sort_column', params.sort_column);
-  if (params?.sort_direction)
-    searchParams.set('sort_direction', params.sort_direction);
+  if (params?.sort != null) searchParams.set('sort', params.sort);
   if (params?.search) searchParams.set('search', params.search);
   if (params?.filters) {
     for (const [col, val] of Object.entries(params.filters)) {

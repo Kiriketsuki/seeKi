@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatCellValue,
   columnWidth,
+  cycleSort,
   sortStateToConfig,
   getColumnDisplayName,
   buildSortableColumn,
@@ -231,16 +232,74 @@ describe('columnWidth', () => {
 
 describe('sortStateToConfig', () => {
   it('returns undefined when no sort active', () => {
-    expect(sortStateToConfig({ column: null, direction: null })).toBeUndefined();
+    expect(sortStateToConfig([])).toBeUndefined();
   });
 
   it('returns config object when sort active', () => {
-    const result = sortStateToConfig({ column: 'name', direction: 'asc' });
+    const result = sortStateToConfig([{ column: 'name', direction: 'asc' }]);
     expect(result).toEqual({ name: 'asc' });
   });
 
-  it('returns undefined when column set but direction null', () => {
-    expect(sortStateToConfig({ column: 'name', direction: null })).toBeUndefined();
+  it('returns config object for multi-sort state', () => {
+    const result = sortStateToConfig([
+      { column: 'vehicle_id', direction: 'asc' },
+      { column: 'id', direction: 'desc' },
+    ]);
+    expect(result).toEqual({ vehicle_id: 'asc', id: 'desc' });
+  });
+});
+
+describe('cycleSort', () => {
+  it('prepends a new column as ascending (newest = highest priority)', () => {
+    expect(cycleSort([], 'name')).toEqual([
+      { column: 'name', direction: 'asc' },
+    ]);
+  });
+
+  it('promotes ascending sort to descending and moves it to the front', () => {
+    expect(
+      cycleSort(
+        [
+          { column: 'vehicle_id', direction: 'asc' },
+          { column: 'id', direction: 'asc' },
+          { column: 'logged_at', direction: 'desc' },
+        ],
+        'id',
+      ),
+    ).toEqual([
+      { column: 'id', direction: 'desc' },
+      { column: 'vehicle_id', direction: 'asc' },
+      { column: 'logged_at', direction: 'desc' },
+    ]);
+  });
+
+  it('removes descending sort entries', () => {
+    expect(
+      cycleSort(
+        [
+          { column: 'vehicle_id', direction: 'asc' },
+          { column: 'id', direction: 'desc' },
+        ],
+        'id',
+      ),
+    ).toEqual([{ column: 'vehicle_id', direction: 'asc' }]);
+  });
+
+  it('preserves other entry order when re-sorting', () => {
+    expect(
+      cycleSort(
+        [
+          { column: 'a', direction: 'asc' },
+          { column: 'b', direction: 'asc' },
+          { column: 'c', direction: 'desc' },
+        ],
+        'b',
+      ),
+    ).toEqual([
+      { column: 'b', direction: 'desc' },
+      { column: 'a', direction: 'asc' },
+      { column: 'c', direction: 'desc' },
+    ]);
   });
 });
 
