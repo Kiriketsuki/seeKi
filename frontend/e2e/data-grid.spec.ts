@@ -87,7 +87,8 @@ test.describe('Data Grid — Sorting', () => {
     rowsResponse = await rowsLoaded;
     expect(rowsResponse.request().url()).not.toContain('sort_direction=');
     expect(rowsResponse.request().url()).not.toContain('sort_column=');
-    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/No active sort/i);
+    // sort cleared — live region should be empty
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
 
     // Verify unsorted order is restored
     const restoredFirst = await getFirstCellText();

@@ -73,7 +73,8 @@ test.describe('Navigation — Table Switching', () => {
     // Verify sort is reset on table switch — the new rows request should be clean
     expect(rowsResponse.request().url()).not.toContain('sort_direction=');
     expect(rowsResponse.request().url()).not.toContain('sort_column=');
-    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/No active sort/i);
+    // sort cleared on table switch — live region should be empty
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
   });
 });
 

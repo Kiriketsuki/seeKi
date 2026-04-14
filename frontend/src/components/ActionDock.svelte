@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { Download, Filter, LayoutGrid, Search, X } from 'lucide-svelte';
   import ColumnDropdown from './ColumnDropdown.svelte';
-  import type { ColumnInfo } from '../lib/types';
+  import type { ColumnInfo, SortState } from '../lib/types';
 
   let {
     searchVisible = false,
@@ -16,6 +16,7 @@
     hiddenColumnCount = 0,
     hasTable = false,
     disabled = false,
+    sortState = { column: null, direction: null },
     onToggleSearch,
     onSearchInput,
     onSearchClear,
@@ -28,7 +29,6 @@
     onSearchInputRef,
     onSearchButtonRef,
     onColumnsButtonRef,
-    sortDescription = 'No active sort',
   }: {
     searchVisible?: boolean;
     searchTerm?: string;
@@ -41,6 +41,7 @@
     hiddenColumnCount?: number;
     hasTable?: boolean;
     disabled?: boolean;
+    sortState?: SortState;
     onToggleSearch?: () => void;
     onSearchInput?: (event: Event) => void;
     onSearchClear?: () => void;
@@ -53,7 +54,6 @@
     onSearchInputRef?: (node: HTMLInputElement | null) => void;
     onSearchButtonRef?: (node: HTMLButtonElement | null) => void;
     onColumnsButtonRef?: (node: HTMLButtonElement | null) => void;
-    sortDescription?: string;
   } = $props();
 
   let shell: HTMLDivElement | null = null;
@@ -64,6 +64,14 @@
   let panelOpen = $derived(searchVisible || columnsOpen);
   let searchQuery = $derived.by(() => searchTerm.trim());
   let controlsDisabled = $derived(disabled || !hasTable);
+
+  let sortDescription = $derived.by(() => {
+    if (!sortState.column || !sortState.direction) return '';
+    const col = columns.find((c) => c.name === sortState.column);
+    const label = col?.display_name ?? sortState.column;
+    const dir = sortState.direction === 'asc' ? 'ascending' : 'descending';
+    return `Sorted by ${label}, ${dir}`;
+  });
 
   let searchTitle = $derived(
     searchVisible

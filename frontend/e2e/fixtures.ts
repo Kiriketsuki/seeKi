@@ -136,6 +136,11 @@ export class SeekiHelpers {
     return await this.page.locator('.table-item .table-item-name').allTextContents();
   }
 
+  /** Get the text content of the ActionDock sort announcement live region. */
+  getSortAnnouncement() {
+    return this.getActionDock().locator('[aria-live]');
+  }
+
   /** Toggle sidebar collapse/expand. */
   async toggleSidebar(): Promise<void> {
     await this.page.locator('.sidebar .toggle').click();
