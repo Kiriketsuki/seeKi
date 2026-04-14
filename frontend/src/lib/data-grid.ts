@@ -112,6 +112,15 @@ export function cycleSort(sortState: SortState, column: string): SortState {
   return sortState.filter((entry) => entry.column !== column);
 }
 
+// Single-column cycle: replaces any existing multi-sort with a cycle of just this column.
+// Used for non-shift clicks so users can return to a single-column sort after stacking.
+export function replaceSort(sortState: SortState, column: string): SortState {
+  const current = sortState.find((entry) => entry.column === column);
+  if (!current) return [{ column, direction: 'asc' }];
+  if (current.direction === 'asc') return [{ column, direction: 'desc' }];
+  return [];
+}
+
 export function getColumnDisplayName(column: ColumnInfo): string {
   return column.display_name || column.name;
 }

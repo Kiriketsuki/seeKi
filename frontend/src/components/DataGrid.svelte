@@ -17,6 +17,7 @@
     cycleSort,
     formatCellValue,
     getColumnDisplayName,
+    replaceSort,
     sortStateToConfig,
   } from '../lib/data-grid';
 
@@ -74,6 +75,18 @@
           : `Sort ${activeOrder === 'asc' ? 'ascending' : 'descending'}`
         : undefined;
 
+    // `aria-sort="ascending"` on multiple columns is ambiguous; add a visually-hidden
+    // text node inside the header so screen readers announce which position this column
+    // holds in the sort stack (primary, secondary, etc.).
+    const priorityAnnouncement =
+      isSorted && sortRank != null && sortState.length > 1
+        ? sortRank === 1
+          ? 'Primary sort.'
+          : sortRank === 2
+            ? 'Secondary sort.'
+            : `Sort priority ${sortRank} of ${sortState.length}.`
+        : null;
+
     const ariaSortValue = activeOrder === 'asc'
       ? 'ascending'
       : activeOrder === 'desc'
@@ -100,6 +113,9 @@
           },
           [
             h('span', { class: { 'sk-grid-header__label': true } }, label),
+            priorityAnnouncement
+              ? h('span', { class: { 'sk-sr-only': true } }, priorityAnnouncement)
+              : null,
             isSorted
               ? h(
                   'span',
@@ -108,6 +124,7 @@
                       'sk-grid-header__sort': true,
                       'is-active': true,
                     },
+                    role: 'img',
                     ...(sortAriaLabel ? { 'aria-label': sortAriaLabel, title: sortAriaLabel } : {}),
                   },
                   [
@@ -220,7 +237,10 @@
   function handleBeforeSorting(event: CustomEvent<SortEventDetail>) {
     event.preventDefault();
     const column = String(event.detail.column.prop);
-    onSortChange?.(cycleSort(sortState, column));
+    const next = event.detail.additive
+      ? cycleSort(sortState, column)
+      : replaceSort(sortState, column);
+    onSortChange?.(next);
   }
 
   let gridColumns: ColumnRegular[] = $derived(
@@ -308,6 +328,18 @@
 
   .grid-card :global(.sk-grid-header__sort.is-active) {
     color: var(--sk-accent);
+  }
+
+  .grid-card :global(.sk-sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .grid-card :global(.sk-grid-header__sort-rank) {
