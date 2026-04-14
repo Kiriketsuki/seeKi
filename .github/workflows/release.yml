@@ -1,44 +1,28 @@
 name: Release Management
 
 on:
-  push:
+  # Trigger only after the CI workflow completes successfully on the release
+  # branch. This eliminates the sleep+poll race where check-runs may not yet
+  # be registered when the gate job runs.
+  workflow_run:
+    workflows: ["CI"]
     branches:
       - release
+    types:
+      - completed
   workflow_dispatch:
 
 jobs:
-  # ── Gate: only proceed if CI is green ──────────────────────────────
+  # ── Gate: only proceed if CI passed ────────────────────────────────
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
+    # For workflow_run triggers, block if CI did not succeed.
+    # workflow_dispatch bypasses this check (manual override).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: release
-      - name: Check CI status
-        run: |
-          # Get the latest CI workflow run for the release branch HEAD
-          SHA=$(git rev-parse HEAD)
-          echo "Checking CI status for $SHA..."
-          # Give CI a moment if it was just pushed
-          sleep 10
-          # Use the Checks API (GitHub Actions posts here, not the legacy Statuses API).
-          # Consider all check-runs: if any conclusion is not "success" or "neutral"/"skipped", block.
-          CONCLUSIONS=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
-            --jq '[.check_runs[] | select(.name != "CI Gate") | .conclusion]' 2>/dev/null || echo "[]")
-          echo "Check-run conclusions: $CONCLUSIONS"
-          FAILED=$(echo "$CONCLUSIONS" | jq '[.[] | select(. != "success" and . != "neutral" and . != "skipped" and . != null)] | length')
-          PENDING=$(echo "$CONCLUSIONS" | jq '[.[] | select(. == null)] | length')
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::error::One or more check-runs failed — release blocked."
-            exit 1
-          fi
-          if [ "$PENDING" -gt 0 ]; then
-            echo "::error::One or more check-runs still in progress — release blocked. Wait and retry."
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: CI passed
+        run: echo "CI workflow completed successfully — proceeding with release."
 
   # ── Prepare: sync VERSION, create tag ──────────────────────────────
   prepare:

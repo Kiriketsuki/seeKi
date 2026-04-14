@@ -152,7 +152,6 @@ pub async fn apply_update(
     Extension(update): Extension<Arc<UpdateState>>,
     Json(req): Json<ApplyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let _lock = update.swap_lock.lock().await;
     let current_path = swap::current_exe_path()?;
 
     match req.source.as_str() {
@@ -183,6 +182,8 @@ pub async fn apply_update(
             // Download the binary into memory and hash it in one streaming pass.
             // This eliminates both the TOCTOU window (no double-read of a temp
             // file) and any temp-file leak (no file to clean up on error).
+            // Done BEFORE acquiring swap_lock so /update/rollback is not blocked
+            // during the network download (which can take up to 300 s).
             let (bytes, actual_sha256) = github::download_asset_bytes(&asset.browser_download_url)
                 .await
                 .map_err(|e| AppError::bad_request(format!("Download failed: {e}")))?;
@@ -203,10 +204,11 @@ pub async fn apply_update(
             }
             tracing::info!(sha256 = %actual_sha256, "Release binary SHA256 verified");
 
+            // Narrow critical section: lock only covers the rename sequence.
             // Install: the bytes we verified are the exact bytes installed — no
             // second read, no TOCTOU.
+            let _lock = update.swap_lock.lock().await;
             swap::apply_binary_bytes(&bytes, &current_path).await?;
-
             swap::schedule_exit(&update.shutdown);
 
             Ok(Json(serde_json::json!({
@@ -251,7 +253,8 @@ pub async fn apply_update(
 
             // Read, hash, and compare in one pass so the bytes we install are
             // the exact bytes we verified — closes TOCTOU between verify and
-            // apply.
+            // apply. Done BEFORE acquiring swap_lock so /update/rollback is
+            // not blocked during file I/O.
             let tmp_dir = std::env::temp_dir();
             let wip_path = tmp_dir.join(format!("seeki-wip-{upload_id}"));
             let bytes = match crate::update::wip::verify_staged_wip(&wip_path, &expected_sha256) {
@@ -272,6 +275,9 @@ pub async fn apply_update(
                 }
             };
 
+            // Narrow critical section: lock only covers the rename sequence +
+            // post-apply cleanup.
+            let _lock = update.swap_lock.lock().await;
             let apply_result = swap::apply_binary_bytes(&bytes, &current_path).await;
             // Always clean up the staged file, regardless of apply outcome
             let _ = std::fs::remove_file(&wip_path);
