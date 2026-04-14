@@ -43,6 +43,8 @@
   let columnsOpen: boolean = $state(false);
   let columnVisibility: Record<string, boolean> = $state({});
   let searchInputEl: HTMLInputElement | null = $state(null);
+  let searchButtonEl: HTMLButtonElement | null = $state(null);
+  let columnsButtonEl: HTMLButtonElement | null = $state(null);
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let selectRequestId = 0;
@@ -119,12 +121,14 @@
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
+          void tick().then(() => columnsButtonEl?.focus());
           return;
         }
 
         if (searchVisible || searchQuery.length > 0) {
           event.preventDefault();
           handleSearchClear();
+          void tick().then(() => searchButtonEl?.focus());
         }
       }
     }
@@ -249,6 +253,14 @@
 
   function setSearchInputEl(node: HTMLInputElement | null) {
     searchInputEl = node;
+  }
+
+  function setSearchButtonEl(node: HTMLButtonElement | null) {
+    searchButtonEl = node;
+  }
+
+  function setColumnsButtonEl(node: HTMLButtonElement | null) {
+    columnsButtonEl = node;
   }
 
   async function selectTable(table: TableInfo) {
@@ -529,6 +541,8 @@
               onCloseColumns={closeColumns}
               onExport={exportCsv}
               onSearchInputRef={setSearchInputEl}
+              onSearchButtonRef={setSearchButtonEl}
+              onColumnsButtonRef={setColumnsButtonEl}
             />
           {/if}
           {#if tableLoading}

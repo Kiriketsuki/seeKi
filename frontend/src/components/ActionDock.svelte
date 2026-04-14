@@ -26,6 +26,8 @@
     onCloseColumns,
     onExport,
     onSearchInputRef,
+    onSearchButtonRef,
+    onColumnsButtonRef,
   }: {
     searchVisible?: boolean;
     searchTerm?: string;
@@ -48,10 +50,14 @@
     onCloseColumns?: () => void;
     onExport?: () => void;
     onSearchInputRef?: (node: HTMLInputElement | null) => void;
+    onSearchButtonRef?: (node: HTMLButtonElement | null) => void;
+    onColumnsButtonRef?: (node: HTMLButtonElement | null) => void;
   } = $props();
 
   let shell: HTMLDivElement | null = null;
   let searchInputNode: HTMLInputElement | null = $state(null);
+  let searchButtonNode: HTMLButtonElement | null = $state(null);
+  let columnsButtonNode: HTMLButtonElement | null = $state(null);
 
   let panelOpen = $derived(searchVisible || columnsOpen);
   let searchQuery = $derived.by(() => searchTerm.trim());
@@ -81,6 +87,14 @@
 
   $effect(() => {
     onSearchInputRef?.(searchInputNode);
+  });
+
+  $effect(() => {
+    onSearchButtonRef?.(searchButtonNode);
+  });
+
+  $effect(() => {
+    onColumnsButtonRef?.(columnsButtonNode);
   });
 
   function handleOutsidePointerDown(event: PointerEvent) {
@@ -145,10 +159,11 @@
         class:active={searchActive}
         data-action="search"
         aria-expanded={searchVisible}
-        aria-controls="dock-search-panel"
+        aria-controls={searchVisible ? 'dock-search-panel' : undefined}
         aria-label={searchTitle}
         title={searchTitle}
         disabled={controlsDisabled}
+        bind:this={searchButtonNode}
         onclick={() => onToggleSearch?.()}
       >
         <Search size={16} />
@@ -181,10 +196,11 @@
         class:active={columnsOpen}
         data-action="columns"
         aria-expanded={columnsOpen}
-        aria-controls="columns-panel"
+        aria-controls={columnsOpen ? 'columns-panel' : undefined}
         aria-label={columnsTitle}
         title={columnsTitle}
         disabled={controlsDisabled}
+        bind:this={columnsButtonNode}
         onclick={() => onToggleColumns?.()}
       >
         <span class="icon-stack">

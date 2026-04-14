@@ -16,6 +16,31 @@ test.describe('Action Dock — Shell', () => {
   });
 });
 
+test.describe('Action Dock — Filters', () => {
+  test.beforeEach(async ({ page, seeki }) => {
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+  });
+
+  test('filters toggle shows and hides the filter row', async ({ page, seeki }) => {
+    const dock = seeki.getActionDock();
+    const filterButton = dock.getByRole('button', { name: /filters?/i });
+    const filterInputs = page.locator('[role="columnheader"] input[aria-label^="Filter"]');
+
+    await expect(filterButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(filterInputs.first()).not.toBeVisible();
+
+    await seeki.clickFilterToggle();
+    await expect(filterButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(filterInputs.first()).toBeVisible();
+
+    await seeki.clickFilterToggle();
+    await expect(filterButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(filterInputs.first()).not.toBeVisible();
+  });
+});
+
 test.describe('Action Dock — Search', () => {
   test.beforeEach(async ({ page, seeki }) => {
     await page.goto('/');
