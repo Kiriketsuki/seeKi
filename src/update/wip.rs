@@ -112,6 +112,68 @@ pub async fn stage_upload(data: bytes::Bytes) -> anyhow::Result<WipUpload> {
     })
 }
 
+/// Sweep stale WIP upload files from the temp directory.
+///
+/// Removes `seeki-wip-*` files whose mtime is older than `ttl`. Called at
+/// server startup to clean up orphan uploads left behind when the process
+/// restarted between upload and apply (the manifest is in-memory only and
+/// does not survive a restart — see src/update/mod.rs).
+///
+/// Errors are logged but not returned; this is a best-effort cleanup and
+/// should never block startup.
+pub fn sweep_stale_uploads(ttl: std::time::Duration) {
+    let tmp_dir = std::env::temp_dir();
+    let now = std::time::SystemTime::now();
+
+    let entries = match std::fs::read_dir(&tmp_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, dir = %tmp_dir.display(), "Failed to read tmp dir for WIP sweep");
+            return;
+        }
+    };
+
+    let mut swept = 0usize;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = match name.to_str() {
+            Some(s) => s,
+            None => continue,
+        };
+        if !name_str.starts_with("seeki-wip-") {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let mtime = match metadata.modified() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let age = match now.duration_since(mtime) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        if age > ttl {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    swept += 1;
+                    tracing::info!(path = %path.display(), age_secs = age.as_secs(), "Removed stale WIP upload");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, path = %path.display(), "Failed to remove stale WIP upload");
+                }
+            }
+        }
+    }
+
+    if swept > 0 {
+        tracing::info!(count = swept, "WIP upload sweep complete");
+    }
+}
+
 /// Outcome of verifying a staged WIP file against an expected SHA256.
 #[derive(Debug)]
 pub enum VerifyWipOutcome {

@@ -66,6 +66,12 @@ async fn main() -> anyhow::Result<()> {
 
     let update_state = Arc::new(update::UpdateState::new());
 
+    // Sweep stale WIP uploads left behind by prior process instances. The
+    // WIP manifest is in-memory only, so any orphaned /tmp/seeki-wip-*
+    // files from before this startup are unreachable via /update/apply.
+    // TTL: 24h.
+    crate::update::wip::sweep_stale_uploads(std::time::Duration::from_secs(24 * 60 * 60));
+
     // Spawn a non-blocking background check for updates
     {
         let update_bg = Arc::clone(&update_state);

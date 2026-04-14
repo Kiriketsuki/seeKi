@@ -90,8 +90,16 @@ pub async fn apply_binary_bytes(bytes: &[u8], current: &Path) -> anyhow::Result<
         PathBuf::from(s)
     };
 
-    // 1. Write bytes to staging path (current untouched)
-    std::fs::write(&staging, bytes)?;
+    // 1. Write bytes to staging path and fsync so the data — not just the
+    // metadata — is durable before the rename. A power loss between the write
+    // and the rename could otherwise leave a zero-length file in place of the
+    // running binary after recovery.
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&staging)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
 
     // 2. Mark executable on the staged copy
     #[cfg(unix)]
@@ -155,10 +163,16 @@ pub async fn rollback(current: &Path) -> anyhow::Result<()> {
         return Err(e.into());
     }
 
-    // Step 3: move tmp to prev (non-critical — current is already restored)
-    if let Err(e) = std::fs::rename(&tmp, &prev) {
-        tracing::warn!(error = %e, "Failed to move old binary to .prev — cleaning up");
-        let _ = std::fs::remove_file(&tmp);
+    // Step 3: delete the rolled-back-from binary.
+    //
+    // Intentionally do NOT move tmp → .prev. Retaining it would let an
+    // operator (or a script) invoke /update/rollback a second time and
+    // reinstate the exact binary they just escaped from — a known-bad
+    // artefact reinstallation. After rollback, there is no previous binary
+    // to go forward to; has_previous() correctly returns false and the UI
+    // disables the rollback button until the next successful apply.
+    if let Err(e) = std::fs::remove_file(&tmp) {
+        tracing::warn!(error = %e, "Failed to remove rolled-back-from binary");
     }
 
     tracing::info!("Rolled back to previous binary");
