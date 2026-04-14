@@ -6,7 +6,8 @@ use serde::Serialize;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 
 use super::{
-    ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, TableInfo, ValidationError,
+    ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, SortDirection, SortEntry,
+    TableInfo, ValidationError,
 };
 
 /// Result of a connection test — describes a single table visible to the server.
@@ -336,12 +337,59 @@ struct QueryBuilder {
     bind_values: Vec<String>,
 }
 
+fn build_order_clause(
+    columns: &[ColumnInfo],
+    sort: &[SortEntry],
+    include_pk_tiebreakers: bool,
+) -> anyhow::Result<String> {
+    if sort.is_empty() {
+        return Ok(String::new());
+    }
+
+    let valid_column_names: std::collections::HashSet<&str> =
+        columns.iter().map(|c| c.name.as_str()).collect();
+    let mut order_parts: Vec<String> = Vec::new();
+    let mut seen_columns: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for entry in sort {
+        let col = entry.column.as_str();
+        if !is_valid_identifier(col) {
+            return Err(ValidationError(format!("Invalid sort column name: {col}")).into());
+        }
+        if !valid_column_names.contains(col) {
+            return Err(ValidationError(format!("Unknown sort column: {col}")).into());
+        }
+        if !seen_columns.insert(entry.column.clone()) {
+            return Err(ValidationError(format!("Duplicate sort column: {col}")).into());
+        }
+        let direction = match entry.direction {
+            SortDirection::Asc => "ASC",
+            SortDirection::Desc => "DESC",
+        };
+        order_parts.push(format!("\"{}\" {direction}", entry.column));
+    }
+
+    if include_pk_tiebreakers {
+        for col in columns.iter().filter(|c| c.is_primary_key) {
+            if seen_columns.insert(col.name.clone()) {
+                order_parts.push(format!("\"{}\" ASC", col.name));
+            }
+        }
+    }
+
+    Ok(if order_parts.is_empty() {
+        String::new()
+    } else {
+        format!("ORDER BY {}", order_parts.join(", "))
+    })
+}
+
 fn build_query_clauses(
     columns: &[ColumnInfo],
     search: Option<&str>,
     filters: &std::collections::HashMap<String, String>,
-    sort_column: Option<&str>,
-    sort_direction: Option<&str>,
+    sort: &[SortEntry],
+    include_pk_tiebreakers: bool,
 ) -> anyhow::Result<QueryBuilder> {
     // Validate filter column names against the actual schema
     let valid_column_names: std::collections::HashSet<&str> =
@@ -419,21 +467,7 @@ fn build_query_clauses(
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    let order_clause = if let Some(col) = sort_column {
-        if !is_valid_identifier(col) {
-            return Err(ValidationError(format!("Invalid sort column name: {col}")).into());
-        }
-        if !valid_column_names.contains(col) {
-            return Err(ValidationError(format!("Unknown sort column: {col}")).into());
-        }
-        let dir = match sort_direction {
-            Some("desc" | "DESC") => "DESC",
-            _ => "ASC",
-        };
-        format!("ORDER BY \"{col}\" {dir}")
-    } else {
-        String::new()
-    };
+    let order_clause = build_order_clause(columns, sort, include_pk_tiebreakers)?;
 
     Ok(QueryBuilder {
         where_clause,
@@ -455,13 +489,7 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
     }
 
     let columns = get_columns(pool, schema, table).await?;
-    let qb = build_query_clauses(
-        &columns,
-        params.search,
-        params.filters,
-        params.sort_column,
-        params.sort_direction,
-    )?;
+    let qb = build_query_clauses(&columns, params.search, params.filters, params.sort, true)?;
 
     // Count total matching rows
     let count_sql = format!(
@@ -527,13 +555,7 @@ pub async fn export_rows_stream<'a>(
     }
 
     let columns = get_columns(pool, schema, table).await?;
-    let qb = build_query_clauses(
-        &columns,
-        params.search,
-        params.filters,
-        params.sort_column,
-        params.sort_direction,
-    )?;
+    let qb = build_query_clauses(&columns, params.search, params.filters, params.sort, false)?;
 
     let query_sql = format!(
         "SELECT * FROM \"{schema}\".\"{table}\" {} {}",
@@ -667,6 +689,32 @@ fn is_text_type(data_type: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn test_columns() -> Vec<ColumnInfo> {
+        vec![
+            ColumnInfo {
+                name: "id".into(),
+                data_type: "bigint".into(),
+                display_type: "Number".into(),
+                is_nullable: false,
+                is_primary_key: true,
+            },
+            ColumnInfo {
+                name: "vehicle_id".into(),
+                data_type: "text".into(),
+                display_type: "Text".into(),
+                is_nullable: false,
+                is_primary_key: false,
+            },
+            ColumnInfo {
+                name: "logged_at".into(),
+                data_type: "timestamp with time zone".into(),
+                display_type: "Date & Time".into(),
+                is_nullable: false,
+                is_primary_key: false,
+            },
+        ]
+    }
+
     #[test]
     fn valid_identifier_accepts_safe_chars() {
         assert!(is_valid_identifier("vehicle_id"));
@@ -704,5 +752,82 @@ mod tests {
         assert!(is_text_type("uuid"));
         assert!(!is_text_type("integer"));
         assert!(!is_text_type("boolean"));
+    }
+
+    #[test]
+    fn build_order_clause_supports_multi_sort_and_pk_tiebreaker() {
+        let columns = test_columns();
+        let sort = vec![
+            SortEntry {
+                column: "vehicle_id".into(),
+                direction: SortDirection::Asc,
+            },
+            SortEntry {
+                column: "logged_at".into(),
+                direction: SortDirection::Desc,
+            },
+        ];
+
+        let clause = build_order_clause(&columns, &sort, true).unwrap();
+        assert_eq!(
+            clause,
+            r#"ORDER BY "vehicle_id" ASC, "logged_at" DESC, "id" ASC"#
+        );
+    }
+
+    #[test]
+    fn build_order_clause_is_empty_when_no_sort_is_active() {
+        let columns = test_columns();
+
+        let clause = build_order_clause(&columns, &[], true).unwrap();
+        assert!(clause.is_empty());
+    }
+
+    #[test]
+    fn build_order_clause_skips_duplicate_primary_key_tiebreaker() {
+        let columns = test_columns();
+        let sort = vec![SortEntry {
+            column: "id".into(),
+            direction: SortDirection::Desc,
+        }];
+
+        let clause = build_order_clause(&columns, &sort, true).unwrap();
+        assert_eq!(clause, r#"ORDER BY "id" DESC"#);
+    }
+
+    #[test]
+    fn build_order_clause_omits_pk_tiebreaker_for_export_queries() {
+        let columns = test_columns();
+        let sort = vec![SortEntry {
+            column: "vehicle_id".into(),
+            direction: SortDirection::Asc,
+        }];
+
+        let clause = build_order_clause(&columns, &sort, false).unwrap();
+        assert_eq!(clause, r#"ORDER BY "vehicle_id" ASC"#);
+    }
+
+    #[test]
+    fn build_order_clause_rejects_invalid_sort_column() {
+        let columns = test_columns();
+        let sort = vec![SortEntry {
+            column: "id;drop table".into(),
+            direction: SortDirection::Asc,
+        }];
+
+        let err = build_order_clause(&columns, &sort, false).unwrap_err();
+        assert!(err.to_string().contains("Invalid sort column name"));
+    }
+
+    #[test]
+    fn build_order_clause_rejects_unknown_sort_column() {
+        let columns = test_columns();
+        let sort = vec![SortEntry {
+            column: "missing".into(),
+            direction: SortDirection::Asc,
+        }];
+
+        let err = build_order_clause(&columns, &sort, false).unwrap_err();
+        assert!(err.to_string().contains("Unknown sort column"));
     }
 }

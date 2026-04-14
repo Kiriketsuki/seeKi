@@ -46,55 +46,92 @@ test.describe('Data Grid — Sorting', () => {
   });
 
   test('sort cycling: asc → desc → unsorted', async ({ page, seeki }) => {
-    // Get the first sortable column header (via ARIA role)
     const firstHeader = page.locator('[role="columnheader"]').first();
-    // The toolbar sort indicator reflects sort state in the light DOM
-    const sortIndicator = page.locator('.tool-indicator');
+    const firstHeaderState = firstHeader.locator('.sk-grid-header');
+    const sortGlyph = firstHeader.locator('.sk-grid-header__sort');
 
-    // Helper: read the text of the first data cell in the first column
     const getFirstCellText = async () => {
       const cell = page.locator('revo-grid [data-rgcol="0"][data-rgrow="0"]').first();
       if (await cell.count() === 0) return null;
       return (await cell.textContent())?.trim() ?? null;
     };
 
-    // Capture unsorted first cell for comparison
     const unsortedFirst = await getFirstCellText();
 
-    // Initial state: no sort
-    await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
+    await expect(sortGlyph).toHaveCount(0);
 
-    // Click 1: ascending — wait for sorted data to load
     let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     await rowsLoaded;
-    await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
+    await expect(sortGlyph).toHaveText('↑');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
     const ascFirst = await getFirstCellText();
 
-    // Click 2: descending — wait for sorted data to load
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     await rowsLoaded;
-    await expect(sortIndicator).toHaveAttribute('aria-label', / desc$/);
+    await expect(sortGlyph).toHaveText('↓');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'descending');
     const descFirst = await getFirstCellText();
 
-    // Verify sort actually changed the data order (asc and desc should differ
-    // unless all values are identical, which we skip for)
     if (ascFirst !== null && descFirst !== null && ascFirst !== descFirst) {
       expect(ascFirst).not.toBe(descFirst);
     }
 
-    // Click 3: back to unsorted — wait for data to reload
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     await rowsLoaded;
-    await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
+    await expect(sortGlyph).toHaveCount(0);
+    await expect(firstHeaderState).not.toHaveAttribute('aria-sort');
 
-    // Verify unsorted order is restored
     const restoredFirst = await getFirstCellText();
     if (unsortedFirst !== null && restoredFirst !== null) {
       expect(restoredFirst).toBe(unsortedFirst);
     }
+  });
+
+  test('multi-column sort renders rank superscripts and orders vehicle_logs deterministically', async ({
+    page,
+    seeki,
+  }) => {
+    const tableNames = await seeki.getSidebarTableNames();
+    const vehicleTableName = tableNames.find((name) => name.toLowerCase().includes('vehicle'));
+    test.skip(!vehicleTableName, 'Test requires the seeded vehicle_logs table');
+
+    await seeki.selectTable(vehicleTableName!);
+    await seeki.waitForGridLoaded();
+
+    const headers = page.locator('[role="columnheader"]');
+    const idHeader = headers.nth(0);
+    const vehicleHeader = headers.nth(1);
+
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await vehicleHeader.click();
+    await rowsLoaded;
+
+    rowsLoaded = seeki.pendingRowsResponse();
+    await idHeader.click();
+    await rowsLoaded;
+
+    rowsLoaded = seeki.pendingRowsResponse();
+    await idHeader.click();
+    await rowsLoaded;
+
+    const vehicleSort = vehicleHeader.locator('.sk-grid-header__sort');
+    const idSort = idHeader.locator('.sk-grid-header__sort');
+    await expect(vehicleSort).toHaveText('↑1');
+    await expect(vehicleSort).toHaveAttribute('aria-label', /priority 1 of 2/i);
+    await expect(idSort).toHaveText('↓2');
+    await expect(idSort).toHaveAttribute('aria-label', /priority 2 of 2/i);
+
+    const visibleIds = await Promise.all(
+      [0, 1, 2, 3, 4].map(async (rowIndex) => {
+        const cell = page.locator(`revo-grid [data-rgcol="0"][data-rgrow="${rowIndex}"]`).first();
+        return (await cell.textContent())?.trim() ?? '';
+      }),
+    );
+
+    expect(visibleIds).toEqual(['200', '195', '190', '185', '180']);
   });
 });
 
