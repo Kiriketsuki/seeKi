@@ -41,12 +41,29 @@ impl UpdateToken {
         {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
-            let mut f = std::fs::OpenOptions::new()
+            // Use create_new (O_CREAT | O_EXCL) so we never inherit the permissions
+            // of a pre-existing file. POSIX open(2) silently ignores the `mode`
+            // argument when opening an existing inode — an attacker who pre-creates
+            // an empty 0o644 file at `path` would otherwise receive the regenerated
+            // token in a world-readable file. If the file already exists (e.g. a
+            // stale empty file from a previous run), remove it first and retry.
+            let open_result = std::fs::OpenOptions::new()
                 .write(true)
-                .create(true)
-                .truncate(true)
+                .create_new(true)
                 .mode(0o600)
-                .open(path)?;
+                .open(path);
+            let mut f = match open_result {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::fs::remove_file(path)?;
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(path)?
+                }
+                Err(e) => return Err(e.into()),
+            };
             f.write_all(token.0.as_bytes())?;
         }
         #[cfg(not(unix))]
@@ -199,6 +216,45 @@ mod tests {
             mode & 0o777,
             0o600,
             "token file must be created with mode 0600, got {mode:#o}"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Regression test for the empty-file pre-creation attack. An attacker who
+    /// creates an empty 0o644 file at the token path before first startup must
+    /// not receive a world-readable regenerated token. `create_new` forces the
+    /// regeneration path to remove-and-recreate rather than inherit permissions.
+    #[cfg(unix)]
+    #[test]
+    fn load_or_create_rejects_precreated_0644_empty_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let path = dir.join(format!("seeki-test-token-precreated-{nanos}"));
+        let _ = std::fs::remove_file(&path);
+
+        // Attacker pre-creates an empty file with world-readable mode.
+        std::fs::write(&path, b"").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o644,
+            "test setup: pre-created file should be 0o644"
+        );
+
+        UpdateToken::load_or_create(&path).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "regenerated token must be 0o600, got {mode:#o} — \
+             create_new must prevent inheriting pre-existing permissions"
         );
 
         let _ = std::fs::remove_file(&path);
