@@ -24,26 +24,44 @@ pub fn has_previous(current: &Path) -> bool {
 
 /// Replace the running binary with `new_binary`:
 ///
-/// 1. Rename current → `.prev`
-/// 2. Copy `new_binary` → current path
-/// 3. Set executable permission on the new binary
+/// 1. Copy `new_binary` → staging path (`.new`) — current untouched
+/// 2. Set executable permission on the staged copy
+/// 3. Rename current → `.prev`
+/// 4. Rename `.new` → current (with recovery on failure)
 ///
 /// The caller is responsible for triggering a process exit/restart.
 pub async fn apply_binary(new_binary: &Path, current: &Path) -> anyhow::Result<()> {
     let prev = prev_path(current);
+    let staging = {
+        let mut s = current.as_os_str().to_owned();
+        s.push(".new");
+        PathBuf::from(s)
+    };
 
-    // 1. Move the current binary aside
-    std::fs::rename(current, &prev)?;
+    // 1. Copy new binary to staging path (safe — current untouched)
+    std::fs::copy(new_binary, &staging)?;
 
-    // 2. Copy the new binary into place
-    std::fs::copy(new_binary, current)?;
-
-    // 3. Mark executable (rwxr-xr-x)
+    // 2. Mark executable on the staged copy
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(current, perms)?;
+        std::fs::set_permissions(&staging, perms)?;
+    }
+
+    // 3. Move current aside
+    std::fs::rename(current, &prev)?;
+
+    // 4. Move staged binary into place
+    if let Err(e) = std::fs::rename(&staging, current) {
+        // Recovery: restore the original binary
+        if let Err(restore_err) = std::fs::rename(&prev, current) {
+            tracing::error!(
+                error = %restore_err,
+                "CRITICAL: failed to restore original binary from .prev"
+            );
+        }
+        return Err(e.into());
     }
 
     tracing::info!(
@@ -57,8 +75,8 @@ pub async fn apply_binary(new_binary: &Path, current: &Path) -> anyhow::Result<(
 /// Swap the current binary back to the previous version:
 ///
 /// 1. Rename current → `.tmp`
-/// 2. Rename `.prev` → current
-/// 3. Rename `.tmp` → `.prev`
+/// 2. Rename `.prev` → current (with recovery on failure)
+/// 3. Rename `.tmp` → `.prev` (non-critical cleanup)
 pub async fn rollback(current: &Path) -> anyhow::Result<()> {
     let prev = prev_path(current);
     if !prev.exists() {
@@ -71,22 +89,40 @@ pub async fn rollback(current: &Path) -> anyhow::Result<()> {
         PathBuf::from(t)
     };
 
-    // Atomic three-step swap
+    // Step 1: move current aside
     std::fs::rename(current, &tmp)?;
-    std::fs::rename(&prev, current)?;
-    std::fs::rename(&tmp, &prev)?;
+
+    // Step 2: move prev into current
+    if let Err(e) = std::fs::rename(&prev, current) {
+        // Recovery: restore current from tmp
+        if let Err(restore_err) = std::fs::rename(&tmp, current) {
+            tracing::error!(
+                error = %restore_err,
+                "CRITICAL: failed to restore binary from .tmp during rollback"
+            );
+        }
+        return Err(e.into());
+    }
+
+    // Step 3: move tmp to prev (non-critical — current is already restored)
+    if let Err(e) = std::fs::rename(&tmp, &prev) {
+        tracing::warn!(error = %e, "Failed to move old binary to .prev — cleaning up");
+        let _ = std::fs::remove_file(&tmp);
+    }
 
     tracing::info!("Rolled back to previous binary");
     Ok(())
 }
 
-/// Schedule a graceful process exit after a short delay (500 ms) so the
-/// in-flight HTTP response has time to flush.
-pub fn schedule_exit() {
-    tokio::spawn(async {
+/// Schedule a graceful server shutdown after a short delay (500 ms) so the
+/// in-flight HTTP response has time to flush. Signals the axum server to
+/// shut down cleanly rather than hard-killing the process.
+pub fn schedule_exit(shutdown: &std::sync::Arc<tokio::sync::Notify>) {
+    let shutdown = std::sync::Arc::clone(shutdown);
+    tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        tracing::info!("Exiting for update/rollback…");
-        std::process::exit(0);
+        tracing::info!("Initiating graceful shutdown for update/rollback…");
+        shutdown.notify_waiters();
     });
 }
 

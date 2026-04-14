@@ -38,7 +38,13 @@ pub async fn get_update_status(
     let (latest, update_available) = if let Some(release) = cached {
         let tag = release.tag_name.trim_start_matches('v');
         let latest_ver = SeekiVersion::from_str(tag);
-        let avail = latest_ver.as_ref().is_ok_and(|v| v > &current);
+        let avail = match &latest_ver {
+            Ok(v) => v > &current,
+            Err(e) => {
+                tracing::warn!(tag = %tag, error = %e, "Failed to parse cached release version tag");
+                false
+            }
+        };
         (Some(tag.to_string()), avail)
     } else {
         (None, false)
@@ -79,9 +85,13 @@ pub async fn check_update(
 
     let (tag, update_available, assets, body) = if let Some(rel) = release {
         let tag = rel.tag_name.trim_start_matches('v').to_string();
-        let avail = SeekiVersion::from_str(&tag)
-            .map(|v| v > current)
-            .unwrap_or(false);
+        let avail = match SeekiVersion::from_str(&tag) {
+            Ok(v) => v > current,
+            Err(e) => {
+                tracing::warn!(tag = %tag, error = %e, "Failed to parse release version tag");
+                false
+            }
+        };
         let assets: Vec<serde_json::Value> = rel
             .assets
             .iter()
@@ -119,6 +129,7 @@ pub async fn apply_update(
     Extension(update): Extension<Arc<UpdateState>>,
     Json(req): Json<ApplyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let _lock = update.swap_lock.lock().await;
     let current_path = swap::current_exe_path()?;
 
     match req.source.as_str() {
@@ -143,20 +154,32 @@ pub async fn apply_update(
             let dest = tmp_dir.join(format!("seeki-update-{}", &release.tag_name));
             github::download_asset(&asset.browser_download_url, &dest).await?;
 
-            // Try to verify SHA256 if a sidecar exists
-            let sha256_url = format!("{}.sha256", &asset.browser_download_url);
-            if let Ok(expected) = github::download_sha256(&sha256_url).await {
-                let actual = swap::compute_sha256(&dest)?;
-                if actual != expected {
-                    // Clean up the downloaded file
-                    let _ = std::fs::remove_file(&dest);
-                    return Err(AppError::bad_request(format!(
-                        "SHA256 mismatch: expected {expected}, got {actual}"
-                    )));
+            // SHA-256 verification: mandatory when sidecar asset exists
+            let sha256_asset_name = format!("{}.sha256", &asset.name);
+            let has_sha256_asset = release.assets.iter().any(|a| a.name == sha256_asset_name);
+
+            if has_sha256_asset {
+                let sha256_url = format!("{}.sha256", &asset.browser_download_url);
+                match github::download_sha256(&sha256_url).await {
+                    Ok(expected) => {
+                        let actual = swap::compute_sha256(&dest)?;
+                        if actual != expected {
+                            let _ = std::fs::remove_file(&dest);
+                            return Err(AppError::bad_request(format!(
+                                "SHA256 mismatch: expected {expected}, got {actual}"
+                            )));
+                        }
+                        tracing::info!("SHA256 verified: {actual}");
+                    }
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&dest);
+                        return Err(AppError::bad_request(format!(
+                            "SHA256 sidecar exists but download failed — aborting for safety: {e}"
+                        )));
+                    }
                 }
-                tracing::info!("SHA256 verified: {actual}");
             } else {
-                tracing::warn!("No SHA256 sidecar found — skipping verification");
+                tracing::warn!("No SHA256 sidecar in release assets — skipping verification");
             }
 
             swap::apply_binary(&dest, &current_path).await?;
@@ -164,7 +187,7 @@ pub async fn apply_update(
             // Clean up temp download
             let _ = std::fs::remove_file(&dest);
 
-            swap::schedule_exit();
+            swap::schedule_exit(&update.shutdown);
 
             Ok(Json(serde_json::json!({
                 "status": "applied",
@@ -175,6 +198,15 @@ pub async fn apply_update(
             let upload_id = req.wip_upload_id.ok_or_else(|| {
                 AppError::bad_request("wip_upload_id is required when source is 'wip'")
             })?;
+
+            // F01: Validate upload_id — must be exactly 8 lowercase hex characters
+            let is_valid_id = upload_id.len() == 8
+                && upload_id.chars().all(|c| c.is_ascii_hexdigit());
+            if !is_valid_id {
+                return Err(AppError::bad_request(
+                    "Invalid upload ID — expected 8 hex characters",
+                ));
+            }
 
             // Look for the staged file by naming convention
             let tmp_dir = std::env::temp_dir();
@@ -190,7 +222,7 @@ pub async fn apply_update(
             // Clean up staged file
             let _ = std::fs::remove_file(&wip_path);
 
-            swap::schedule_exit();
+            swap::schedule_exit(&update.shutdown);
 
             Ok(Json(serde_json::json!({
                 "status": "applied",
@@ -219,10 +251,13 @@ pub async fn upload_wip(
 
 // ── POST /api/update/rollback ────────────────────────────────────────────────
 
-pub async fn rollback() -> Result<Json<serde_json::Value>, AppError> {
+pub async fn rollback(
+    Extension(update): Extension<Arc<UpdateState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let _lock = update.swap_lock.lock().await;
     let current_path = swap::current_exe_path()?;
     swap::rollback(&current_path).await?;
-    swap::schedule_exit();
+    swap::schedule_exit(&update.shutdown);
 
     Ok(Json(serde_json::json!({
         "status": "rolled_back",

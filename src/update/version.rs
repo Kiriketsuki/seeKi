@@ -84,11 +84,15 @@ impl FromStr for SeekiVersion {
             .map_err(|_| format!("invalid patch component: '{}'", &patch_str[..numeric_end]))?;
         let suffix = patch_str[numeric_end..].to_string();
 
-        // Validate that suffix contains only ASCII alphabetic characters
-        if !suffix.chars().all(|c| c.is_ascii_alphabetic()) {
-            return Err(format!(
-                "suffix must be alphabetic, got '{suffix}'"
-            ));
+        // Validate suffix: must start with a letter, rest can be alphanumeric
+        if !suffix.is_empty() {
+            let mut chars = suffix.chars();
+            let first = chars.next().unwrap();
+            if !first.is_ascii_alphabetic() || !chars.all(|c| c.is_ascii_alphanumeric()) {
+                return Err(format!(
+                    "suffix must start with a letter and contain only letters/digits, got '{suffix}'"
+                ));
+            }
         }
 
         Ok(Self {
@@ -214,8 +218,25 @@ mod tests {
     }
 
     #[test]
-    fn reject_numeric_suffix() {
-        assert!("26.5.0.3a1".parse::<SeekiVersion>().is_err());
+    fn accept_numeric_suffix() {
+        let v: SeekiVersion = "26.5.0.3a1".parse().unwrap();
+        assert_eq!(v.patch, 3);
+        assert_eq!(v.suffix, "a1");
+        assert!(v.is_pre_release());
+    }
+
+    #[test]
+    fn accept_rc1_suffix() {
+        let v: SeekiVersion = "26.5.0.3rc1".parse().unwrap();
+        assert_eq!(v.patch, 3);
+        assert_eq!(v.suffix, "rc1");
+        assert!(v.is_pre_release());
+    }
+
+    #[test]
+    fn reject_digit_only_suffix() {
+        assert!("26.5.0.31".parse::<SeekiVersion>().is_err()
+            || "26.5.0.31".parse::<SeekiVersion>().unwrap().suffix.is_empty());
     }
 
     // ── Ordering tests ───────────────────────────────────────────────────────

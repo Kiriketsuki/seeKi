@@ -312,7 +312,22 @@ export async function uploadWipBinary(file: File): Promise<WipUploadResult> {
 }
 
 export async function rollbackUpdate(): Promise<RollbackResult> {
-  const res = await fetch('/api/update/rollback', { method: 'POST' });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/update/rollback', {
+      method: 'POST',
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Rollback timed out — the server may be restarting.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let message = `Rollback failed (${res.status})`;

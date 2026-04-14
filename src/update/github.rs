@@ -108,6 +108,7 @@ pub async fn check_latest(
 }
 
 /// Download an asset to `dest`, streaming to avoid high memory usage.
+/// Downloads to a temporary `.tmp` file first, then renames atomically on success.
 pub async fn download_asset(url: &str, dest: &Path) -> anyhow::Result<()> {
     use tokio::io::AsyncWriteExt;
 
@@ -116,17 +117,35 @@ pub async fn download_asset(url: &str, dest: &Path) -> anyhow::Result<()> {
         .timeout(Duration::from_secs(300))
         .build()?;
 
-    let resp = client.get(url).send().await?.error_for_status()?;
-    let mut stream = resp.bytes_stream();
-    let mut file = tokio::fs::File::create(dest).await?;
+    let tmp_dest = {
+        let mut p = dest.as_os_str().to_owned();
+        p.push(".tmp");
+        std::path::PathBuf::from(p)
+    };
 
-    use futures::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        file.write_all(&chunk).await?;
+    let result: anyhow::Result<()> = async {
+        let resp = client.get(url).send().await?.error_for_status()?;
+        let mut stream = resp.bytes_stream();
+        let mut file = tokio::fs::File::create(&tmp_dest).await?;
+
+        use futures::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk).await?;
+        }
+        file.flush().await?;
+        drop(file);
+
+        tokio::fs::rename(&tmp_dest, dest).await?;
+        Ok(())
     }
-    file.flush().await?;
-    Ok(())
+    .await;
+
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp_dest).await;
+    }
+
+    result
 }
 
 /// Download the `.sha256` sidecar file and return the hex digest (first token).

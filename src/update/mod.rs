@@ -58,6 +58,8 @@ impl UpdateSettings {
 pub struct UpdateState {
     pub cache: ReleaseCache,
     pub settings: Mutex<UpdateSettings>,
+    pub swap_lock: Mutex<()>,
+    pub shutdown: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl UpdateState {
@@ -65,6 +67,8 @@ impl UpdateState {
         Self {
             cache: ReleaseCache::new(),
             settings: Mutex::new(UpdateSettings::load()),
+            swap_lock: Mutex::new(()),
+            shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
         }
     }
 }

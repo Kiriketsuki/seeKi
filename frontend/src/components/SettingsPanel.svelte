@@ -39,8 +39,9 @@
 
   let dragOver = $state(false);
   let fileInputEl = $state<HTMLInputElement | null>(null);
+  let pollInterval = $state<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync initial status when panel opens
+  // Sync initial status when panel opens; clean up on close
   $effect(() => {
     if (open) {
       status = initialStatus;
@@ -53,14 +54,25 @@
       // Fetch fresh data
       fetchVersion()
         .then((v) => { versionInfo = v; })
-        .catch(() => {});
+        .catch((e) => {
+          console.warn('Failed to fetch version info:', e);
+        });
       fetchUpdateStatus()
         .then((s) => {
           status = s;
           onStatusChange?.(s);
         })
-        .catch(() => {});
+        .catch((e) => {
+          console.warn('Failed to fetch update status:', e);
+          errorMsg = 'Failed to load update status. Try again.';
+        });
     }
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    };
   });
 
   // ── Derived ──────────────────────────────────────────────────────────
@@ -94,6 +106,25 @@
         confirmAction = null;
       } else {
         close();
+      }
+    }
+  }
+
+  function handlePanelKeydown(e: KeyboardEvent) {
+    if (e.key === 'Tab') {
+      const panel = e.currentTarget as HTMLElement;
+      const focusable = panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([type="hidden"]):not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     }
   }
@@ -169,17 +200,20 @@
   }
 
   function pollForRestart() {
+    if (pollInterval) clearInterval(pollInterval);
     let attempts = 0;
     const maxAttempts = 30; // 60 seconds
-    const interval = setInterval(async () => {
+    pollInterval = setInterval(async () => {
       attempts++;
       try {
         await fetchVersion();
-        clearInterval(interval);
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = null;
         window.location.reload();
       } catch {
         if (attempts >= maxAttempts) {
-          clearInterval(interval);
+          if (pollInterval) clearInterval(pollInterval);
+          pollInterval = null;
           restarting = false;
           applying = false;
           rollingBack = false;
@@ -257,7 +291,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="overlay" onclick={handleOverlayClick}>
     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-    <aside class="panel" role="dialog" aria-label="Settings" aria-modal="true">
+    <aside class="panel" role="dialog" aria-label="Settings" aria-modal="true" onkeydown={handlePanelKeydown}>
       <!-- Header -->
       <div class="panel-header">
         <h2 class="panel-title">Settings</h2>

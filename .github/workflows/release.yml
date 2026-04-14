@@ -24,7 +24,8 @@ jobs:
           sleep 10
           STATUS=$(gh api repos/${{ github.repository }}/commits/$SHA/status --jq '.state' 2>/dev/null || echo "unknown")
           if [ "$STATUS" != "success" ]; then
-            echo "::warning::CI status is '$STATUS' — proceeding anyway (CI may still be running)"
+            echo "::error::CI status is '$STATUS' — release blocked. Push fixes and retry."
+            exit 1
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

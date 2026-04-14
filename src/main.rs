@@ -78,6 +78,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    let shutdown = std::sync::Arc::clone(&update_state.shutdown);
+
     let app = Router::new()
         .nest("/api", api::router(mode.clone()))
         .layer(Extension(update_state))
@@ -86,7 +88,9 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("SeeKi listening on http://{bind_addr}");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move { shutdown.notified().await })
+        .await?;
     Ok(())
 }
 
