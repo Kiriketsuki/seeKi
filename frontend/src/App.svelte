@@ -65,6 +65,11 @@
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
+  let sortDescription = $derived(
+    sortState.column && sortState.direction
+      ? `Sorted by ${sortState.column} ${sortState.direction === 'asc' ? 'ascending' : 'descending'}`
+      : 'No active sort'
+  );
 
   onMount(async () => {
     try {
@@ -543,6 +548,7 @@
               onSearchInputRef={setSearchInputEl}
               onSearchButtonRef={setSearchButtonEl}
               onColumnsButtonRef={setColumnsButtonEl}
+              sortDescription={sortDescription}
             />
           {/if}
           {#if tableLoading}

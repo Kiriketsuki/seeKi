@@ -64,6 +64,7 @@ test.describe('Data Grid — Sorting', () => {
     await firstHeader.click();
     let rowsResponse = await rowsLoaded;
     expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
     const ascFirst = await getFirstCellText();
 
     // Click 2: descending — wait for sorted data to load
@@ -71,6 +72,7 @@ test.describe('Data Grid — Sorting', () => {
     await firstHeader.click();
     rowsResponse = await rowsLoaded;
     expect(rowsResponse.request().url()).toContain('sort_direction=desc');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/descending$/);
     const descFirst = await getFirstCellText();
 
     // Verify sort actually changed the data order (asc and desc should differ
@@ -85,6 +87,7 @@ test.describe('Data Grid — Sorting', () => {
     rowsResponse = await rowsLoaded;
     expect(rowsResponse.request().url()).not.toContain('sort_direction=');
     expect(rowsResponse.request().url()).not.toContain('sort_column=');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/No active sort/i);
 
     // Verify unsorted order is restored
     const restoredFirst = await getFirstCellText();

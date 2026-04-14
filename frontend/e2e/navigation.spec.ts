@@ -62,6 +62,7 @@ test.describe('Navigation — Table Switching', () => {
 
     // Verify the sort request included sort params
     expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
 
     // Switch to the second table
     const secondTableName = tableNames[1];
@@ -72,6 +73,7 @@ test.describe('Navigation — Table Switching', () => {
     // Verify sort is reset on table switch — the new rows request should be clean
     expect(rowsResponse.request().url()).not.toContain('sort_direction=');
     expect(rowsResponse.request().url()).not.toContain('sort_column=');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/No active sort/i);
   });
 });
 

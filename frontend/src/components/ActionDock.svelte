@@ -28,6 +28,7 @@
     onSearchInputRef,
     onSearchButtonRef,
     onColumnsButtonRef,
+    sortDescription = 'No active sort',
   }: {
     searchVisible?: boolean;
     searchTerm?: string;
@@ -52,6 +53,7 @@
     onSearchInputRef?: (node: HTMLInputElement | null) => void;
     onSearchButtonRef?: (node: HTMLButtonElement | null) => void;
     onColumnsButtonRef?: (node: HTMLButtonElement | null) => void;
+    sortDescription?: string;
   } = $props();
 
   let shell: HTMLDivElement | null = null;
@@ -110,6 +112,7 @@
 </script>
 
 <div class="action-dock" role="group" aria-label="Table actions" bind:this={shell}>
+  <span class="sr-only" aria-live="polite" aria-atomic="true">{sortDescription}</span>
   <div class="dock-surface" class:panel-open={panelOpen}>
     <div class="dock-panels" class:panel-open={panelOpen}>
       {#if searchVisible}
@@ -414,6 +417,18 @@
 
   .badge--neutral {
     background: var(--sk-secondary-strong);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   @media (max-width: 720px) {
