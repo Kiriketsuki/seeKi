@@ -30,7 +30,7 @@ export default defineConfig({
     },
     {
       name: 'normal',
-      testMatch: ['data-grid.spec.ts', 'toolbar.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
+      testMatch: ['data-grid.spec.ts', 'action-dock.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
       use: { ...devices['Desktop Chrome'] },
     },
     // --- Firefox (opt-in: SEEKI_ALL_BROWSERS=1 or --project=normal-firefox) ---
@@ -42,7 +42,7 @@ export default defineConfig({
       },
       {
         name: 'normal-firefox',
-        testMatch: ['data-grid.spec.ts', 'toolbar.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
+        testMatch: ['data-grid.spec.ts', 'action-dock.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
         use: { ...devices['Desktop Firefox'] },
       },
     ] : []),
@@ -55,7 +55,7 @@ export default defineConfig({
       },
       {
         name: 'normal-webkit',
-        testMatch: ['data-grid.spec.ts', 'toolbar.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
+        testMatch: ['data-grid.spec.ts', 'action-dock.spec.ts', 'navigation.spec.ts', 'error-states.spec.ts'],
         use: { ...devices['Desktop Safari'] },
       },
     ] : []),

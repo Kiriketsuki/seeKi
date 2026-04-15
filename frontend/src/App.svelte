@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { Search, X } from 'lucide-svelte';
   import Sidebar from './components/Sidebar.svelte';
   import TableList from './components/TableList.svelte';
-  import Toolbar from './components/Toolbar.svelte';
+  import ActionDock from './components/ActionDock.svelte';
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
@@ -45,6 +44,9 @@
   let columnsOpen: boolean = $state(false);
   let columnVisibility: Record<string, boolean> = $state({});
   let searchInputEl: HTMLInputElement | null = $state(null);
+  let searchButtonEl: HTMLButtonElement | null = $state(null);
+  let columnsButtonEl: HTMLButtonElement | null = $state(null);
+  let filterButtonEl: HTMLButtonElement | null = $state(null);
   let settingsOpen: boolean = $state(false);
   let updateAvailable: boolean = $state(false);
   let updateStatus: UpdateStatus | null = $state(null);
@@ -128,12 +130,21 @@
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
+          void tick().then(() => columnsButtonEl?.focus());
           return;
         }
 
         if (searchVisible || searchQuery.length > 0) {
           event.preventDefault();
           handleSearchClear();
+          void tick().then(() => searchButtonEl?.focus());
+          return;
+        }
+
+        if (filtersVisible) {
+          event.preventDefault();
+          filtersVisible = false;
+          void tick().then(() => filterButtonEl?.focus());
         }
       }
     }
@@ -247,6 +258,7 @@
       return;
     }
 
+    columnsOpen = false;
     void openSearch();
   }
 
@@ -256,10 +268,29 @@
 
   function toggleColumns() {
     columnsOpen = !columnsOpen;
+    if (columnsOpen) {
+      searchVisible = false;
+    }
   }
 
   function closeColumns() {
     columnsOpen = false;
+  }
+
+  function setSearchInputEl(node: HTMLInputElement | null) {
+    searchInputEl = node;
+  }
+
+  function setSearchButtonEl(node: HTMLButtonElement | null) {
+    searchButtonEl = node;
+  }
+
+  function setColumnsButtonEl(node: HTMLButtonElement | null) {
+    columnsButtonEl = node;
+  }
+
+  function setFilterButtonEl(node: HTMLButtonElement | null) {
+    filterButtonEl = node;
   }
 
   async function selectTable(table: TableInfo) {
@@ -499,54 +530,9 @@
         <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
       {/if}
     </Sidebar>
-    <Toolbar
-      filtersVisible={filtersVisible}
-      activeFilterCount={activeFilterCount}
-      searchActive={searchActive}
-      searchVisible={searchVisible}
-      columnsOpen={columnsOpen}
-      columns={columns}
-      columnVisibility={columnVisibility}
-      hiddenColumnCount={hiddenColumnCount}
-      hasTable={!!selectedTable}
-      sortCount={sortState.length}
-      onToggleSearch={toggleSearch}
-      onToggleFilters={toggleFilters}
-      onToggleColumns={toggleColumns}
-      onToggleColumnVisibility={handleToggleColumnVisibility}
-      onShowAllColumns={handleShowAllColumns}
-      onCloseColumns={closeColumns}
-      onExport={exportCsv}
-      onClearSort={() => handleSortChange([])}
-    />
     <main class="main">
       <div class="table-panel">
         <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
-        {#if searchVisible}
-          <div id="search-panel" class="search-panel" class:active={searchActive}>
-            <div class="search-box">
-              <Search size={14} />
-              <input
-                bind:this={searchInputEl}
-                type="text"
-                class="search-input"
-                class:has-value={searchQuery.length > 0}
-                placeholder="Search all text columns..."
-                value={searchTerm}
-                oninput={handleSearchInput}
-                aria-label="Search rows"
-              />
-              <button
-                type="button"
-                class="clear-search"
-                aria-label="Clear search"
-                onclick={handleSearchClear}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        {/if}
       </div>
       {#if tableError}
         <div class="table-error-banner">
@@ -555,16 +541,47 @@
         </div>
       {/if}
       <div class="grid-area">
-        <div class="grid-shell" class:loading-overlay={tableLoading}>
-          <DataGrid
-            columns={visibleColumns}
-            rows={queryResult?.rows ?? []}
-            {sortState}
-            {filters}
-            {filtersVisible}
-            onSortChange={handleSortChange}
-            onFilterChange={handleFilterChange}
-          />
+        <div class="grid-shell">
+          <div class="grid-content">
+            <DataGrid
+              columns={visibleColumns}
+              rows={queryResult?.rows ?? []}
+              {sortState}
+              {filters}
+              {filtersVisible}
+              onSortChange={handleSortChange}
+              onFilterChange={handleFilterChange}
+            />
+          </div>
+          {#if selectedTable}
+            <ActionDock
+              searchVisible={searchVisible}
+              searchTerm={searchTerm}
+              searchActive={searchActive}
+              filtersVisible={filtersVisible}
+              activeFilterCount={activeFilterCount}
+              columnsOpen={columnsOpen}
+              columns={columns}
+              columnVisibility={columnVisibility}
+              hiddenColumnCount={hiddenColumnCount}
+              hasTable={!!selectedTable}
+              disabled={tableLoading}
+              sortState={sortState}
+              onToggleSearch={toggleSearch}
+              onSearchInput={handleSearchInput}
+              onSearchClear={handleSearchClear}
+              onToggleFilters={toggleFilters}
+              onToggleColumns={toggleColumns}
+              onToggleColumnVisibility={handleToggleColumnVisibility}
+              onShowAllColumns={handleShowAllColumns}
+              onCloseColumns={closeColumns}
+              onExport={exportCsv}
+              onSearchInputRef={setSearchInputEl}
+              onSearchButtonRef={setSearchButtonEl}
+              onColumnsButtonRef={setColumnsButtonEl}
+              onFilterButtonRef={setFilterButtonEl}
+            />
+          {/if}
           {#if tableLoading}
             <div class="grid-loading">
               <div class="loading-spinner"></div>
@@ -613,69 +630,6 @@
     padding: var(--sk-space-lg) var(--sk-space-2xl) 0;
   }
 
-  .search-panel {
-    display: flex;
-    align-items: center;
-    min-height: 0;
-  }
-
-  .search-box {
-    display: flex;
-    align-items: center;
-    gap: var(--sk-space-sm);
-    width: min(520px, 100%);
-    padding: var(--sk-space-xs) var(--sk-space-md);
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-md);
-    background: var(--sk-glass-input);
-    backdrop-filter: var(--sk-glass-input-blur);
-    -webkit-backdrop-filter: var(--sk-glass-input-blur);
-    color: var(--sk-muted);
-    box-shadow: var(--sk-shadow-card);
-  }
-
-  .search-panel.active .search-box {
-    border-color: rgba(0, 169, 165, 0.32);
-    box-shadow: var(--sk-shadow-card), var(--sk-shadow-accent);
-    color: var(--sk-accent);
-  }
-
-  .search-input {
-    flex: 1;
-    border: none;
-    outline: none;
-    background: none;
-    font-family: var(--sk-font-ui);
-    font-size: var(--sk-font-size-body);
-    color: var(--sk-text);
-    min-width: 0;
-  }
-
-  .search-input::placeholder {
-    color: var(--sk-muted);
-  }
-
-  .clear-search {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-sm);
-    background: var(--sk-glass-button);
-    backdrop-filter: var(--sk-glass-button-blur);
-    -webkit-backdrop-filter: var(--sk-glass-button-blur);
-    color: var(--sk-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .clear-search:hover {
-    color: var(--sk-text);
-    border-color: rgba(0, 169, 165, 0.24);
-  }
-
   .grid-area {
     flex: 1;
     min-height: 0;
@@ -692,14 +646,17 @@
     position: relative;
   }
 
-  .loading-overlay {
-    opacity: 0.5;
-    pointer-events: none;
+  .grid-content {
+    position: absolute;
+    inset: 0 0 var(--sk-dock-clearance) 0;
+    min-width: 0;
+    min-height: 0;
   }
 
   .grid-loading {
     position: absolute;
-    inset: 0;
+    inset: 0 0 var(--sk-dock-clearance) 0;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: center;
