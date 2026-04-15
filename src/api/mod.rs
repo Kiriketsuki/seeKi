@@ -1,3 +1,4 @@
+pub mod preferences;
 pub mod setup;
 pub mod update;
 
@@ -21,8 +22,9 @@ use crate::db::postgres::is_valid_identifier;
 use crate::db::{
     ColumnInfo, ExportQueryParams, RowQueryParams, SortDirection, SortEntry, ValidationError,
 };
+use crate::store::Store;
 
-pub fn router(mode: SharedAppMode) -> Router {
+pub fn router(mode: SharedAppMode, store: Store) -> Router {
     Router::new()
         .route("/tables", get(list_tables))
         .route("/tables/{schema}/{table}/columns", get(get_columns))
@@ -38,6 +40,8 @@ pub fn router(mode: SharedAppMode) -> Router {
         .route("/update/settings", patch(update::update_settings))
         // The three mutating update endpoints are gated by bearer-token auth.
         .merge(update::protected_update_router())
+        .nest("/preferences", preferences::router())
+        .layer(Extension(store))
         .layer(Extension(mode))
 }
 
