@@ -191,6 +191,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migration_error_does_not_rename_valid_db() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("seeki.db");
+
+        // Create a valid store first (runs migrations)
+        let _ = Store::try_open(&path).await.expect("initial open");
+
+        // Poison the migrations table with a conflicting checksum to simulate a migration error
+        {
+            let url = format!("sqlite://{}?mode=rwc", path.display());
+            let pool = SqlitePool::connect(&url).await.unwrap();
+            sqlx::query(
+                "INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time)
+                 VALUES (999999999999, 'fake', datetime('now'), 1, X'deadbeef', 0)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            pool.close().await;
+        }
+
+        // open_at should return Err, not Ok
+        let result = Store::open_at(&path).await;
+        assert!(result.is_err(), "migration error should propagate");
+
+        // The original db file must NOT have been renamed
+        assert!(path.exists(), "original db must not be renamed on migration error");
+        let bak_count = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("db.bak"))
+            .count();
+        assert_eq!(bak_count, 0, "no .bak file should be created for migration errors");
+    }
+
+    #[tokio::test]
     async fn open_recovers_from_corrupt_db() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("seeki.db");

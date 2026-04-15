@@ -3,6 +3,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::SqlitePool;
 
+const MAX_VALUE_BYTES: usize = 64 * 1024; // 64 KiB
+
+/// Reject a serialized JSON value that exceeds the storage limit.
+fn check_value_size(json: &str, context: &str) -> Result<()> {
+    if json.len() > MAX_VALUE_BYTES {
+        anyhow::bail!("preset value for '{context}' exceeds maximum size of 64 KiB");
+    }
+    Ok(())
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -63,7 +73,14 @@ pub async fn set_last_used(
     state: &LastUsedState,
 ) -> Result<()> {
     let sort_json = serde_json::to_string(&state.sort_columns)?;
+    check_value_size(&sort_json, "sort_columns")?;
     let filter_json = serde_json::to_string(&state.filters)?;
+    check_value_size(&filter_json, "filters")?;
+    if let Some(ref s) = state.search_term {
+        if s.len() > MAX_VALUE_BYTES {
+            anyhow::bail!("preset value for 'search_term' exceeds maximum size of 64 KiB");
+        }
+    }
     sqlx::query(
         "INSERT INTO table_last_used_state
              (connection_id, schema_name, table_name, sort_columns, filters, search_term)
@@ -122,6 +139,7 @@ pub async fn save_sort_preset(
     columns: &Value,
 ) -> Result<i64> {
     let json = serde_json::to_string(columns)?;
+    check_value_size(&json, "sort preset columns")?;
     let row: (i64,) = sqlx::query_as(
         "INSERT INTO table_sort_presets
              (connection_id, schema_name, table_name, name, columns)
@@ -198,6 +216,7 @@ pub async fn save_filter_preset(
     filters: &Value,
 ) -> Result<i64> {
     let json = serde_json::to_string(filters)?;
+    check_value_size(&json, "filter preset filters")?;
     let row: (i64,) = sqlx::query_as(
         "INSERT INTO table_filter_presets
              (connection_id, schema_name, table_name, name, filters)
@@ -412,6 +431,69 @@ mod tests {
             .await
             .unwrap();
         assert!(presets.is_empty());
+    }
+
+    // ── Size guards ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn set_last_used_rejects_oversized_sort_columns() {
+        let (store, _dir) = ephemeral_store().await;
+        // Build a JSON value whose serialized form exceeds 64 KiB
+        let big = serde_json::Value::String("x".repeat(65 * 1024));
+        let state = LastUsedState {
+            sort_columns: big,
+            filters: serde_json::json!({}),
+            search_term: None,
+        };
+        let result = set_last_used(store.pool(), CONN, SCHEMA, TABLE, &state).await;
+        assert!(result.is_err(), "oversized sort_columns must be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("sort_columns"), "error should name the field");
+    }
+
+    #[tokio::test]
+    async fn set_last_used_rejects_oversized_filters() {
+        let (store, _dir) = ephemeral_store().await;
+        let big = serde_json::Value::String("x".repeat(65 * 1024));
+        let state = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: big,
+            search_term: None,
+        };
+        let result = set_last_used(store.pool(), CONN, SCHEMA, TABLE, &state).await;
+        assert!(result.is_err(), "oversized filters must be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("filters"), "error should name the field");
+    }
+
+    #[tokio::test]
+    async fn set_last_used_rejects_oversized_search_term() {
+        let (store, _dir) = ephemeral_store().await;
+        let state = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: Some("x".repeat(65 * 1024)),
+        };
+        let result = set_last_used(store.pool(), CONN, SCHEMA, TABLE, &state).await;
+        assert!(result.is_err(), "oversized search_term must be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("search_term"), "error should name the field");
+    }
+
+    #[tokio::test]
+    async fn save_sort_preset_rejects_oversized_columns() {
+        let (store, _dir) = ephemeral_store().await;
+        let big = serde_json::Value::String("x".repeat(65 * 1024));
+        let result = save_sort_preset(store.pool(), CONN, SCHEMA, TABLE, "Big", &big).await;
+        assert!(result.is_err(), "oversized sort preset columns must be rejected");
+    }
+
+    #[tokio::test]
+    async fn save_filter_preset_rejects_oversized_filters() {
+        let (store, _dir) = ephemeral_store().await;
+        let big = serde_json::Value::String("x".repeat(65 * 1024));
+        let result = save_filter_preset(store.pool(), CONN, SCHEMA, TABLE, "Big", &big).await;
+        assert!(result.is_err(), "oversized filter preset filters must be rejected");
     }
 
     // ── Filter presets ─────────────────────────────────────────────────────
