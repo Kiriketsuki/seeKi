@@ -60,16 +60,21 @@ test.describe('Data Grid — Sorting', () => {
 
     await expect(sortGlyph).toHaveCount(0);
 
+    // Click 1: ascending — wait for sorted data to load
     let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
-    await rowsLoaded;
+    let rowsResponse = await rowsLoaded;
+    expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
     await expect(sortGlyph).toHaveText('↑');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
     const ascFirst = await getFirstCellText();
 
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
-    await rowsLoaded;
+    rowsResponse = await rowsLoaded;
+    expect(rowsResponse.request().url()).toContain('sort_direction=desc');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/descending$/);
     await expect(sortGlyph).toHaveText('↓');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'descending');
     const descFirst = await getFirstCellText();
@@ -80,7 +85,11 @@ test.describe('Data Grid — Sorting', () => {
 
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
-    await rowsLoaded;
+    rowsResponse = await rowsLoaded;
+    expect(rowsResponse.request().url()).not.toContain('sort_direction=');
+    expect(rowsResponse.request().url()).not.toContain('sort_column=');
+    // sort cleared — live region should be empty
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
     await expect(sortGlyph).toHaveCount(0);
     await expect(firstHeaderState).not.toHaveAttribute('aria-sort');
 
@@ -208,8 +217,7 @@ test.describe('Data Grid — Filtering', () => {
     const initialTotal = await seeki.getTotalRows();
 
     // Show filters — use partial aria-label match since label is dynamic
-    const filterButton = page.locator('button.tool-button[aria-label*="ilters"]');
-    await filterButton.click();
+    await seeki.clickFilterToggle();
 
     // Filter inputs are inside RevoGrid shadow DOM — query via columnheader ancestor
     const filterInputs = page.locator('[role="columnheader"] input[aria-label^="Filter"]');
@@ -235,8 +243,7 @@ test.describe('Data Grid — Filtering', () => {
 
   test('multiple filters AND together', async ({ page, seeki }) => {
     // Show filters
-    const filterButton = page.locator('button.tool-button[aria-label*="ilters"]');
-    await filterButton.click();
+    await seeki.clickFilterToggle();
 
     const filterInputs = page.locator('[role="columnheader"] input[aria-label^="Filter"]');
     const firstFilter = filterInputs.first();
@@ -279,7 +286,7 @@ test.describe('Data Grid — Search', () => {
     const initialTotal = await seeki.getTotalRows();
 
     // Open search via keyboard shortcut or button
-    const searchButton = page.locator('button.tool-button[aria-label*="earch"]').first();
+    const searchButton = seeki.getActionDock().getByRole('button', { name: /search/i });
     if (await searchButton.count() > 0) {
       await searchButton.click();
     } else {
@@ -287,7 +294,7 @@ test.describe('Data Grid — Search', () => {
     }
 
     // Find the search input
-    const searchInput = page.locator('input.search-input');
+    const searchInput = seeki.getDockSearchPanel().locator('input.search-input');
     await expect(searchInput.first()).toBeVisible();
 
     // Type a search term — wait for debounced API response

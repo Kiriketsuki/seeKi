@@ -15,6 +15,21 @@ export { expect };
 export class SeekiHelpers {
   constructor(public readonly page: Page) {}
 
+  /** Locate the bottom action dock. */
+  getActionDock() {
+    return this.page.locator('.action-dock[aria-label="Table actions"]');
+  }
+
+  /** Locate the dock search panel. */
+  getDockSearchPanel() {
+    return this.getActionDock().locator('#dock-search-panel');
+  }
+
+  /** Locate the dock columns panel. */
+  getColumnsPanel() {
+    return this.getActionDock().locator('#columns-panel');
+  }
+
   /**
    * Returns a promise that resolves when the next /api/tables/.../rows response arrives.
    * Must be called BEFORE the action that triggers the request.
@@ -45,11 +60,14 @@ export class SeekiHelpers {
 
   /** Wait for the app to finish loading (spinner gone, grid or wizard visible). */
   async waitForAppReady(): Promise<void> {
-    // Wait for either the grid layout or the setup wizard to be visible
+    // Wait for either the main grid layout or the setup wizard to be visible.
+    // .grid-area renders unconditionally in the non-setup branch, so it resolves
+    // before table auto-selection completes (unlike .action-dock which is gated
+    // on {#if selectedTable}).
     await this.page.waitForFunction(() => {
-      const grid = document.querySelector('.grid-card');
+      const gridArea = document.querySelector('.grid-area');
       const wizard = document.querySelector('[aria-label="Setup wizard"]');
-      return grid !== null || wizard !== null;
+      return gridArea !== null || wizard !== null;
     }, { timeout: 15_000 });
   }
 
@@ -96,29 +114,39 @@ export class SeekiHelpers {
     return await labels.allTextContents();
   }
 
-  /** Click the toolbar search button. */
+  /** Click the dock search button. */
   async clickSearchToggle(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="search" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /search/i }).click();
   }
 
-  /** Click the toolbar filter button. */
+  /** Click the dock filter button. */
   async clickFilterToggle(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="filter" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /filters?/i }).click();
   }
 
-  /** Click the toolbar columns button. */
+  /** Click the dock columns button. */
   async clickColumnsToggle(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="column" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /columns?/i }).click();
   }
 
-  /** Click the toolbar export button. */
+  /** Click the dock export button. */
   async clickExport(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="export" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /export/i }).click();
   }
 
   /** Get sidebar table names. */
   async getSidebarTableNames(): Promise<string[]> {
     return await this.page.locator('.table-item .table-item-name').allTextContents();
+  }
+
+  /** Get the text content of the ActionDock sort announcement live region. */
+  getSortAnnouncement() {
+    return this.getActionDock().locator('[aria-live]');
+  }
+
+  /** Get the four dock action buttons in order: Search, Filters, Columns, Export. */
+  getDockButtons() {
+    return this.getActionDock().locator('.dock-button');
   }
 
   /** Toggle sidebar collapse/expand. */

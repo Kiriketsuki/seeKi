@@ -56,18 +56,27 @@ test.describe('Navigation — Table Switching', () => {
 
     const firstHeader = page.locator('[role="columnheader"]').first();
     const firstHeaderState = firstHeader.locator('.sk-grid-header');
-    const rowsLoaded = seeki.pendingRowsResponse();
-    await firstHeader.click();
-    await rowsLoaded;
-
     const sortGlyph = firstHeader.locator('.sk-grid-header__sort');
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await firstHeader.click();
+    let rowsResponse = await rowsLoaded;
+
+    // Verify the sort request included sort params
+    expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
     await expect(sortGlyph).toHaveText('↑');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
 
     const secondTableName = tableNames[1];
+    rowsLoaded = seeki.pendingRowsResponse();
     await seeki.selectTable(secondTableName);
-    await seeki.waitForGridLoaded();
+    rowsResponse = await rowsLoaded;
 
+    // Verify sort is reset on table switch — the new rows request should be clean
+    expect(rowsResponse.request().url()).not.toContain('sort_direction=');
+    expect(rowsResponse.request().url()).not.toContain('sort_column=');
+    // sort cleared on table switch — live region should be empty
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
     await expect(page.locator('.sk-grid-header__sort')).toHaveCount(0);
     await expect(page.locator('[role="columnheader"]').first().locator('.sk-grid-header')).not.toHaveAttribute('aria-sort');
   });
