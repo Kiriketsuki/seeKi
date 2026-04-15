@@ -219,6 +219,78 @@ test.describe('Action Dock — Column Visibility', () => {
   });
 });
 
+test.describe('Action Dock — Keyboard Navigation', () => {
+  test.beforeEach(async ({ page, seeki }) => {
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+  });
+
+  test('ArrowRight cycles through dock buttons', async ({ page, seeki }) => {
+    const buttons = seeki.getDockButtons();
+    const search = buttons.nth(0);
+    const filters = buttons.nth(1);
+    const columns = buttons.nth(2);
+    const exportBtn = buttons.nth(3);
+
+    // Start focus on search (index 0)
+    await search.focus();
+    await expect(search).toBeFocused();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(filters).toBeFocused();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(columns).toBeFocused();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(exportBtn).toBeFocused();
+
+    // Wraps back to search
+    await page.keyboard.press('ArrowRight');
+    await expect(search).toBeFocused();
+  });
+
+  test('ArrowLeft wraps from first to last button', async ({ page, seeki }) => {
+    const buttons = seeki.getDockButtons();
+    const search = buttons.nth(0);
+    const exportBtn = buttons.nth(3);
+
+    await search.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(exportBtn).toBeFocused();
+  });
+
+  test('Home and End jump to first and last buttons', async ({ page, seeki }) => {
+    const buttons = seeki.getDockButtons();
+    const search = buttons.nth(0);
+    const columns = buttons.nth(2);
+    const exportBtn = buttons.nth(3);
+
+    await columns.focus();
+
+    await page.keyboard.press('End');
+    await expect(exportBtn).toBeFocused();
+
+    await page.keyboard.press('Home');
+    await expect(search).toBeFocused();
+  });
+
+  test('Tab moves focus out of the toolbar', async ({ page, seeki }) => {
+    const buttons = seeki.getDockButtons();
+    const search = buttons.nth(0);
+
+    await search.focus();
+    await page.keyboard.press('Tab');
+
+    // Focus should have left the dock toolbar entirely
+    await expect(search).not.toBeFocused();
+    await expect(buttons.nth(1)).not.toBeFocused();
+    await expect(buttons.nth(2)).not.toBeFocused();
+    await expect(buttons.nth(3)).not.toBeFocused();
+  });
+});
+
 test.describe('Action Dock — CSV Export', () => {
   test.beforeEach(async ({ page, seeki }) => {
     await page.goto('/');

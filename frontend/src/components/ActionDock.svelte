@@ -61,8 +61,13 @@
   let shell: HTMLDivElement | null = null;
   let searchInputNode: HTMLInputElement | null = $state(null);
   let searchButtonNode: HTMLButtonElement | null = $state(null);
-  let columnsButtonNode: HTMLButtonElement | null = $state(null);
   let filterButtonNode: HTMLButtonElement | null = $state(null);
+  let columnsButtonNode: HTMLButtonElement | null = $state(null);
+  let exportButtonNode: HTMLButtonElement | null = $state(null);
+
+  // Roving tabindex: tracks which dock button owns tabindex=0.
+  // Indices map to: 0=search, 1=filters, 2=columns, 3=export.
+  let activeButtonIndex = $state(0);
 
   let panelOpen = $derived(searchVisible || columnsOpen);
   let searchQuery = $derived.by(() => searchTerm.trim());
@@ -114,6 +119,29 @@
     onFilterButtonRef?.(filterButtonNode);
   });
 
+  function handleActionsKeydown(event: KeyboardEvent) {
+    const { key } = event;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key)) return;
+    event.preventDefault();
+
+    const buttons = [searchButtonNode, filterButtonNode, columnsButtonNode, exportButtonNode];
+    const total = buttons.length;
+    let next: number;
+
+    if (key === 'Home') {
+      next = 0;
+    } else if (key === 'End') {
+      next = total - 1;
+    } else if (key === 'ArrowRight' || key === 'ArrowDown') {
+      next = (activeButtonIndex + 1) % total;
+    } else {
+      next = (activeButtonIndex - 1 + total) % total;
+    }
+
+    activeButtonIndex = next;
+    buttons[next]?.focus();
+  }
+
   function handleOutsidePointerDown(event: PointerEvent) {
     const target = event.target as Node | null;
     if (!columnsOpen || !shell || !target || shell.contains(target)) return;
@@ -126,7 +154,7 @@
   });
 </script>
 
-<div class="action-dock" role="group" aria-label="Table actions" bind:this={shell}>
+<div class="action-dock" role="toolbar" aria-label="Table actions" bind:this={shell}>
   <span class="sr-only" aria-live="polite" aria-atomic="true">{sortDescription}</span>
   <div class="dock-surface" class:panel-open={panelOpen}>
     <div class="dock-panels" class:panel-open={panelOpen}>
@@ -170,7 +198,7 @@
       {/if}
     </div>
 
-    <div class="dock-actions">
+    <div class="dock-actions" onkeydown={handleActionsKeydown}>
       <button
         type="button"
         class="dock-button"
@@ -180,8 +208,10 @@
         aria-controls={searchVisible ? 'dock-search-panel' : undefined}
         aria-label={searchTitle}
         title={searchTitle}
+        tabindex={activeButtonIndex === 0 ? 0 : -1}
         disabled={controlsDisabled}
         bind:this={searchButtonNode}
+        onfocus={() => { activeButtonIndex = 0; }}
         onclick={() => onToggleSearch?.()}
       >
         <Search size={16} />
@@ -197,8 +227,10 @@
         aria-controls={filtersVisible ? 'data-grid' : undefined}
         aria-label={filterTitle}
         title={filterTitle}
+        tabindex={activeButtonIndex === 1 ? 0 : -1}
         disabled={controlsDisabled}
         bind:this={filterButtonNode}
+        onfocus={() => { activeButtonIndex = 1; }}
         onclick={() => onToggleFilters?.()}
       >
         <span class="icon-stack">
@@ -219,8 +251,10 @@
         aria-controls={columnsOpen ? 'columns-panel' : undefined}
         aria-label={columnsTitle}
         title={columnsTitle}
+        tabindex={activeButtonIndex === 2 ? 0 : -1}
         disabled={controlsDisabled}
         bind:this={columnsButtonNode}
+        onfocus={() => { activeButtonIndex = 2; }}
         onclick={() => onToggleColumns?.()}
       >
         <span class="icon-stack">
@@ -242,7 +276,10 @@
         data-action="export"
         aria-label={hasTable ? 'Export CSV' : 'Export CSV (select a table first)'}
         title={hasTable ? 'Export CSV' : 'Select a table to export'}
+        tabindex={activeButtonIndex === 3 ? 0 : -1}
         disabled={!hasTable}
+        bind:this={exportButtonNode}
+        onfocus={() => { activeButtonIndex = 3; }}
         onclick={() => onExport?.()}
       >
         <Download size={16} />

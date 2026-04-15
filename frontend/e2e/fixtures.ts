@@ -141,6 +141,11 @@ export class SeekiHelpers {
     return this.getActionDock().locator('[aria-live]');
   }
 
+  /** Get the four dock action buttons in order: Search, Filters, Columns, Export. */
+  getDockButtons() {
+    return this.getActionDock().locator('.dock-button');
+  }
+
   /** Toggle sidebar collapse/expand. */
   async toggleSidebar(): Promise<void> {
     await this.page.locator('.sidebar .toggle').click();
