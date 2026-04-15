@@ -34,6 +34,12 @@ impl Store {
 
         match Self::try_open(path).await {
             Ok(store) => Ok(store),
+            Err(e) if is_migration_error(&e) => {
+                // A migration failure on a valid database must NOT trigger the
+                // rename-and-retry path — that would silently discard user data.
+                // Propagate so the caller surfaces a clear diagnostic instead.
+                Err(e)
+            }
             Err(e) => {
                 tracing::warn!(
                     path = %path.display(),
@@ -75,6 +81,14 @@ impl Store {
     pub fn pool(&self) -> &SqlitePool {
         &self.0
     }
+}
+
+/// Returns true if the anyhow error chain contains a sqlx migration error.
+/// Used in `open_at` to distinguish migration failures from file corruption so
+/// we never rename (and thus discard) a valid user database on a migration bug.
+fn is_migration_error(e: &anyhow::Error) -> bool {
+    e.chain()
+        .any(|c| c.downcast_ref::<sqlx::migrate::MigrateError>().is_some())
 }
 
 /// Build a stable, non-sensitive connection identifier from a database URL.

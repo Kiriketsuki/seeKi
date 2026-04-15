@@ -15,11 +15,16 @@ pub async fn get_all(pool: &SqlitePool) -> Result<Vec<(String, Value)>> {
         .map_err(anyhow::Error::from)
 }
 
+const MAX_VALUE_BYTES: usize = 64 * 1024; // 64 KiB
+
 /// Upsert a batch of settings in a single transaction.
 pub async fn set_many(pool: &SqlitePool, entries: &[(&str, &Value)]) -> Result<()> {
     let mut tx = pool.begin().await?;
     for (key, value) in entries {
         let json = serde_json::to_string(value)?;
+        if json.len() > MAX_VALUE_BYTES {
+            anyhow::bail!("setting value for key '{key}' exceeds maximum size of 64 KiB");
+        }
         sqlx::query(
             "INSERT INTO app_settings (key, value) VALUES (?, ?)
              ON CONFLICT(key) DO UPDATE SET value     = excluded.value,

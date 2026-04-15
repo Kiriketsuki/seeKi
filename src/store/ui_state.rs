@@ -20,8 +20,13 @@ pub async fn get(pool: &SqlitePool, conn_id: &str, key: &str) -> Result<Option<V
     }
 }
 
+const MAX_VALUE_BYTES: usize = 64 * 1024; // 64 KiB
+
 pub async fn set(pool: &SqlitePool, conn_id: &str, key: &str, value: &Value) -> Result<()> {
     let json = serde_json::to_string(value)?;
+    if json.len() > MAX_VALUE_BYTES {
+        anyhow::bail!("ui_state value for key '{key}' exceeds maximum size of 64 KiB");
+    }
     sqlx::query(
         "INSERT INTO ui_state (connection_id, key, value) VALUES (?, ?, ?)
          ON CONFLICT(connection_id, key) DO UPDATE SET value     = excluded.value,
