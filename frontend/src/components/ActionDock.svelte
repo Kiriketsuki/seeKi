@@ -177,7 +177,7 @@
               type="button"
               class="clear-search"
               aria-label="Clear search"
-              disabled={controlsDisabled && searchQuery.length === 0}
+              disabled={controlsDisabled || searchQuery.length === 0}
               onclick={() => onSearchClear?.()}
             >
               <X size={14} />

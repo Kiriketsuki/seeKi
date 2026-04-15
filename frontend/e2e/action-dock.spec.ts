@@ -14,6 +14,44 @@ test.describe('Action Dock — Shell', () => {
     await expect(page.locator('.toolbar')).toHaveCount(0);
     await expect(page.locator('.statusbar')).toBeVisible();
   });
+
+  test('search/filters/columns buttons are disabled while rows are loading', async ({ page, seeki }) => {
+    // Hold the rows response so we can inspect disabled state mid-load.
+    let releaseRows!: () => void;
+    const rowsHeld = new Promise<void>(r => { releaseRows = r; });
+    await page.route('**/rows**', async route => {
+      await rowsHeld;
+      await route.continue();
+    });
+
+    await page.goto('/');
+    // waitForAppReady uses .grid-area — resolves before rows return.
+    await seeki.waitForAppReady();
+
+    // Table auto-selects in onMount (dock renders) but rows are still in flight.
+    const dock = seeki.getActionDock();
+    await expect(dock).toBeVisible();
+
+    const searchBtn = dock.getByRole('button', { name: /search/i });
+    const filterBtn = dock.getByRole('button', { name: /filters?/i });
+    const columnsBtn = dock.getByRole('button', { name: /columns?/i });
+
+    await expect(searchBtn).toBeDisabled();
+    await expect(filterBtn).toBeDisabled();
+    await expect(columnsBtn).toBeDisabled();
+
+    // Export is intentionally NOT gated on loading — verify it stays enabled.
+    const exportBtn = dock.getByRole('button', { name: /export/i });
+    await expect(exportBtn).toBeEnabled();
+
+    // Release the rows response and confirm buttons re-enable.
+    releaseRows();
+    await seeki.waitForGridLoaded();
+
+    await expect(searchBtn).toBeEnabled();
+    await expect(filterBtn).toBeEnabled();
+    await expect(columnsBtn).toBeEnabled();
+  });
 });
 
 test.describe('Action Dock — Filters', () => {
