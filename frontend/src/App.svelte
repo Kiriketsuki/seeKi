@@ -7,7 +7,15 @@
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus } from './lib/api';
+  import {
+    fetchTables,
+    fetchColumns,
+    fetchRows,
+    fetchDisplayConfig,
+    fetchStatus,
+    fetchLastUsedState,
+    saveLastUsedState,
+  } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
     TableInfo,
@@ -17,6 +25,7 @@
     SortState,
     FilterState,
     SortDirection,
+    SortColumn,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import SetupWizard from './components/SetupWizard.svelte';
@@ -46,6 +55,7 @@
   let searchInputEl: HTMLInputElement | null = $state(null);
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
+  let lastUsedSaveId: ReturnType<typeof setTimeout> | null = null;
   let selectRequestId = 0;
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
@@ -255,39 +265,90 @@
 
   async function selectTable(table: TableInfo) {
     const myRequest = ++selectRequestId;
-    const resetSortState: SortState = { column: null, direction: null };
-    const resetFilters: FilterState = {};
     selectedSchema = table.schema;
     selectedTable = table.name;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
-    sortState = resetSortState;
     filtersVisible = false;
-    filters = resetFilters;
     columnsOpen = false;
     clearFilterDebounce();
+    clearLastUsedSaveDebounce();
     resetSearchState();
     const storageKey = `${table.schema}.${table.name}`;
+
+    // Fetch columns and last-used state in parallel; rows depend on last-used state.
+    let initialSortState: SortState = { column: null, direction: null };
+    let initialFilters: FilterState = {};
+    let initialSearch = '';
+
     try {
-      const [cols, result] = await Promise.all([
+      const [cols, lastUsed] = await Promise.all([
         fetchColumns(table.schema, table.name),
-        fetchRows(
-          table.schema,
-          table.name,
-          buildRowsParams(1, resetSortState, resetFilters, ''),
-        ),
+        !isSetup ? fetchLastUsedState(table.schema, table.name) : Promise.resolve(null),
       ]);
       if (myRequest !== selectRequestId) return;
+
+      if (lastUsed) {
+        // Restore last-used sort: multi-column → use first entry as single-column sort
+        const firstSort = lastUsed.sort_columns[0] ?? null;
+        initialSortState = firstSort
+          ? { column: firstSort.col, direction: firstSort.dir }
+          : { column: null, direction: null };
+        initialFilters = lastUsed.filters;
+        initialSearch = lastUsed.search_term ?? '';
+      }
+
+      const result = await fetchRows(
+        table.schema,
+        table.name,
+        buildRowsParams(1, initialSortState, initialFilters, initialSearch),
+      );
+      if (myRequest !== selectRequestId) return;
+
       columns = cols;
       columnVisibility = loadColumnVisibility(storageKey, cols);
       queryResult = result;
+      sortState = initialSortState;
+      filters = initialFilters;
+      searchTerm = initialSearch;
     } catch (e) {
       if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load table';
     } finally {
       if (myRequest === selectRequestId) tableLoading = false;
     }
+  }
+
+  function clearLastUsedSaveDebounce() {
+    if (lastUsedSaveId !== null) {
+      clearTimeout(lastUsedSaveId);
+      lastUsedSaveId = null;
+    }
+  }
+
+  function scheduleLastUsedSave(
+    schema: string,
+    table: string,
+    nextSortState: SortState,
+    nextFilters: FilterState,
+    nextSearch: string,
+  ) {
+    clearLastUsedSaveDebounce();
+    lastUsedSaveId = setTimeout(() => {
+      lastUsedSaveId = null;
+      const sortCols: SortColumn[] =
+        nextSortState.column && nextSortState.direction
+          ? [{ col: nextSortState.column, dir: nextSortState.direction }]
+          : [];
+      void saveLastUsedState(schema, table, {
+        sort_columns: sortCols,
+        filters: nextFilters,
+        search_term: nextSearch || null,
+      }).catch(() => {
+        // Non-fatal — last-used save should never break the UI
+      });
+    }, 500);
   }
 
   function buildRowsParams(
@@ -358,6 +419,9 @@
       : { column: null, direction: null };
     sortState = nextSortState;
     void loadRows(1, nextSortState);
+    if (selectedSchema && selectedTable) {
+      scheduleLastUsedSave(selectedSchema, selectedTable, nextSortState, filters, searchTerm);
+    }
   }
 
   function handleFilterChange(column: string, value: string) {
@@ -373,6 +437,9 @@
       void loadRows(1, sortState, nextFilters);
       filterDebounceId = null;
     }, 300);
+    if (selectedSchema && selectedTable) {
+      scheduleLastUsedSave(selectedSchema, selectedTable, sortState, nextFilters, searchTerm);
+    }
   }
 
   function scheduleSearchReload() {
@@ -384,6 +451,9 @@
       void loadRows(1);
       searchDebounceId = null;
     }, 300);
+    if (selectedSchema && selectedTable) {
+      scheduleLastUsedSave(selectedSchema, selectedTable, sortState, filters, searchTerm);
+    }
   }
 
   function handleSearchInput(event: Event) {

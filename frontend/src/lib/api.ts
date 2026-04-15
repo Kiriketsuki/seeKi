@@ -10,6 +10,9 @@ import type {
   TestConnectionResult,
   SetupSaveRequest,
   SetupSaveResponse,
+  SortPreset,
+  FilterPreset,
+  LastUsedTableState,
 } from './types';
 import {
   mockFetchTables,
@@ -34,12 +37,12 @@ function assertShape(data: unknown, fields: string[], context: string): void {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const SETUP_TIMEOUT_MS = 60_000;
 
-async function apiFetch<T>(path: string): Promise<T> {
+async function apiFetch<T = void>(path: string, method = 'GET'): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(path, { signal: controller.signal });
+    res = await fetch(path, { method, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeout);
     if (e instanceof DOMException && e.name === 'AbortError') {
@@ -59,6 +62,42 @@ async function apiFetch<T>(path: string): Promise<T> {
     }
     throw new Error(message);
   }
+  // 204 No Content — return undefined cast to T
+  if (res.status === 204) return undefined as unknown as T;
+  return res.json() as Promise<T>;
+}
+
+async function apiPost<T = void>(path: string, body: unknown): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Request timed out — the server may be busy. Try again.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `API error ${res.status}`;
+    try {
+      const body = JSON.parse(text);
+      if (body?.error) message = body.error;
+    } catch {
+      if (text) message += `: ${text}`;
+    }
+    throw new Error(message);
+  }
+  if (res.status === 204) return undefined as unknown as T;
   return res.json() as Promise<T>;
 }
 
@@ -170,6 +209,87 @@ export async function setupTestConnection(req: {
     throw new Error(message);
   }
   return res.json();
+}
+
+// ── Preferences API ───────────────────────────────────────────────────────────
+
+export async function fetchSettings(): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>('/api/preferences/settings');
+}
+
+export async function saveSettings(entries: Record<string, unknown>): Promise<void> {
+  await apiPost('/api/preferences/settings', entries);
+}
+
+export async function fetchLastUsedState(
+  schema: string,
+  table: string,
+): Promise<LastUsedTableState | null> {
+  const path = `/api/preferences/presets/last-used/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  try {
+    return await apiFetch<LastUsedTableState>(path);
+  } catch (e) {
+    // 404 means no saved state — return null rather than throwing
+    if (e instanceof Error && e.message.startsWith('API error 404')) return null;
+    throw e;
+  }
+}
+
+export async function saveLastUsedState(
+  schema: string,
+  table: string,
+  state: LastUsedTableState,
+): Promise<void> {
+  const path = `/api/preferences/presets/last-used/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  await apiPost(path, state);
+}
+
+export async function fetchSortPresets(schema: string, table: string): Promise<SortPreset[]> {
+  const path = `/api/preferences/presets/sort/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  return apiFetch<SortPreset[]>(path);
+}
+
+export async function saveSortPreset(
+  schema: string,
+  table: string,
+  name: string,
+  columns: LastUsedTableState['sort_columns'],
+): Promise<{ id: number }> {
+  const path = `/api/preferences/presets/sort/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  return apiPost<{ id: number }>(path, { name, columns });
+}
+
+export async function deleteSortPreset(
+  schema: string,
+  table: string,
+  name: string,
+): Promise<void> {
+  const path = `/api/preferences/presets/sort/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/${encodeURIComponent(name)}`;
+  await apiFetch(path, 'DELETE');
+}
+
+export async function fetchFilterPresets(schema: string, table: string): Promise<FilterPreset[]> {
+  const path = `/api/preferences/presets/filter/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  return apiFetch<FilterPreset[]>(path);
+}
+
+export async function saveFilterPreset(
+  schema: string,
+  table: string,
+  name: string,
+  filters: Record<string, string>,
+): Promise<{ id: number }> {
+  const path = `/api/preferences/presets/filter/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  return apiPost<{ id: number }>(path, { name, filters });
+}
+
+export async function deleteFilterPreset(
+  schema: string,
+  table: string,
+  name: string,
+): Promise<void> {
+  const path = `/api/preferences/presets/filter/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/${encodeURIComponent(name)}`;
+  await apiFetch(path, 'DELETE');
 }
 
 export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveResponse> {
