@@ -1,3 +1,4 @@
+pub mod preferences;
 pub mod setup;
 
 use std::collections::HashMap;
@@ -17,8 +18,9 @@ use crate::AppState;
 use crate::app_mode::{AppMode, SharedAppMode};
 use crate::config::{display_name_column, display_name_table};
 use crate::db::{ExportQueryParams, RowQueryParams, ValidationError};
+use crate::store::Store;
 
-pub fn router(mode: SharedAppMode) -> Router {
+pub fn router(mode: SharedAppMode, store: Store) -> Router {
     Router::new()
         .route("/tables", get(list_tables))
         .route("/tables/{schema}/{table}/columns", get(get_columns))
@@ -28,6 +30,8 @@ pub fn router(mode: SharedAppMode) -> Router {
         .route("/status", get(status))
         .route("/setup/test-connection", post(setup::test_connection))
         .route("/setup/save", post(setup::save_config))
+        .nest("/preferences", preferences::router())
+        .layer(Extension(store))
         .layer(Extension(mode))
 }
 

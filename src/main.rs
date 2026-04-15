@@ -5,6 +5,7 @@ mod config;
 mod db;
 mod embed;
 mod ssh;
+mod store;
 #[cfg(test)]
 mod testutil;
 
@@ -61,8 +62,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let store = store::Store::open().await?;
+
     let app = Router::new()
-        .nest("/api", api::router(mode.clone()))
+        .nest("/api", api::router(mode.clone(), store))
         .layer(localhost_cors())
         .fallback(embed::handler);
 
@@ -86,6 +89,6 @@ fn localhost_cors() -> CorsLayer {
                 false
             }
         }))
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
         .allow_headers([axum::http::header::CONTENT_TYPE])
 }
