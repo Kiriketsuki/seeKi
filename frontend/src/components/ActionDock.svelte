@@ -232,6 +232,9 @@
         <span>Columns</span>
       </button>
 
+      <!-- Export uses !hasTable (not controlsDisabled) intentionally: it opens a server URL
+           and doesn't depend on in-flight component state. Disabling during table load
+           would block legitimate exports without any functional benefit. -->
       <button
         type="button"
         class="dock-button dock-button--export"
