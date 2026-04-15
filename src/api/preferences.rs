@@ -57,6 +57,13 @@ async fn set_settings(
     Extension(store): Extension<Store>,
     Json(entries): Json<HashMap<String, Value>>,
 ) -> Result<StatusCode, Err> {
+    for (_k, v) in &entries {
+        let json = serde_json::to_string(v)
+            .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+        if json.len() > MAX_VALUE_BYTES {
+            return Err(Err::bad_request("value exceeds maximum size"));
+        }
+    }
     let pairs: Vec<(&str, &Value)> = entries
         .iter()
         .map(|(k, v)| (k.as_str(), v))
@@ -87,6 +94,19 @@ async fn set_last_used(
     Path((schema, table)): Path<(String, String)>,
     Json(body): Json<presets::LastUsedState>,
 ) -> Result<StatusCode, Err> {
+    let sort_json = serde_json::to_string(&body.sort_columns)
+        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    if sort_json.len() > MAX_VALUE_BYTES {
+        return Err(Err::bad_request("value exceeds maximum size"));
+    }
+    let filter_json = serde_json::to_string(&body.filters)
+        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    if filter_json.len() > MAX_VALUE_BYTES {
+        return Err(Err::bad_request("value exceeds maximum size"));
+    }
+    if body.search_term.as_deref().is_some_and(|s| s.len() > MAX_VALUE_BYTES) {
+        return Err(Err::bad_request("value exceeds maximum size"));
+    }
     let conn_id = require_conn_id(&mode).await?;
     presets::set_last_used(store.pool(), &conn_id, &schema, &table, &body)
         .await
@@ -118,6 +138,11 @@ async fn save_sort_preset(
     Path((schema, table)): Path<(String, String)>,
     Json(body): Json<SaveSortBody>,
 ) -> Result<Json<Value>, Err> {
+    let columns_json = serde_json::to_string(&body.columns)
+        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    if columns_json.len() > MAX_VALUE_BYTES {
+        return Err(Err::bad_request("value exceeds maximum size"));
+    }
     let conn_id = require_conn_id(&mode).await?;
     let id =
         presets::save_sort_preset(store.pool(), &conn_id, &schema, &table, &body.name, &body.columns)
@@ -166,6 +191,11 @@ async fn save_filter_preset(
     Path((schema, table)): Path<(String, String)>,
     Json(body): Json<SaveFilterBody>,
 ) -> Result<Json<Value>, Err> {
+    let filters_json = serde_json::to_string(&body.filters)
+        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    if filters_json.len() > MAX_VALUE_BYTES {
+        return Err(Err::bad_request("value exceeds maximum size"));
+    }
     let conn_id = require_conn_id(&mode).await?;
     let id = presets::save_filter_preset(
         store.pool(),
@@ -199,6 +229,7 @@ async fn delete_filter_preset(
 // ── UI state ──────────────────────────────────────────────────────────────────
 
 const MAX_UI_STATE_KEY_LEN: usize = 200;
+const MAX_VALUE_BYTES: usize = 64 * 1024; // 64 KiB
 
 async fn get_ui_state(
     Extension(mode): Extension<SharedAppMode>,
@@ -228,6 +259,11 @@ async fn set_ui_state(
 ) -> Result<StatusCode, Err> {
     if key.len() > MAX_UI_STATE_KEY_LEN {
         return Err(Err::bad_request("ui state key exceeds maximum length"));
+    }
+    let value_json = serde_json::to_string(&body.value)
+        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    if value_json.len() > MAX_VALUE_BYTES {
+        return Err(Err::bad_request("value exceeds maximum size"));
     }
     let conn_id = require_conn_id(&mode).await?;
     ui_state::set(store.pool(), &conn_id, &key, &body.value)
