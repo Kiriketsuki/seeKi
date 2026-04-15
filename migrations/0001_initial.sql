@@ -52,11 +52,3 @@ CREATE TABLE ui_state (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (connection_id, key)
 );
-
--- Custom view stubs — schema only, populated by issue #77.
-CREATE TABLE custom_views (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL UNIQUE,
-    definition TEXT NOT NULL,  -- JSON
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);

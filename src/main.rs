@@ -89,6 +89,6 @@ fn localhost_cors() -> CorsLayer {
                 false
             }
         }))
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
         .allow_headers([axum::http::header::CONTENT_TYPE])
 }

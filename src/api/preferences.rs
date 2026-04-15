@@ -198,11 +198,16 @@ async fn delete_filter_preset(
 
 // ── UI state ──────────────────────────────────────────────────────────────────
 
+const MAX_UI_STATE_KEY_LEN: usize = 200;
+
 async fn get_ui_state(
     Extension(mode): Extension<SharedAppMode>,
     Extension(store): Extension<Store>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, Err> {
+    if key.len() > MAX_UI_STATE_KEY_LEN {
+        return Err(Err::bad_request("ui state key exceeds maximum length"));
+    }
     let conn_id = require_conn_id(&mode).await?;
     match ui_state::get(store.pool(), &conn_id, &key).await? {
         Some(val) => Ok(Json(val)),
@@ -221,6 +226,9 @@ async fn set_ui_state(
     Path(key): Path<String>,
     Json(body): Json<SetUiStateBody>,
 ) -> Result<StatusCode, Err> {
+    if key.len() > MAX_UI_STATE_KEY_LEN {
+        return Err(Err::bad_request("ui state key exceeds maximum length"));
+    }
     let conn_id = require_conn_id(&mode).await?;
     ui_state::set(store.pool(), &conn_id, &key, &body.value)
         .await
@@ -255,6 +263,12 @@ impl Err {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: "Internal server error".to_string(),
+        }
+    }
+    fn bad_request(msg: &str) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: msg.to_string(),
         }
     }
     fn not_found(msg: &str) -> Self {
