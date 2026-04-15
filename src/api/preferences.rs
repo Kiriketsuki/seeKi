@@ -452,6 +452,44 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
+    #[tokio::test]
+    async fn sort_preset_reject_oversized_name() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let long_name = "k".repeat(201);
+        let body = serde_json::json!({ "name": long_name, "columns": {} }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/sort/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn filter_preset_reject_oversized_name() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let long_name = "k".repeat(201);
+        let body = serde_json::json!({ "name": long_name, "filters": {} }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/filter/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
     // ── Delete non-existent preset returns 404 ─────────────────────────────
     // The HTTP 404 path for delete_sort_preset (preferences.rs:138-142) is
     // exercised indirectly: the store layer returns `false` for a missing row
