@@ -62,9 +62,9 @@ export class SeekiHelpers {
   async waitForAppReady(): Promise<void> {
     // Wait for either the grid layout or the setup wizard to be visible
     await this.page.waitForFunction(() => {
-      const grid = document.querySelector('.grid-card');
+      const dock = document.querySelector('.action-dock');
       const wizard = document.querySelector('[aria-label="Setup wizard"]');
-      return grid !== null || wizard !== null;
+      return dock !== null || wizard !== null;
     }, { timeout: 15_000 });
   }
 

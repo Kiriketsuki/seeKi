@@ -228,7 +228,7 @@
   );
 </script>
 
-<div class="grid-card" class:filters-visible={filtersVisible}>
+<div id="data-grid" class="grid-card" class:filters-visible={filtersVisible}>
   <RevoGrid
     columns={gridColumns}
     source={rows}

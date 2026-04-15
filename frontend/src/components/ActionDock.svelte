@@ -187,6 +187,7 @@
         class:active={filtersVisible || activeFilterCount > 0}
         data-action="filters"
         aria-expanded={filtersVisible}
+        aria-controls={filtersVisible ? 'data-grid' : undefined}
         aria-label={filterTitle}
         title={filterTitle}
         disabled={controlsDisabled}
@@ -230,7 +231,7 @@
         data-action="export"
         aria-label={hasTable ? 'Export CSV' : 'Export CSV (select a table first)'}
         title={hasTable ? 'Export CSV' : 'Select a table to export'}
-        disabled={controlsDisabled}
+        disabled={!hasTable}
         onclick={() => onExport?.()}
       >
         <Download size={16} />
