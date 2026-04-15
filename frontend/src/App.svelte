@@ -45,6 +45,7 @@
   let searchInputEl: HTMLInputElement | null = $state(null);
   let searchButtonEl: HTMLButtonElement | null = $state(null);
   let columnsButtonEl: HTMLButtonElement | null = $state(null);
+  let filterButtonEl: HTMLButtonElement | null = $state(null);
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let selectRequestId = 0;
@@ -129,6 +130,13 @@
           event.preventDefault();
           handleSearchClear();
           void tick().then(() => searchButtonEl?.focus());
+          return;
+        }
+
+        if (filtersVisible) {
+          event.preventDefault();
+          filtersVisible = false;
+          void tick().then(() => filterButtonEl?.focus());
         }
       }
     }
@@ -261,6 +269,10 @@
 
   function setColumnsButtonEl(node: HTMLButtonElement | null) {
     columnsButtonEl = node;
+  }
+
+  function setFilterButtonEl(node: HTMLButtonElement | null) {
+    filterButtonEl = node;
   }
 
   async function selectTable(table: TableInfo) {
@@ -544,6 +556,7 @@
               onSearchInputRef={setSearchInputEl}
               onSearchButtonRef={setSearchButtonEl}
               onColumnsButtonRef={setColumnsButtonEl}
+              onFilterButtonRef={setFilterButtonEl}
             />
           {/if}
           {#if tableLoading}

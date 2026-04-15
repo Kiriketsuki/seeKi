@@ -29,6 +29,7 @@
     onSearchInputRef,
     onSearchButtonRef,
     onColumnsButtonRef,
+    onFilterButtonRef,
   }: {
     searchVisible?: boolean;
     searchTerm?: string;
@@ -54,12 +55,14 @@
     onSearchInputRef?: (node: HTMLInputElement | null) => void;
     onSearchButtonRef?: (node: HTMLButtonElement | null) => void;
     onColumnsButtonRef?: (node: HTMLButtonElement | null) => void;
+    onFilterButtonRef?: (node: HTMLButtonElement | null) => void;
   } = $props();
 
   let shell: HTMLDivElement | null = null;
   let searchInputNode: HTMLInputElement | null = $state(null);
   let searchButtonNode: HTMLButtonElement | null = $state(null);
   let columnsButtonNode: HTMLButtonElement | null = $state(null);
+  let filterButtonNode: HTMLButtonElement | null = $state(null);
 
   let panelOpen = $derived(searchVisible || columnsOpen);
   let searchQuery = $derived.by(() => searchTerm.trim());
@@ -105,6 +108,10 @@
 
   $effect(() => {
     onColumnsButtonRef?.(columnsButtonNode);
+  });
+
+  $effect(() => {
+    onFilterButtonRef?.(filterButtonNode);
   });
 
   function handleOutsidePointerDown(event: PointerEvent) {
@@ -191,6 +198,7 @@
         aria-label={filterTitle}
         title={filterTitle}
         disabled={controlsDisabled}
+        bind:this={filterButtonNode}
         onclick={() => onToggleFilters?.()}
       >
         <span class="icon-stack">

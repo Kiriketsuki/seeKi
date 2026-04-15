@@ -39,6 +39,22 @@ test.describe('Action Dock — Filters', () => {
     await expect(filterButton).toHaveAttribute('aria-expanded', 'false');
     await expect(filterInputs.first()).not.toBeVisible();
   });
+
+  test('Escape closes filters and restores focus to filter button', async ({ page, seeki }) => {
+    const dock = seeki.getActionDock();
+    const filterButton = dock.getByRole('button', { name: /filters?/i });
+    const filterInputs = page.locator('[role="columnheader"] input[aria-label^="Filter"]');
+
+    await seeki.clickFilterToggle();
+    await expect(filterButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(filterInputs.first()).toBeVisible();
+
+    await page.keyboard.press('Escape');
+
+    await expect(filterButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(filterInputs.first()).not.toBeVisible();
+    await expect(filterButton).toBeFocused();
+  });
 });
 
 test.describe('Action Dock — Search', () => {
@@ -60,7 +76,7 @@ test.describe('Action Dock — Search', () => {
     await page.keyboard.press('Escape');
     await expect(searchPanel).not.toBeVisible();
 
-    await expect(searchButton).toBeVisible();
+    await expect(searchButton).toBeFocused();
   });
 
   test('search toggle via Ctrl+K shortcut', async ({ page, seeki }) => {
@@ -102,6 +118,8 @@ test.describe('Action Dock — Column Visibility', () => {
   });
 
   test('column dropdown opens and closes', async ({ page, seeki }) => {
+    const dock = seeki.getActionDock();
+    const columnsButton = dock.getByRole('button', { name: /columns?/i });
     const columnsPanel = seeki.getColumnsPanel();
 
     await expect(columnsPanel).not.toBeVisible();
@@ -117,6 +135,7 @@ test.describe('Action Dock — Column Visibility', () => {
 
     await page.keyboard.press('Escape');
     await expect(columnsPanel).not.toBeVisible();
+    await expect(columnsButton).toBeFocused();
   });
 
   test('hiding a column removes it from grid', async ({ page, seeki }) => {
