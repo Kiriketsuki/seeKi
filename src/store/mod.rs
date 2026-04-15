@@ -81,6 +81,13 @@ impl Store {
 ///
 /// Format: `host:port/dbname` — credentials are never included.
 /// Falls back to `"default"` if the URL can't be parsed.
+///
+/// **Key-stability contract**: the key is stable as long as the host, port, and
+/// database name remain unchanged. Changing any of these (e.g. adding an explicit
+/// port that was previously implicit, changing the hostname alias) produces a
+/// different key and silently orphans previously stored presets and UI state.
+/// This is intentional — data is keyed per connection — but should be documented
+/// to users if the URL is reconfigured.
 pub fn connection_id(url: &str) -> String {
     if let Ok(parsed) = url::Url::parse(url) {
         let host = parsed.host_str().unwrap_or("unknown");

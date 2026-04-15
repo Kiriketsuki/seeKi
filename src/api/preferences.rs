@@ -103,7 +103,7 @@ async fn list_sort_presets(
 ) -> Result<Json<Value>, Err> {
     let conn_id = require_conn_id(&mode).await?;
     let items = presets::list_sort_presets(store.pool(), &conn_id, &schema, &table).await?;
-    Ok(Json(serde_json::to_value(items).unwrap()))
+    Ok(Json(serde_json::to_value(items).map_err(|e| Err::internal(anyhow::Error::from(e)))?))
 }
 
 #[derive(Deserialize)]
@@ -151,7 +151,7 @@ async fn list_filter_presets(
 ) -> Result<Json<Value>, Err> {
     let conn_id = require_conn_id(&mode).await?;
     let items = presets::list_filter_presets(store.pool(), &conn_id, &schema, &table).await?;
-    Ok(Json(serde_json::to_value(items).unwrap()))
+    Ok(Json(serde_json::to_value(items).map_err(|e| Err::internal(anyhow::Error::from(e)))?))
 }
 
 #[derive(Deserialize)]
@@ -366,33 +366,10 @@ mod tests {
     }
 
     // ── Delete non-existent preset returns 404 ─────────────────────────────
-
-    #[tokio::test]
-    async fn delete_nonexistent_sort_preset_404() {
-        let (store, _dir) = ephemeral_store().await;
-
-        // Build a minimal AppState using a fake DB pool — we only need the config
-        // for connection_id derivation. Use a dummy Postgres URL (pool never queried).
-        use crate::config::{AppConfig, DatabaseConfig, DatabaseKind, ServerConfig, TablesConfig, DisplayConfig, BrandingConfig};
-        let config = AppConfig {
-            server: ServerConfig { host: "127.0.0.1".into(), port: 3141 },
-            database: DatabaseConfig {
-                url: "postgres://user@host:5432/mydb".into(),
-                kind: DatabaseKind::Postgres,
-                max_connections: 1,
-                schemas: None,
-            },
-            tables: TablesConfig::default(),
-            display: DisplayConfig::default(),
-            branding: BrandingConfig::default(),
-            ssh: None,
-        };
-
-        // We need a fake DatabasePool. Avoid actually connecting by using the
-        // SharedAppMode trick: just confirm 503 vs 404 by injecting a real mode.
-        // Because building a real PgPool would require a running Postgres, we
-        // test the 503 path (setup mode) above.  The 404 path is covered by the
-        // store-level test `delete_sort_preset_delete_nonexistent_returns_false`.
-        let _ = config; // suppress unused warning
-    }
+    // The HTTP 404 path for delete_sort_preset (preferences.rs:138-142) is
+    // exercised indirectly: the store layer returns `false` for a missing row
+    // (covered by `delete_sort_preset_delete_nonexistent_returns_false` in
+    // store/presets.rs), and the handler converts that to 404. A full HTTP-level
+    // test would require a running Postgres to build a real AppState; that is out
+    // of scope for unit tests. See integration tests if added in future.
 }
