@@ -57,7 +57,10 @@ async fn set_settings(
     Extension(store): Extension<Store>,
     Json(entries): Json<HashMap<String, Value>>,
 ) -> Result<StatusCode, Err> {
-    for (_k, v) in &entries {
+    for (k, v) in &entries {
+        if k.len() > MAX_UI_STATE_KEY_LEN {
+            return Err(Err::bad_request("setting key exceeds maximum length"));
+        }
         let json = serde_json::to_string(v)
             .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
         if json.len() > MAX_VALUE_BYTES {
@@ -138,6 +141,9 @@ async fn save_sort_preset(
     Path((schema, table)): Path<(String, String)>,
     Json(body): Json<SaveSortBody>,
 ) -> Result<Json<Value>, Err> {
+    if body.name.len() > MAX_PRESET_NAME_LEN {
+        return Err(Err::bad_request("preset name exceeds maximum length"));
+    }
     let columns_json = serde_json::to_string(&body.columns)
         .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if columns_json.len() > MAX_VALUE_BYTES {
@@ -191,6 +197,9 @@ async fn save_filter_preset(
     Path((schema, table)): Path<(String, String)>,
     Json(body): Json<SaveFilterBody>,
 ) -> Result<Json<Value>, Err> {
+    if body.name.len() > MAX_PRESET_NAME_LEN {
+        return Err(Err::bad_request("preset name exceeds maximum length"));
+    }
     let filters_json = serde_json::to_string(&body.filters)
         .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if filters_json.len() > MAX_VALUE_BYTES {
@@ -229,6 +238,7 @@ async fn delete_filter_preset(
 // ── UI state ──────────────────────────────────────────────────────────────────
 
 const MAX_UI_STATE_KEY_LEN: usize = 200;
+const MAX_PRESET_NAME_LEN: usize = 200;
 const MAX_VALUE_BYTES: usize = 64 * 1024; // 64 KiB
 
 async fn get_ui_state(
@@ -399,6 +409,47 @@ mod tests {
             .unwrap();
         let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // ── HTTP 400 for oversized values ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn settings_reject_oversized_value() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        // Value serialises to > MAX_VALUE_BYTES (64 KiB)
+        let big = "x".repeat(65 * 1024);
+        let body = serde_json::json!({ "theme": big }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn settings_reject_oversized_key() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let long_key = "k".repeat(201);
+        let body = serde_json::json!({ long_key: "v" }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     // ── Delete non-existent preset returns 404 ─────────────────────────────
