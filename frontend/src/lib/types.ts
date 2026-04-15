@@ -24,10 +24,12 @@ export interface QueryResult {
 
 export type SortDirection = 'asc' | 'desc';
 
-export interface SortState {
-  column: string | null;
-  direction: SortDirection | null;
+export interface SortEntry {
+  column: string;
+  direction: SortDirection;
 }
+
+export type SortState = SortEntry[];
 
 export type FilterState = Record<string, string>;
 
@@ -129,4 +131,45 @@ export interface SetupSaveRequest {
 export interface SetupSaveResponse {
   success: boolean;
   error?: string;
+}
+
+// ── Update Patcher Types ──────────────────────────────────────────────────
+
+export interface VersionInfo {
+  version: string;
+  commit: string;
+  built_at: string;
+}
+
+export interface UpdateStatus {
+  current: string;
+  latest: string | null;
+  pre_release_channel: boolean;
+  update_available: boolean;
+  previous_exists: boolean;
+  last_checked: string | null;
+}
+
+export interface CheckResult {
+  current: string;
+  latest: string | null;
+  update_available: boolean;
+  assets: { name: string; size: number; url: string }[];
+  release_notes: string | null;
+}
+
+export interface WipUploadResult {
+  upload_id: string;
+  sha256: string;
+  size: number;
+}
+
+export interface ApplyResult {
+  status: string;
+  message: string;
+}
+
+export interface RollbackResult {
+  status: string;
+  message: string;
 }

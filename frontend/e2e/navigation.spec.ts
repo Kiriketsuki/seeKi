@@ -54,8 +54,9 @@ test.describe('Navigation — Table Switching', () => {
     const tableNames = await seeki.getSidebarTableNames();
     test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
 
-    // Sort a column on the first table — wait for sorted data
     const firstHeader = page.locator('[role="columnheader"]').first();
+    const firstHeaderState = firstHeader.locator('.sk-grid-header');
+    const sortGlyph = firstHeader.locator('.sk-grid-header__sort');
     let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     let rowsResponse = await rowsLoaded;
@@ -63,8 +64,9 @@ test.describe('Navigation — Table Switching', () => {
     // Verify the sort request included sort params
     expect(rowsResponse.request().url()).toContain('sort_direction=asc');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
+    await expect(sortGlyph).toHaveText('↑');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
 
-    // Switch to the second table
     const secondTableName = tableNames[1];
     rowsLoaded = seeki.pendingRowsResponse();
     await seeki.selectTable(secondTableName);
@@ -75,6 +77,8 @@ test.describe('Navigation — Table Switching', () => {
     expect(rowsResponse.request().url()).not.toContain('sort_column=');
     // sort cleared on table switch — live region should be empty
     await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
+    await expect(page.locator('.sk-grid-header__sort')).toHaveCount(0);
+    await expect(page.locator('[role="columnheader"]').first().locator('.sk-grid-header')).not.toHaveAttribute('aria-sort');
   });
 });
 

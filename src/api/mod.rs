@@ -1,4 +1,5 @@
 pub mod setup;
+pub mod update;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,14 +10,17 @@ use axum::{
     extract::{Path, Query},
     http::header,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::app_mode::{AppMode, SharedAppMode};
 use crate::config::{display_name_column, display_name_table};
-use crate::db::{ExportQueryParams, RowQueryParams, ValidationError};
+use crate::db::postgres::is_valid_identifier;
+use crate::db::{
+    ColumnInfo, ExportQueryParams, RowQueryParams, SortDirection, SortEntry, ValidationError,
+};
 
 pub fn router(mode: SharedAppMode) -> Router {
     Router::new()
@@ -28,6 +32,12 @@ pub fn router(mode: SharedAppMode) -> Router {
         .route("/status", get(status))
         .route("/setup/test-connection", post(setup::test_connection))
         .route("/setup/save", post(setup::save_config))
+        .route("/version", get(update::get_version))
+        .route("/update/status", get(update::get_update_status))
+        .route("/update/check", post(update::check_update))
+        .route("/update/settings", patch(update::update_settings))
+        // The three mutating update endpoints are gated by bearer-token auth.
+        .merge(update::protected_update_router())
         .layer(Extension(mode))
 }
 
@@ -195,8 +205,7 @@ struct RowsQuery {
     page: u32,
     #[serde(default = "default_page_size")]
     page_size: u32,
-    sort_column: Option<String>,
-    sort_direction: Option<String>,
+    sort: Option<String>,
     search: Option<String>,
 }
 
@@ -221,6 +230,119 @@ fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String
         .collect()
 }
 
+/// Reject the pre-PR-#72 `sort_column` / `sort_direction` query params with a clear
+/// deprecation message so saved bookmarks fail loudly instead of silently returning
+/// unsorted data.
+fn reject_legacy_sort_params(all_params: &HashMap<String, String>) -> Result<(), AppError> {
+    if all_params.contains_key("sort_column") || all_params.contains_key("sort_direction") {
+        return Err(AppError::bad_request(
+            "`sort_column` and `sort_direction` are no longer supported. \
+             Use `?sort=<column>:asc` (comma-separated for multi-column).",
+        ));
+    }
+    Ok(())
+}
+
+fn trim_ascii_whitespace(value: &str) -> &str {
+    value.trim_matches(|c: char| c.is_ascii_whitespace())
+}
+
+/// Cap user-controlled strings before echoing them in 400 error messages.
+/// Prevents unbounded payload reflection in error responses and log lines.
+fn truncate_for_error(value: &str) -> String {
+    const MAX: usize = 64;
+    if value.chars().count() <= MAX {
+        return value.to_string();
+    }
+    let truncated: String = value.chars().take(MAX).collect();
+    format!("{truncated}…")
+}
+
+fn parse_sort_param(sort: Option<&str>, columns: &[ColumnInfo]) -> anyhow::Result<Vec<SortEntry>> {
+    let Some(sort) = sort else {
+        return Ok(Vec::new());
+    };
+
+    if sort.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let valid_columns: std::collections::HashSet<&str> =
+        columns.iter().map(|column| column.name.as_str()).collect();
+    let mut seen_columns: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut parsed = Vec::new();
+
+    for segment in sort.split(',') {
+        let segment = trim_ascii_whitespace(segment);
+        if segment.is_empty() {
+            return Err(ValidationError("Malformed sort segment: empty segment".into()).into());
+        }
+
+        let safe_segment = truncate_for_error(segment);
+        let (column_part, direction_part) = segment
+            .split_once(':')
+            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {safe_segment}")))?;
+        let column = trim_ascii_whitespace(column_part);
+        let direction = trim_ascii_whitespace(direction_part);
+
+        if column.is_empty() || direction.is_empty() {
+            return Err(ValidationError(format!("Malformed sort segment: {safe_segment}")).into());
+        }
+        if !is_valid_identifier(column) {
+            return Err(ValidationError(format!(
+                "Invalid sort column name in segment: {safe_segment}"
+            ))
+            .into());
+        }
+        if !valid_columns.contains(column) {
+            return Err(
+                ValidationError(format!("Unknown sort column in segment: {safe_segment}")).into(),
+            );
+        }
+        let direction = if direction.eq_ignore_ascii_case("asc") {
+            SortDirection::Asc
+        } else if direction.eq_ignore_ascii_case("desc") {
+            SortDirection::Desc
+        } else {
+            return Err(ValidationError(format!(
+                "Invalid sort direction in segment: {safe_segment}"
+            ))
+            .into());
+        };
+        if !seen_columns.insert(column.to_string()) {
+            return Err(ValidationError(format!(
+                "Duplicate sort column in segment: {safe_segment}"
+            ))
+            .into());
+        }
+
+        parsed.push(SortEntry {
+            column: column.to_string(),
+            direction,
+        });
+    }
+
+    Ok(parsed)
+}
+
+async fn load_table_columns(
+    state: &AppState,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<ColumnInfo>, AppError> {
+    let columns = state
+        .db
+        .get_columns(schema, table)
+        .await
+        .map_err(|e| map_table_query_error(e, table))?;
+    if columns.is_empty() {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
+    }
+    Ok(columns)
+}
+
 async fn get_rows(
     Extension(mode): Extension<SharedAppMode>,
     Path((schema, table)): Path<(String, String)>,
@@ -233,9 +355,12 @@ async fn get_rows(
             "Table '{schema}.{table}' not found"
         )));
     }
+    let columns = load_table_columns(&state, &schema, &table).await?;
+    reject_legacy_sort_params(&all_params)?;
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, MAX_PAGE_SIZE);
     let filters = parse_filters(&all_params);
+    let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
     let result = state
         .db
         .query_rows(&RowQueryParams {
@@ -243,8 +368,7 @@ async fn get_rows(
             table: &table,
             page,
             page_size,
-            sort_column: params.sort_column.as_deref(),
-            sort_direction: params.sort_direction.as_deref(),
+            sort: &sort,
             search: params.search.as_deref(),
             filters: &filters,
         })
@@ -272,10 +396,12 @@ async fn export_csv(
         .ok_or_else(|| AppError::bad_request("CSV export not supported for this database type"))?
         .clone();
 
+    reject_legacy_sort_params(&all_params)?;
     let filters = parse_filters(&all_params);
+    let columns = load_table_columns(&state, &schema, &table).await?;
+    let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
 
     // Fetch columns eagerly so we can build headers before spawning
-    let columns = state.db.get_columns(&schema, &table).await?;
     let display_headers: Vec<String> = columns
         .iter()
         .map(|c| display_name_column(&schema, &table, &c.name, &state.config.display))
@@ -296,10 +422,9 @@ async fn export_csv(
     };
 
     // Owned values for the spawned task
-    let sort_column = params.sort_column.clone();
-    let sort_direction = params.sort_direction.clone();
     let search = params.search.clone();
     let schema_owned = schema.clone();
+    let sort_owned = sort;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(32);
 
@@ -325,8 +450,7 @@ async fn export_csv(
         let export_params = ExportQueryParams {
             schema: &schema_owned,
             table: &table,
-            sort_column: sort_column.as_deref(),
-            sort_direction: sort_direction.as_deref(),
+            sort: &sort_owned,
             search: search.as_deref(),
             filters: &filters,
         };
@@ -474,27 +598,27 @@ fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &st
 }
 
 // Simple error type for API responses
-struct AppError {
+pub(super) struct AppError {
     status: axum::http::StatusCode,
     message: String,
 }
 
 impl AppError {
-    fn not_found(message: impl Into<String>) -> Self {
+    pub(super) fn not_found(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::NOT_FOUND,
             message: message.into(),
         }
     }
 
-    fn bad_request(message: impl Into<String>) -> Self {
+    pub(super) fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::BAD_REQUEST,
             message: message.into(),
         }
     }
 
-    fn service_unavailable(message: impl Into<String>) -> Self {
+    pub(super) fn service_unavailable(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
@@ -540,6 +664,32 @@ impl axum::response::IntoResponse for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_columns() -> Vec<ColumnInfo> {
+        vec![
+            ColumnInfo {
+                name: "id".into(),
+                data_type: "bigint".into(),
+                display_type: "Number".into(),
+                is_nullable: false,
+                is_primary_key: true,
+            },
+            ColumnInfo {
+                name: "vehicle_id".into(),
+                data_type: "text".into(),
+                display_type: "Text".into(),
+                is_nullable: false,
+                is_primary_key: false,
+            },
+            ColumnInfo {
+                name: "logged_at".into(),
+                data_type: "timestamp with time zone".into(),
+                display_type: "Date & Time".into(),
+                is_nullable: false,
+                is_primary_key: false,
+            },
+        ]
+    }
 
     #[test]
     fn display_config_response_serializes_with_branding() {
@@ -650,6 +800,103 @@ mod tests {
 
         let filters = parse_filters(&params);
         assert_eq!(filters["name"], "Hello World");
+    }
+
+    #[test]
+    fn parse_sort_param_accepts_multi_column_sort() {
+        let sort = parse_sort_param(
+            Some(" vehicle_id : asc , logged_at : DESC "),
+            &test_columns(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            sort,
+            vec![
+                SortEntry {
+                    column: "vehicle_id".into(),
+                    direction: SortDirection::Asc,
+                },
+                SortEntry {
+                    column: "logged_at".into(),
+                    direction: SortDirection::Desc,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_sort_param_treats_empty_sort_as_unsorted() {
+        assert!(parse_sort_param(None, &test_columns()).unwrap().is_empty());
+        assert!(
+            parse_sort_param(Some(""), &test_columns())
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn parse_sort_param_rejects_malformed_direction() {
+        let err = parse_sort_param(Some("id:sideways"), &test_columns()).unwrap_err();
+        assert!(err.to_string().contains("Invalid sort direction"));
+        assert!(err.to_string().contains("id:sideways"));
+    }
+
+    #[test]
+    fn parse_sort_param_rejects_malformed_column() {
+        let err = parse_sort_param(Some("id;drop table:asc"), &test_columns()).unwrap_err();
+        assert!(err.to_string().contains("Invalid sort column name"));
+    }
+
+    #[test]
+    fn parse_sort_param_rejects_duplicate_column() {
+        let err = parse_sort_param(Some("id:asc,id:desc"), &test_columns()).unwrap_err();
+        assert!(err.to_string().contains("Duplicate sort column"));
+    }
+
+    #[test]
+    fn parse_sort_param_rejects_trailing_comma() {
+        let err = parse_sort_param(Some("id:asc,"), &test_columns()).unwrap_err();
+        assert!(err.to_string().contains("empty segment"));
+    }
+
+    #[test]
+    fn parse_sort_param_truncates_long_segment_in_error_message() {
+        let long_column = "a".repeat(500);
+        let sort = format!("{long_column}:asc");
+        let err = parse_sort_param(Some(&sort), &test_columns()).unwrap_err();
+        let msg = err.to_string();
+        // Error should contain truncated value (64 chars + ellipsis), not the full 500-char input
+        assert!(msg.contains("…"), "expected ellipsis in: {msg}");
+        assert!(
+            msg.len() < 200,
+            "error message should be capped, got {} chars",
+            msg.len()
+        );
+    }
+
+    #[test]
+    fn reject_legacy_sort_params_flags_sort_column() {
+        let mut params = HashMap::new();
+        params.insert("sort_column".into(), "id".into());
+        let err = reject_legacy_sort_params(&params).unwrap_err();
+        assert_eq!(err.status, axum::http::StatusCode::BAD_REQUEST);
+        assert!(err.message.contains("sort_column"));
+    }
+
+    #[test]
+    fn reject_legacy_sort_params_flags_sort_direction() {
+        let mut params = HashMap::new();
+        params.insert("sort_direction".into(), "asc".into());
+        assert!(reject_legacy_sort_params(&params).is_err());
+    }
+
+    #[test]
+    fn reject_legacy_sort_params_passes_modern_params() {
+        let mut params = HashMap::new();
+        params.insert("sort".into(), "id:asc".into());
+        params.insert("page".into(), "1".into());
+        assert!(reject_legacy_sort_params(&params).is_ok());
     }
 
     #[test]

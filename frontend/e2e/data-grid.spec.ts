@@ -46,18 +46,19 @@ test.describe('Data Grid — Sorting', () => {
   });
 
   test('sort cycling: asc → desc → unsorted', async ({ page, seeki }) => {
-    // Get the first sortable column header (via ARIA role)
     const firstHeader = page.locator('[role="columnheader"]').first();
+    const firstHeaderState = firstHeader.locator('.sk-grid-header');
+    const sortGlyph = firstHeader.locator('.sk-grid-header__sort');
 
-    // Helper: read the text of the first data cell in the first column
     const getFirstCellText = async () => {
       const cell = page.locator('revo-grid [data-rgcol="0"][data-rgrow="0"]').first();
       if (await cell.count() === 0) return null;
       return (await cell.textContent())?.trim() ?? null;
     };
 
-    // Capture unsorted first cell for comparison
     const unsortedFirst = await getFirstCellText();
+
+    await expect(sortGlyph).toHaveCount(0);
 
     // Click 1: ascending — wait for sorted data to load
     let rowsLoaded = seeki.pendingRowsResponse();
@@ -65,23 +66,23 @@ test.describe('Data Grid — Sorting', () => {
     let rowsResponse = await rowsLoaded;
     expect(rowsResponse.request().url()).toContain('sort_direction=asc');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
+    await expect(sortGlyph).toHaveText('↑');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
     const ascFirst = await getFirstCellText();
 
-    // Click 2: descending — wait for sorted data to load
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     rowsResponse = await rowsLoaded;
     expect(rowsResponse.request().url()).toContain('sort_direction=desc');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/descending$/);
+    await expect(sortGlyph).toHaveText('↓');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'descending');
     const descFirst = await getFirstCellText();
 
-    // Verify sort actually changed the data order (asc and desc should differ
-    // unless all values are identical, which we skip for)
     if (ascFirst !== null && descFirst !== null && ascFirst !== descFirst) {
       expect(ascFirst).not.toBe(descFirst);
     }
 
-    // Click 3: back to unsorted — wait for data to reload
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     rowsResponse = await rowsLoaded;
@@ -89,12 +90,118 @@ test.describe('Data Grid — Sorting', () => {
     expect(rowsResponse.request().url()).not.toContain('sort_column=');
     // sort cleared — live region should be empty
     await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
+    await expect(sortGlyph).toHaveCount(0);
+    await expect(firstHeaderState).not.toHaveAttribute('aria-sort');
 
-    // Verify unsorted order is restored
     const restoredFirst = await getFirstCellText();
     if (unsortedFirst !== null && restoredFirst !== null) {
       expect(restoredFirst).toBe(unsortedFirst);
     }
+  });
+
+  test('multi-column sort renders rank superscripts and orders vehicle_logs deterministically', async ({
+    page,
+    seeki,
+  }) => {
+    const tableNames = await seeki.getSidebarTableNames();
+    const vehicleTableName = tableNames.find((name) => name.toLowerCase().includes('vehicle'));
+    test.skip(!vehicleTableName, 'Test requires the seeded vehicle_logs table');
+
+    await seeki.selectTable(vehicleTableName!);
+    await seeki.waitForGridLoaded();
+
+    const headers = page.locator('[role="columnheader"]');
+    const idHeader = headers.nth(0);
+    const vehicleHeader = headers.nth(1);
+
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await vehicleHeader.click();
+    await rowsLoaded;
+
+    rowsLoaded = seeki.pendingRowsResponse();
+    await idHeader.click();
+    await rowsLoaded;
+
+    rowsLoaded = seeki.pendingRowsResponse();
+    await idHeader.click();
+    await rowsLoaded;
+
+    const vehicleSort = vehicleHeader.locator('.sk-grid-header__sort');
+    const idSort = idHeader.locator('.sk-grid-header__sort');
+    await expect(vehicleSort).toHaveText('↑1');
+    await expect(vehicleSort).toHaveAttribute('aria-label', /priority 1 of 2/i);
+    await expect(idSort).toHaveText('↓2');
+    await expect(idSort).toHaveAttribute('aria-label', /priority 2 of 2/i);
+
+    const visibleIds = await Promise.all(
+      [0, 1, 2, 3, 4].map(async (rowIndex) => {
+        const cell = page.locator(`revo-grid [data-rgcol="0"][data-rgrow="${rowIndex}"]`).first();
+        return (await cell.textContent())?.trim() ?? '';
+      }),
+    );
+
+    expect(visibleIds).toEqual(['200', '195', '190', '185', '180']);
+  });
+
+  test('shift-click stacks a second sort column; non-shift click resets to single sort', async ({
+    page,
+    seeki,
+  }) => {
+    const headers = page.locator('[role="columnheader"]');
+    const headerCount = await headers.count();
+    test.skip(headerCount < 2, 'Test requires at least 2 columns');
+
+    const first = headers.nth(0);
+    const second = headers.nth(1);
+    const firstSort = first.locator('.sk-grid-header__sort');
+    const secondSort = second.locator('.sk-grid-header__sort');
+
+    // Sort column 0 ascending
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await first.click();
+    await rowsLoaded;
+    await expect(firstSort).toHaveText('↑');
+
+    // Shift-click column 1 → stacked sort, priority superscripts appear
+    rowsLoaded = seeki.pendingRowsResponse();
+    await second.click({ modifiers: ['Shift'] });
+    await rowsLoaded;
+    await expect(firstSort).toHaveText('↑1');
+    await expect(secondSort).toHaveText('↑2');
+
+    // Non-shift click on a 3rd column (or same col 1 without shift) should drop the stack
+    // to a single-column sort — ranks disappear.
+    rowsLoaded = seeki.pendingRowsResponse();
+    const target = headerCount >= 3 ? headers.nth(2) : first;
+    await target.click();
+    await rowsLoaded;
+    // After reset there should be exactly one sorted header. Glyph should not contain a rank digit.
+    const anyRanked = page.locator('.sk-grid-header__sort-rank');
+    await expect(anyRanked).toHaveCount(0);
+  });
+
+  test('toolbar sort-count badge appears and clears all sorts', async ({ page, seeki }) => {
+    const firstHeader = page.locator('[role="columnheader"]').first();
+
+    // No sort → no sort tool button
+    let sortClearButton = page.locator('button.tool-button[aria-label*="Sorted by"]');
+    await expect(sortClearButton).toHaveCount(0);
+
+    // Apply a sort
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await firstHeader.click();
+    await rowsLoaded;
+
+    // Toolbar sort button should appear with count = 1
+    sortClearButton = page.locator('button.tool-button[aria-label*="Sorted by 1 column"]');
+    await expect(sortClearButton).toBeVisible();
+
+    // Click it → sort cleared, button disappears
+    rowsLoaded = seeki.pendingRowsResponse();
+    await sortClearButton.click();
+    await rowsLoaded;
+    await expect(page.locator('button.tool-button[aria-label*="Sorted by"]')).toHaveCount(0);
+    await expect(firstHeader.locator('.sk-grid-header__sort')).toHaveCount(0);
   });
 });
 

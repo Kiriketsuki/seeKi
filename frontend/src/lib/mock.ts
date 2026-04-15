@@ -429,8 +429,7 @@ export function mockFetchRows(
   params?: {
     page?: number;
     page_size?: number;
-    sort_column?: string;
-    sort_direction?: string;
+    sort?: string;
     search?: string;
     filters?: Record<string, string>;
   },
@@ -466,19 +465,9 @@ export function mockFetchRows(
     }
   }
 
-  if (params?.sort_column) {
-    const col = params.sort_column;
-    const dir = params?.sort_direction === 'desc' ? -1 : 1;
-    rows.sort((a, b) => {
-      const av = a[col];
-      const bv = b[col];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (av < bv) return -dir;
-      if (av > bv) return dir;
-      return 0;
-    });
+  const sortEntries = parseSortParam(params?.sort);
+  if (sortEntries.length > 0) {
+    rows.sort((a, b) => compareRowsBySortState(a, b, sortEntries));
   }
 
   const filteredTotal = rows.length;
@@ -492,6 +481,68 @@ export function mockFetchRows(
     page,
     page_size: pageSize,
   };
+}
+
+type MockSortEntry = {
+  column: string;
+  direction: 'asc' | 'desc';
+};
+
+function parseSortParam(sort?: string): MockSortEntry[] {
+  if (sort == null) {
+    return [];
+  }
+
+  const trimmed = sort.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  return trimmed.split(',').flatMap((segment) => {
+    const cleaned = segment.trim();
+    if (cleaned.length === 0) {
+      return [];
+    }
+
+    const [columnPart, directionPart] = cleaned.split(':');
+    if (!columnPart || !directionPart) {
+      return [];
+    }
+
+    const column = columnPart.trim();
+    const direction = directionPart.trim().toLowerCase();
+    if (!column || (direction !== 'asc' && direction !== 'desc')) {
+      return [];
+    }
+
+    return [{ column, direction }];
+  });
+}
+
+function compareScalarValues(a: unknown, b: unknown): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  const left = a as any;
+  const right = b as any;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function compareRowsBySortState(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  sortEntries: MockSortEntry[],
+): number {
+  for (const { column, direction } of sortEntries) {
+    const result = compareScalarValues(a[column], b[column]);
+    if (result !== 0) {
+      return direction === 'asc' ? result : -result;
+    }
+  }
+
+  return 0;
 }
 
 export function mockFetchDisplayConfig(): DisplayConfig {
