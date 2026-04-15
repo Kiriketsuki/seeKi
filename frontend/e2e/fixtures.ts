@@ -60,11 +60,14 @@ export class SeekiHelpers {
 
   /** Wait for the app to finish loading (spinner gone, grid or wizard visible). */
   async waitForAppReady(): Promise<void> {
-    // Wait for either the grid layout or the setup wizard to be visible
+    // Wait for either the main grid layout or the setup wizard to be visible.
+    // .grid-area renders unconditionally in the non-setup branch, so it resolves
+    // before table auto-selection completes (unlike .action-dock which is gated
+    // on {#if selectedTable}).
     await this.page.waitForFunction(() => {
-      const dock = document.querySelector('.action-dock');
+      const gridArea = document.querySelector('.grid-area');
       const wizard = document.querySelector('[aria-label="Setup wizard"]');
-      return dock !== null || wizard !== null;
+      return gridArea !== null || wizard !== null;
     }, { timeout: 15_000 });
   }
 
