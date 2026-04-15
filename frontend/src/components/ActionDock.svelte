@@ -442,6 +442,11 @@
     background: rgba(0, 169, 165, 0.14);
   }
 
+  .dock-button:focus-visible {
+    outline: 2px solid var(--sk-accent);
+    outline-offset: 2px;
+  }
+
   .dock-button:disabled {
     opacity: 0.45;
     cursor: not-allowed;

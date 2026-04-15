@@ -62,7 +62,7 @@
   --sk-dock-height: 40px;
   --sk-dock-inset: 20px;
   --sk-dock-panel-width: 560px;
-  --sk-dock-clearance: 108px;
+  --sk-dock-clearance: 108px; /* dock-height(40) + dock-inset(20) + panel-padding-budget(48) */
 
   /* Zebra striping */
   --sk-row-alt: rgba(245, 240, 235, 0.3);
