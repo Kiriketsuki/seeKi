@@ -107,7 +107,9 @@ async fn set_last_used(
     if filter_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
-    if body.search_term.as_deref().is_some_and(|s| s.len() > MAX_VALUE_BYTES) {
+    let search_term_json = serde_json::to_string(&body.search_term)
+        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    if search_term_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
     let conn_id = require_conn_id(&mode).await?;
@@ -522,6 +524,105 @@ mod tests {
         let req = Request::builder()
             .method("POST")
             .uri("/preferences/presets/last-used/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn ui_state_reject_oversized_value() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let big_value = "x".repeat(65 * 1024);
+        let body = serde_json::json!({ "value": big_value }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/ui-state/my_key")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn last_used_reject_oversized_filters() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let body =
+            serde_json::json!({ "sort_columns": [], "filters": "x".repeat(65 * 1024) })
+                .to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/last-used/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn last_used_reject_oversized_search_term() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let big_term = "x".repeat(65 * 1024);
+        let body =
+            serde_json::json!({ "sort_columns": [], "filters": {}, "search_term": big_term })
+                .to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/last-used/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn sort_preset_reject_oversized_columns() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let big_columns = "x".repeat(65 * 1024);
+        let body = serde_json::json!({ "name": "my_preset", "columns": big_columns }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/sort/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn filter_preset_reject_oversized_filters() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let big_filters = "x".repeat(65 * 1024);
+        let body =
+            serde_json::json!({ "name": "my_preset", "filters": big_filters }).to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/filter/public/vehicles")
             .header("content-type", "application/json")
             .body(Body::from(body))
             .unwrap();
