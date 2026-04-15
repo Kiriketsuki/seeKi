@@ -130,3 +130,28 @@ export interface SetupSaveResponse {
   success: boolean;
   error?: string;
 }
+
+// ── Preferences / Store Types ───────────────────────────────────────────────
+
+export interface SortColumn {
+  col: string;
+  dir: SortDirection;
+}
+
+export interface SortPreset {
+  id: number;
+  name: string;
+  columns: SortColumn[];
+}
+
+export interface FilterPreset {
+  id: number;
+  name: string;
+  filters: FilterState;
+}
+
+export interface LastUsedTableState {
+  sort_columns: SortColumn[];
+  filters: FilterState;
+  search_term: string | null;
+}
