@@ -216,6 +216,7 @@ jobs:
       - metadata
       - build
     runs-on: ubuntu-latest
+    if: github.ref_name == 'release' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
