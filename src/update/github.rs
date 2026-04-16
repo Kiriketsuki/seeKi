@@ -324,8 +324,9 @@ async fn fetch_newest_prerelease(
         .await?
         .error_for_status()?;
     let releases: Vec<GitHubRelease> = resp.json().await?;
-    // The first entry from the list endpoint is the most recent release
-    Ok(releases.into_iter().next())
+    // Filter to only prereleases — otherwise we'd return stable releases to
+    // prerelease-channel users whenever a stable is published after a prerelease.
+    Ok(releases.into_iter().find(|r| r.prerelease))
 }
 
 #[cfg(test)]

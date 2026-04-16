@@ -249,12 +249,15 @@ pub async fn apply_update(
             // Require the SHA256 sidecar to be present in the release manifest
             // before downloading anything — fail fast if the release is incomplete.
             let sha256_asset_name = format!("{}.sha256", &asset.name);
-            let has_sha256_asset = release.assets.iter().any(|a| a.name == sha256_asset_name);
-            if !has_sha256_asset {
-                return Err(AppError::bad_request(
-                    "Release is missing a SHA256 sidecar — refusing to apply an unverified binary",
-                ));
-            }
+            let sha256_asset = release
+                .assets
+                .iter()
+                .find(|a| a.name == sha256_asset_name)
+                .ok_or_else(|| {
+                    AppError::bad_request(
+                        "Release is missing a SHA256 sidecar — refusing to apply an unverified binary",
+                    )
+                })?;
 
             // Download the binary into memory and hash it in one streaming pass.
             // This eliminates both the TOCTOU window (no double-read of a temp
@@ -266,8 +269,9 @@ pub async fn apply_update(
                 .map_err(|e| AppError::bad_request(format!("Download failed: {e}")))?;
 
             // Download and compare the expected SHA256 sidecar.
-            let sha256_url = format!("{}.sha256", &asset.browser_download_url);
-            let expected_sha256 = github::download_sha256(&sha256_url).await.map_err(|e| {
+            // Use the actual URL from the manifest rather than constructing it.
+            let sha256_url = &sha256_asset.browser_download_url;
+            let expected_sha256 = github::download_sha256(sha256_url).await.map_err(|e| {
                 AppError::bad_request(format!(
                     "SHA256 sidecar exists but download failed — aborting for safety: {e}"
                 ))
