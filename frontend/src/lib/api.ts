@@ -184,9 +184,9 @@ export async function fetchConnectionStatus(): Promise<ConnectionStatusResponse>
   return data;
 }
 
-export async function fetchVersion(): Promise<VersionResponse> {
+export async function fetchVersion(): Promise<VersionInfo> {
   if (USE_MOCK) return mockFetchVersion();
-  const data = await apiFetch<VersionResponse>('/api/version');
+  const data = await apiFetch<VersionInfo>('/api/version');
   assertShape(data, ['version', 'commit', 'built_at'], '/api/version');
   return data;
 }
@@ -254,10 +254,10 @@ function isApiStatusError(error: unknown, status: number): boolean {
   return error instanceof Error && error.message.startsWith(`API error ${status}`);
 }
 
-export async function fetchUpdateStatus(): Promise<UpdateStatusResponse | null> {
+export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
   if (USE_MOCK) return mockFetchUpdateStatus();
   try {
-    const data = await apiFetch<UpdateStatusResponse>('/api/update/status');
+    const data = await apiFetch<UpdateStatus>('/api/update/status');
     assertShape(
       data,
       ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
@@ -272,9 +272,9 @@ export async function fetchUpdateStatus(): Promise<UpdateStatusResponse | null> 
   }
 }
 
-export async function checkForUpdates(): Promise<UpdateStatusResponse | null> {
+export async function checkForUpdates(): Promise<UpdateStatus | null> {
   try {
-    const data = await apiPost<UpdateStatusResponse>('/api/update/check', {});
+    const data = await apiPost<UpdateStatus>('/api/update/check', {});
     assertShape(
       data,
       ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
@@ -402,14 +402,6 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
 }
 
 // ── Update Patcher API ──────────────────────────────────────────────────
-
-export async function fetchVersion(): Promise<VersionInfo> {
-  return apiFetch<VersionInfo>('/api/version');
-}
-
-export async function fetchUpdateStatus(): Promise<UpdateStatus> {
-  return apiFetch<UpdateStatus>('/api/update/status');
-}
 
 export async function checkForUpdate(): Promise<CheckResult> {
   const controller = new AbortController();

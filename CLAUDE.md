@@ -72,11 +72,7 @@ Uses Rust edition **2024** (`Cargo.toml`). This requires rustc 1.85+.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-<<<<<<< HEAD
-This project is indexed by GitNexus as **seeKi** (686 symbols, 1346 relationships, 52 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-=======
-This project is indexed by GitNexus as **seeKi** (651 symbols, 1349 relationships, 48 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
->>>>>>> 9d06c4a (feat(settings): add settings page with controls, preferences, and branding)
+This project is indexed by GitNexus as **seeKi** (947 symbols, 2082 relationships, 73 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

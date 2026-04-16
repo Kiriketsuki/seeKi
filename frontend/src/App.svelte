@@ -27,6 +27,27 @@
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import { sidebarMode } from './lib/stores';
+
+  function setSidebarMode(mode: SidebarMode) {
+    sidebarMode.set(mode);
+  }
+
+  function clearModeShortcut() {
+    if (modeShortcutId !== null) {
+      clearTimeout(modeShortcutId);
+      modeShortcutId = null;
+    }
+    pendingModeShortcut = null;
+  }
+
+  function armModeShortcut() {
+    clearModeShortcut();
+    pendingModeShortcut = 'g';
+    modeShortcutId = setTimeout(() => {
+      pendingModeShortcut = null;
+      modeShortcutId = null;
+    }, 1000);
+  }
   import {
     buildAppearanceSettingsEntries,
     buildBrandingSettingsEntries,
@@ -120,7 +141,7 @@
       // Non-critical: check for update availability in the background
       fetchUpdateStatus().then(status => {
         updateStatus = status;
-        updateAvailable = status.update_available;
+        if (status !== null) updateAvailable = status.update_available;
       }).catch(() => {}); // silently fail — update check is non-critical
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to connect to database';
@@ -362,7 +383,7 @@
     const storageKey = `${table.schema}.${table.name}`;
 
     // Fetch columns and last-used state in parallel; rows depend on last-used state.
-    let initialSortState: SortState = { column: null, direction: null };
+    let initialSortState: SortState = [];
     let initialFilters: FilterState = {};
     let initialSearch = '';
 
@@ -374,11 +395,8 @@
       if (myRequest !== selectRequestId) return;
 
       if (lastUsed) {
-        // Restore last-used sort: multi-column → use first entry as single-column sort
-        const firstSort = lastUsed.sort_columns[0] ?? null;
-        initialSortState = firstSort
-          ? { column: firstSort.col, direction: firstSort.dir }
-          : { column: null, direction: null };
+        // Restore last-used sort: convert SortColumn[] → SortEntry[]
+        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({ column: col, direction: dir }));
         initialFilters = lastUsed.filters;
         initialSearch = lastUsed.search_term ?? '';
       }
@@ -421,10 +439,7 @@
     clearLastUsedSaveDebounce();
     lastUsedSaveId = setTimeout(() => {
       lastUsedSaveId = null;
-      const sortCols: SortColumn[] =
-        nextSortState.column && nextSortState.direction
-          ? [{ col: nextSortState.column, dir: nextSortState.direction }]
-          : [];
+      const sortCols: SortColumn[] = nextSortState.map(({ column, direction }) => ({ col: column, dir: direction }));
       void saveLastUsedState(schema, table, {
         sort_columns: sortCols,
         filters: nextFilters,

@@ -60,7 +60,7 @@
       fetchUpdateStatus()
         .then((s) => {
           status = s;
-          onStatusChange?.(s);
+          if (s !== null) onStatusChange?.(s);
         })
         .catch((e) => {
           console.warn('Failed to fetch update status:', e);
@@ -140,7 +140,7 @@
       // Refresh status
       const s = await fetchUpdateStatus();
       status = s;
-      onStatusChange?.(s);
+      if (s !== null) onStatusChange?.(s);
       if (result.update_available) {
         successMsg = `Update available: ${result.latest}`;
       } else {

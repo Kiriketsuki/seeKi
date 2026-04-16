@@ -2,9 +2,9 @@
   import { onMount } from 'svelte';
   import PanelFrame from './PanelFrame.svelte';
   import { checkForUpdates, fetchUpdateStatus } from '../../lib/api';
-  import type { UpdateStatusResponse } from '../../lib/types';
+  import type { UpdateStatus } from '../../lib/types';
 
-  let status = $state<UpdateStatusResponse | null>(null);
+  let status = $state<UpdateStatus | null>(null);
   let loading = $state(true);
   let checking = $state(false);
   let error = $state('');
