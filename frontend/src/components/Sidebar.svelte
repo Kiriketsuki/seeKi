@@ -75,12 +75,14 @@
 
   {#if showModeSwitch}
     {#if collapsed}
-      <div class="collapsed-modes" aria-label="Workspace mode">
+      <div class="collapsed-modes" class:settings-active={mode === 'settings'} aria-label="Workspace mode">
         <button
           type="button"
           class="mode-icon"
           class:active={mode === 'tables'}
           aria-label="Show tables workspace"
+          aria-selected={mode === 'tables'}
+          role="tab"
           onclick={() => selectMode('tables')}
         >
           <LayoutGrid size={16} />
@@ -90,6 +92,8 @@
           class="mode-icon"
           class:active={mode === 'settings'}
           aria-label="Show settings workspace"
+          aria-selected={mode === 'settings'}
+          role="tab"
           onclick={() => selectMode('settings')}
         >
           <span class="badge-wrapper">
@@ -101,11 +105,13 @@
         </button>
       </div>
     {:else}
-      <div class="mode-switch" role="tablist" aria-label="Workspace mode">
+      <div class="mode-switch" class:settings-active={mode === 'settings'} role="tablist" aria-label="Workspace mode">
         <button
           type="button"
           class="mode-button"
           class:active={mode === 'tables'}
+          role="tab"
+          aria-selected={mode === 'tables'}
           onclick={() => selectMode('tables')}
         >
           Tables
@@ -114,6 +120,8 @@
           type="button"
           class="mode-button"
           class:active={mode === 'settings'}
+          role="tab"
+          aria-selected={mode === 'settings'}
           onclick={() => selectMode('settings')}
         >
           <span class="badge-wrapper">
@@ -239,28 +247,52 @@
   }
 
   .mode-switch {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: var(--sk-space-xs);
-    padding: var(--sk-space-sm);
-    border-bottom: 1px solid var(--sk-border-light);
+    padding: var(--sk-space-xs);
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: var(--sk-radius-lg);
+    margin: var(--sk-space-sm) var(--sk-space-sm) 0;
+  }
+
+  .mode-switch::before {
+    content: '';
+    position: absolute;
+    top: var(--sk-space-xs);
+    left: var(--sk-space-xs);
+    width: calc(50% - var(--sk-space-xs) * 1.5);
+    height: calc(100% - var(--sk-space-xs) * 2);
+    background: rgba(255, 149, 0, 0.18);
+    border-radius: var(--sk-radius-md);
+    box-shadow: 0 1px 3px rgba(255, 149, 0, 0.15);
+    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+  }
+
+  .mode-switch.settings-active::before {
+    transform: translateX(calc(100% + var(--sk-space-xs)));
   }
 
   .mode-button {
+    position: relative;
+    z-index: 1;
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.55);
+    background: transparent;
     color: var(--sk-secondary-strong);
     padding: var(--sk-space-sm);
     font: inherit;
     font-weight: 500;
+    transition: color 150ms ease;
   }
 
   .mode-button.active {
-    background: rgba(255, 149, 0, 0.16);
     color: var(--sk-text);
   }
 
   .collapsed-modes {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-xs);
@@ -268,18 +300,46 @@
     border-bottom: 1px solid var(--sk-border-light);
   }
 
+  .collapsed-modes::before {
+    content: '';
+    position: absolute;
+    top: var(--sk-space-sm);
+    left: 50%;
+    transform: translateX(-50%) translateY(0);
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 149, 0, 0.18);
+    border-radius: var(--sk-radius-md);
+    box-shadow: 0 1px 3px rgba(255, 149, 0, 0.15);
+    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+  }
+
+  .collapsed-modes.settings-active::before {
+    transform: translateX(-50%) translateY(calc(32px + var(--sk-space-xs)));
+  }
+
   .mode-icon {
+    position: relative;
+    z-index: 1;
     width: 32px;
     height: 32px;
     margin: 0 auto;
     border-radius: var(--sk-radius-md);
     background: transparent;
     color: var(--sk-secondary-strong);
+    transition: color 150ms ease;
   }
 
   .mode-icon.active {
-    background: rgba(255, 149, 0, 0.16);
     color: var(--sk-text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mode-switch::before,
+    .collapsed-modes::before {
+      transition: none;
+    }
   }
 
   .badge-wrapper {

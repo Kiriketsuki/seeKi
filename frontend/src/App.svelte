@@ -680,94 +680,102 @@
       showModeSwitch={true}
     >
       {#if !sidebarCollapsed}
-        {#if $sidebarMode === 'tables'}
-          <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
-        {:else}
-          <SettingsNav />
-        {/if}
+        {#key $sidebarMode}
+          <div class="sidebar-panel-enter">
+            {#if $sidebarMode === 'tables'}
+              <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+            {:else}
+              <SettingsNav />
+            {/if}
+          </div>
+        {/key}
       {/if}
     </Sidebar>
-    {#if $sidebarMode === 'tables'}
-      <main class="main">
-        <div class="table-panel">
-          <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
-        </div>
-        {#if tableError}
-          <div class="table-error-banner">
-            <span>{tableError}</span>
-            <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
-          </div>
-        {/if}
-        <div class="grid-area">
-          <div class="grid-shell">
-            <div class="grid-content">
-              <DataGrid
-                columns={visibleColumns}
-                rows={queryResult?.rows ?? []}
-                dateFormat={appearanceSettings.dateFormat}
-                {sortState}
-                {filters}
-                {filtersVisible}
-                onSortChange={handleSortChange}
-                onFilterChange={handleFilterChange}
-              />
+    {#key $sidebarMode}
+      <div class="main-panel-enter">
+        {#if $sidebarMode === 'tables'}
+          <main class="main">
+            <div class="table-panel">
+              <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
             </div>
-            {#if selectedTable}
-              <ActionDock
-                searchVisible={searchVisible}
-                searchTerm={searchTerm}
-                searchActive={searchActive}
-                filtersVisible={filtersVisible}
-                activeFilterCount={activeFilterCount}
-                columnsOpen={columnsOpen}
-                columns={columns}
-                columnVisibility={columnVisibility}
-                hiddenColumnCount={hiddenColumnCount}
-                hasTable={!!selectedTable}
-                disabled={tableLoading}
-                sortState={sortState}
-                onToggleSearch={toggleSearch}
-                onSearchInput={handleSearchInput}
-                onSearchClear={handleSearchClear}
-                onToggleFilters={toggleFilters}
-                onToggleColumns={toggleColumns}
-                onToggleColumnVisibility={handleToggleColumnVisibility}
-                onShowAllColumns={handleShowAllColumns}
-                onCloseColumns={closeColumns}
-                onExport={exportCsv}
-                onSearchInputRef={setSearchInputEl}
-                onSearchButtonRef={setSearchButtonEl}
-                onColumnsButtonRef={setColumnsButtonEl}
-                onFilterButtonRef={setFilterButtonEl}
-              />
-            {/if}
-            {#if tableLoading}
-              <div class="grid-loading">
-                <div class="loading-spinner"></div>
+            {#if tableError}
+              <div class="table-error-banner">
+                <span>{tableError}</span>
+                <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
               </div>
             {/if}
-          </div>
-        </div>
-        <StatusBar
-          total={queryResult?.total_rows ?? 0}
-          start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
-          end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
-          page={queryResult?.page ?? 1}
-          totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
-          loading={tableLoading}
-          onPageChange={goToPage}
-        />
-      </main>
-    {:else}
-      <main class="main settings-main">
-        <SettingsContent
-          branding={brandingSettings}
-          appearance={appearanceSettings}
-          onSaveBranding={handleSaveBranding}
-          onSaveAppearance={handleSaveAppearance}
-        />
-      </main>
-    {/if}
+            <div class="grid-area">
+              <div class="grid-shell">
+                <div class="grid-content">
+                  <DataGrid
+                    columns={visibleColumns}
+                    rows={queryResult?.rows ?? []}
+                    dateFormat={appearanceSettings.dateFormat}
+                    {sortState}
+                    {filters}
+                    {filtersVisible}
+                    onSortChange={handleSortChange}
+                    onFilterChange={handleFilterChange}
+                  />
+                </div>
+                {#if selectedTable}
+                  <ActionDock
+                    searchVisible={searchVisible}
+                    searchTerm={searchTerm}
+                    searchActive={searchActive}
+                    filtersVisible={filtersVisible}
+                    activeFilterCount={activeFilterCount}
+                    columnsOpen={columnsOpen}
+                    columns={columns}
+                    columnVisibility={columnVisibility}
+                    hiddenColumnCount={hiddenColumnCount}
+                    hasTable={!!selectedTable}
+                    disabled={tableLoading}
+                    sortState={sortState}
+                    onToggleSearch={toggleSearch}
+                    onSearchInput={handleSearchInput}
+                    onSearchClear={handleSearchClear}
+                    onToggleFilters={toggleFilters}
+                    onToggleColumns={toggleColumns}
+                    onToggleColumnVisibility={handleToggleColumnVisibility}
+                    onShowAllColumns={handleShowAllColumns}
+                    onCloseColumns={closeColumns}
+                    onExport={exportCsv}
+                    onSearchInputRef={setSearchInputEl}
+                    onSearchButtonRef={setSearchButtonEl}
+                    onColumnsButtonRef={setColumnsButtonEl}
+                    onFilterButtonRef={setFilterButtonEl}
+                  />
+                {/if}
+                {#if tableLoading}
+                  <div class="grid-loading">
+                    <div class="loading-spinner"></div>
+                  </div>
+                {/if}
+              </div>
+            </div>
+            <StatusBar
+              total={queryResult?.total_rows ?? 0}
+              start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
+              end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
+              page={queryResult?.page ?? 1}
+              totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
+              loading={tableLoading}
+              onPageChange={goToPage}
+            />
+          </main>
+        {:else}
+          <main class="main settings-main">
+            <SettingsContent
+              branding={brandingSettings}
+              appearance={appearanceSettings}
+              onSaveBranding={handleSaveBranding}
+              onSaveAppearance={handleSaveAppearance}
+            />
+          </main>
+        {/if}
+      </div>
+    {/key}
   </div>
   <SettingsPanel
     bind:open={settingsOpen}
@@ -782,6 +790,18 @@
     height: 100vh;
     width: 100vw;
     overflow: hidden;
+  }
+
+  .sidebar-panel-enter {
+    animation: sk-fade-in 180ms ease-out;
+  }
+
+  .main-panel-enter {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    animation: sk-fade-in 200ms ease-out;
   }
 
   .main {
