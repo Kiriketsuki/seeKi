@@ -57,7 +57,14 @@ async fn main() -> anyhow::Result<()> {
         let guard = mode.read().await;
         match &*guard {
             AppMode::Normal(state) => {
-                format!("{}:{}", state.config.server.host, state.config.server.port)
+                let host = state.config.server.host.trim();
+                let port = state.config.server.port;
+                if host.is_empty() || port == 0 {
+                    tracing::warn!("server.host or server.port is blank in config — falling back to 127.0.0.1:3141");
+                    "127.0.0.1:3141".to_string()
+                } else {
+                    format!("{host}:{port}")
+                }
             }
             AppMode::Setup => {
                 std::env::var("SEEKI_BIND").unwrap_or_else(|_| "127.0.0.1:3141".to_string())
