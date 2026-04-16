@@ -119,6 +119,10 @@ impl UpdateToken {
         result == 0
     }
 
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
     /// Return the canonical path where the token is stored.
     pub fn default_path() -> PathBuf {
         dirs_next::config_dir()
@@ -169,6 +173,12 @@ mod tests {
     fn verify_rejects_empty_candidate() {
         let t = UpdateToken("abc123".to_string());
         assert!(!t.verify(""));
+    }
+
+    #[test]
+    fn expose_returns_token_value() {
+        let t = UpdateToken("abc123".to_string());
+        assert_eq!(t.expose(), "abc123");
     }
 
     #[test]

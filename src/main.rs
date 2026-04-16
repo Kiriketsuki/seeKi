@@ -60,7 +60,9 @@ async fn main() -> anyhow::Result<()> {
                 let host = state.config.server.host.trim();
                 let port = state.config.server.port;
                 if host.is_empty() || port == 0 {
-                    tracing::warn!("server.host or server.port is blank in config — falling back to 127.0.0.1:3141");
+                    tracing::warn!(
+                        "server.host or server.port is blank in config — falling back to 127.0.0.1:3141"
+                    );
                     "127.0.0.1:3141".to_string()
                 } else {
                     format!("{host}:{port}")
@@ -80,17 +82,7 @@ async fn main() -> anyhow::Result<()> {
     // TTL: 24h.
     crate::update::wip::sweep_stale_uploads(std::time::Duration::from_secs(24 * 60 * 60));
 
-    // Spawn a non-blocking background check for updates
-    {
-        let update_bg = Arc::clone(&update_state);
-        tokio::spawn(async move {
-            let pre = {
-                let s = update_bg.settings.lock().await;
-                s.pre_release_channel
-            };
-            let _ = crate::update::github::check_latest(&update_bg.cache, pre, false).await;
-        });
-    }
+    crate::update::poller::spawn_update_poller(Arc::clone(&update_state));
 
     let shutdown = std::sync::Arc::clone(&update_state.shutdown);
 

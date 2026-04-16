@@ -141,20 +141,16 @@ export interface VersionInfo {
   built_at: string;
 }
 
+export type UpdatePollIntervalHours = 0 | 1 | 6 | 24;
+
 export interface UpdateStatus {
   current: string;
   latest: string | null;
   pre_release_channel: boolean;
+  poll_interval_hours: UpdatePollIntervalHours;
   update_available: boolean;
   previous_exists: boolean;
   last_checked: string | null;
-}
-
-export interface CheckResult {
-  current: string;
-  latest: string | null;
-  update_available: boolean;
-  assets: { name: string; size: number; url: string }[];
   release_notes: string | null;
 }
 
@@ -237,19 +233,4 @@ export interface ConnectionStatusResponse {
   schemas: string[];
   ssh_enabled: boolean;
   ssh_connected: boolean;
-}
-
-export interface VersionResponse {
-  version: string;
-  commit: string;
-  built_at: string;
-}
-
-export interface UpdateStatusResponse {
-  current: string;
-  latest: string | null;
-  pre_release_channel: boolean;
-  update_available: boolean;
-  previous_exists: boolean;
-  last_checked: string;
 }

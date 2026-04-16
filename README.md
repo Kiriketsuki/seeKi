@@ -4,7 +4,7 @@
 
 # SeeKi
 
-![version-26.5.0.3a-blue](https://img.shields.io/badge/version-26.5.0.1-blue)
+![version-26.5.0.3a-blue](https://img.shields.io/badge/version-26.5.0.3a-blue)
 [![CI](https://github.com/Kiriketsuki/seeKi/actions/workflows/ci.yml/badge.svg)](https://github.com/Kiriketsuki/seeKi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 ![Rust](https://img.shields.io/badge/Rust-2024_edition-orange?logo=rust)
@@ -80,6 +80,35 @@ cargo build --release
 ```
 
 Open `http://127.0.0.1:3141` in your browser. If no config file exists, the setup wizard will guide you through connecting to your database.
+
+## Release Artifacts and Auto-Update
+
+GitHub Releases publish exactly six runtime assets:
+
+- `seeki-x86_64-linux-musl`
+- `seeki-x86_64-linux-musl.sha256`
+- `seeki-x86_64-darwin`
+- `seeki-x86_64-darwin.sha256`
+- `seeki-aarch64-darwin`
+- `seeki-aarch64-darwin.sha256`
+
+The in-app updater currently supports these release platforms:
+
+- Linux `x86_64` via the musl binary
+- macOS Intel via `seeki-x86_64-darwin`
+- macOS Apple Silicon via `seeki-aarch64-darwin`
+
+Stable releases are published from the `release` branch. Prerelease builds are published automatically from `task/*`, `feature/*`, `bug/*`, and `hotfix/*` branches, and can also be produced with `workflow_dispatch`. Those prerelease tags are derived from the checked-out workspace version in CI and are not committed back to the source branch.
+
+Each binary ships with a matching `.sha256` sidecar. The updater expects that exact naming convention when verifying downloads before swap/apply.
+
+### macOS quarantine workaround
+
+SeeKi's macOS binaries are currently unsigned. If Gatekeeper blocks the downloaded binary, remove the quarantine attribute and rerun it:
+
+```bash
+xattr -d com.apple.quarantine /path/to/seeki
+```
 
 ## Configuration
 

@@ -1,465 +1,491 @@
 # Feature: Auto-Update System + Multi-Platform CI Release Pipeline
 
-## Context
+## Purpose
 
-SeeKi already ships a well-designed update module (`src/update/`) with secure
-SHA256-verified downloads, atomic binary swap, rollback, bearer-token auth, and
-ELF validation. All mutating API endpoints (`/apply`, `/rollback`, `/wip`) and
-the status/check endpoints are already wired in `src/api/update.rs` and
-`src/api/mod.rs`.
+Finish the update feature that already exists in pieces across the repo so that:
 
-However, three critical gaps prevent the update flow from working end-to-end:
+- GitHub Releases always contain installable binaries and matching `.sha256` sidecars
+- running SeeKi instances discover new releases without a browser reload
+- the current Settings workspace can apply and roll back updates without terminal access
 
-1. **CI builds no binaries.** `.github/workflows/release.yml` creates GitHub
-   Releases but uploads zero artifacts. `select_asset()` finds nothing to
-   download, so the auto-update path is inert.
-2. **`select_asset()` is Linux-only.** Currently hardcoded to
-   `seeki-x86_64-linux-musl` / `-gnu`. SeeKi will ship to macOS too.
-3. **Frontend can't drive the patcher.** `UpdatesPanel.svelte` is a placeholder
-   with disabled buttons and a literal "patcher backend unavailable" message,
-   even though the backend is live. Mutating endpoints require a bearer token
-   that the frontend has no way to fetch.
-
-Additionally, the one-shot background check in `main.rs` runs only at startup
-and never re-polls, so a browser left open overnight will never notice a new
-release.
-
-This spec delivers the CI pipeline + the frontend wiring + the small Rust
-deltas needed to close these gaps.
+This is a spec for implementation work only. It does not change the product intent that was already approved.
 
 ---
 
-## Overview
+## Current Repo Reality
 
-**User Story**: As a SeeKi user (sg-server operator today, external customer
-tomorrow), I want my running instance to check for, download, and apply new
-releases from one click in Settings, so I don't need terminal access or
-SSH-into-the-box knowledge to stay current.
+The spec needs to align with what is already in the repo today:
 
-**Problem**: The update subsystem is ~80% built but never reaches the user: CI
-ships no binaries for the downloader to find, the frontend has disabled
-buttons, and the poller is one-shot. Deploying a new build today requires
-manual scp, kill, and pray-systemd-restarts — exactly what SeeKi is meant to
-abolish for its non-technical users.
+- `.github/workflows/release.yml` creates tags and GitHub Releases, but uploads no binaries or checksums.
+- that workflow hardcodes `actions/checkout` to `ref: release`, so any future non-`release` trigger would currently build the wrong branch.
+- `src/update/github.rs` only selects Linux assets today via `select_asset()`.
+- `src/main.rs` performs a single background update check at startup and never schedules another one.
+- `src/update/github.rs` uses a single shared release cache entry, so switching `pre_release_channel` can reuse stale data for up to 15 minutes.
+- `src/api/update.rs` already exposes `/api/update/status`, `/api/update/check`, `/api/update/apply`, `/api/update/rollback`, `/api/update/wip`, and mutating endpoints are already protected by a bearer token.
+- there is no frontend bootstrap path for that bearer token yet.
+- the current in-app settings route renders [`frontend/src/components/settings/UpdatesPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/settings/UpdatesPanel.svelte), and that component is still a placeholder.
+- a legacy modal [`frontend/src/components/SettingsPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsPanel.svelte) already contains much of the desired update UX, but it is not the primary settings surface and its mutating calls still lack auth headers.
+- [`frontend/src/lib/api.ts`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/lib/api.ts) currently has duplicate update helpers (`checkForUpdates` and `checkForUpdate`) with conflicting response expectations.
+- [`frontend/src/components/Sidebar.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/Sidebar.svelte) and [`frontend/src/components/SettingsNav.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsNav.svelte) already support update badges via props, but [`frontend/src/App.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/App.svelte) does not wire those props through yet.
 
-**Out of Scope**:
-- Signed releases (GPG/cosign signatures). SHA256 sidecar is the trust anchor.
-- Delta updates / binary patching. Full-binary replacement is acceptable at
-  ~15 MB.
-- Automatic self-restart when no service manager runs the binary. If the user
-  started seeki manually via `./seeki`, apply succeeds but the restart is
-  their responsibility.
-- Windows target. macOS + Linux musl only for v1.
-- Customer-facing update UI copy polish beyond "Update available" /
-  "Restarting" / "Rollback".
-- Signed CI provenance attestation (SLSA, etc.).
+---
+
+## User Outcome
+
+As a SeeKi operator, I can leave the app open, see that a newer release is available, open Settings > Updates, install it in one click, wait through the restart, and land back on the updated version. If the new binary is bad, I can roll back once in the same UI.
 
 ---
 
 ## Success Condition
 
-> This feature is complete when a user running an installed seeki can see
-> a new release appear in Settings > Updates without a browser reload, click
-> Apply, watch the server restart, and land on the new version — with a
-> Rollback button that reverts the same way. This works for Linux musl,
-> macOS Intel, and macOS Apple Silicon binaries served from GitHub Releases
-> built by CI.
+This feature is complete when all of the following are true:
 
----
-
-## Open Questions
-
-| # | Question | Raised By | Resolved |
-|:--|:---------|:----------|:---------|
-| 1 | Nightly version scheme. **Resolved**: CI rewrites VERSION to `{base}N{YYMMDD}` for nightly builds (e.g. `26.5.0.3aN260416`). Fits existing `SeekiVersion` parser and lexicographic suffix ordering. | planner | [x] |
-| 2 | macOS code signing. **Resolved**: Ship unsigned for v1; README documents `xattr -d com.apple.quarantine /path/to/seeki` as the one-time bypass. Defer Developer ID signing + notarization to a later spec. | planner | [x] |
-| 3 | Token delivery. **Resolved**: `GET /api/update/token` with same-origin guard. Frontend caches in memory for the session. | planner | [x] |
-| 4 | Poller interval. **Resolved**: Configurable in Settings > Updates via a new `poll_interval_hours` field on `UpdateSettings`. Options: Hourly / 6-hourly / Daily / Never. Default: 6-hourly. | planner | [x] |
+- pushing to `release` publishes a stable GitHub Release with:
+  - `seeki-x86_64-linux-musl`
+  - `seeki-x86_64-linux-musl.sha256`
+  - `seeki-x86_64-darwin`
+  - `seeki-x86_64-darwin.sha256`
+  - `seeki-aarch64-darwin`
+  - `seeki-aarch64-darwin.sha256`
+- pushing to a supported work branch publishes a prerelease with the same six assets
+- a running SeeKi instance notices a newer release without a browser refresh
+- the Settings workspace, not just the legacy modal, can:
+  - check for updates
+  - show release notes
+  - apply a release build
+  - upload and apply a WIP build
+  - roll back when `.prev` exists
+- after apply or rollback, the browser reconnects automatically and reloads on the returned server
 
 ---
 
 ## Scope
 
-### Must-Have
+### In Scope
 
-- **CI matrix build**: the `release` workflow builds `x86_64-unknown-linux-musl`,
-  `x86_64-apple-darwin`, and `aarch64-apple-darwin` binaries and attaches each
-  with its `.sha256` sidecar to the GitHub Release.
-  _Acceptance_: Running the workflow on a push to `release` produces a Release
-  with 6 assets (3 binaries + 3 sha256 files) with matching sums.
+- CI artifact builds and GitHub Release publishing
+- Linux musl + macOS Intel + macOS Apple Silicon asset selection
+- long-lived background polling with configurable interval
+- frontend token bootstrap for mutating update endpoints
+- current Settings workspace update UI
+- update badges in the settings navigation surfaces
+- docs and tests required to keep the feature maintainable
 
-- **Nightly / pre-release builds**: the same workflow runs on push to
-  `epic/*`, `feat/*`, `hotfix/*` and on `workflow_dispatch`, creating a
-  Release with `prerelease: true`.
-  _Acceptance_: Pushing to the current `epic/61-epic-ux-tuning` branch
-  triggers a build and creates a pre-release tag with artifacts.
+### Out of Scope
 
-- **Cross-platform `select_asset()`**: the Rust code detects OS + arch at
-  runtime and selects the matching asset.
-  _Acceptance_: On Linux musl, selects `seeki-x86_64-linux-musl`. On macOS
-  M1, selects `seeki-aarch64-darwin`. On macOS Intel, selects
-  `seeki-x86_64-darwin`. Unit test covers all three cases.
+- Windows binaries
+- signed releases, notarization, or provenance attestation
+- delta updates or binary patching
+- automatic restart without a service manager supervising the binary
+- redesigning the legacy modal settings experience beyond keeping it on the shared API path
+- macOS universal binaries
 
-- **Periodic background poller with configurable interval**: replaces the
-  one-shot startup check with a tokio task that re-reads the interval
-  from `UpdateSettings` each cycle, so a Settings change takes effect on
-  the next tick without a restart. Options: Hourly / 6-hourly / Daily /
-  Never. Default: 6-hourly.
-  _Acceptance_: `last_checked` in `UpdateSettings` advances over time
-  without user interaction; `update_available` flips to `true` when a
-  new release is published, visible via `GET /api/update/status` without
-  any frontend action. Switching the interval in Settings changes the
-  next wake time; switching to Never stops the poller without a restart.
+### Explicit v1 Constraints
 
-- **Token delivery endpoint**: a way for the frontend to retrieve the
-  bearer token needed for mutating calls, guarded by same-origin /
-  localhost checks.
-  _Acceptance_: The frontend can call `/api/update/apply` with a valid
-  `Authorization: Bearer <token>` header without the user pasting the
-  token from `~/.config/seeki/update-token`.
+- WIP upload remains an internal Linux-oriented path. The current WIP validator only accepts x86_64 ELF binaries, and broadening that validator is not part of this spec.
+- unsigned macOS binaries are acceptable for v1; the user-facing docs must explain the quarantine workaround.
 
-- **Updates panel apply flow**: the existing disabled buttons in
-  `UpdatesPanel.svelte` are wired to the real API, with a "Restarting..."
-  overlay that polls `/api/update/status` until the server responds, then
-  reloads the page.
-  _Acceptance_: User clicks "Install update" → sees overlay → lands on new
-  version in the same browser tab without a manual refresh.
+---
 
-- **Rollback flow**: visible only when `previous_exists: true`; same
-  disconnect/reconnect UX as apply.
-  _Acceptance_: After a successful apply, clicking "Rollback" returns the
-  binary to its prior version; after rollback completes, the button
-  disappears (no second rollback available — matches existing swap.rs
-  behaviour).
+## Resolved Decisions
 
-- **Update-available badge**: a visual indicator in the Settings sidebar
-  (or app shell) when `update_available: true`, so the user doesn't need
-  to open the Updates panel to notice.
-  _Acceptance_: Badge appears when the poller finds a new release;
-  disappears after apply succeeds or after the user dismisses (one-shot).
-
-### Should-Have
-
-- **WIP upload UI**: wire the "Upload WIP build" button to the existing
-  `/api/update/wip` endpoint for internal use (ops pushing a local musl
-  build without waiting for CI). Helpful for sg-server deployment today.
-
-- **Release notes preview**: show the `body` field from the GitHub
-  release in the Updates panel so the user knows what they're installing.
-
-- **Manual "Check now" latency indicator**: spinner + timestamp showing
-  when the last check succeeded.
-
-### Nice-to-Have
-
-- **CI caching**: sccache / cargo registry cache to bring matrix build
-  time under 5 minutes.
-
-- **macOS universal binary**: a single `seeki-universal-darwin` produced
-  by `lipo` combining both arch slices.
-
-- **Changelog generation**: derive release notes from git log between the
-  prior tag and HEAD, append to the existing release body.
+| Topic | Decision |
+|:------|:---------|
+| Canonical update surface | The primary implementation target is [`frontend/src/components/settings/UpdatesPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/settings/UpdatesPanel.svelte). The legacy modal may stay mounted, but it must consume the same updated API helpers while it exists. |
+| Supported prerelease triggers | Use the repo's existing branch vocabulary: `task/*`, `feature/*`, `bug/*`, `hotfix/*`, plus `workflow_dispatch`. Do not introduce `feat/*` or `epic/*` just for this feature. |
+| Prerelease versioning | Prerelease tags are derived in CI from the checked-out workspace version and must remain compatible with `SeekiVersion`. Use a suffix that starts with a letter and stays alphanumeric, for example `26.5.0.3n260416g1a2b3c4`. This is a build-time version only and is not committed back to the branch. |
+| Poll interval values | `poll_interval_hours` accepts `0`, `1`, `6`, or `24`, where `0` means `Never`. Default is `6`. |
+| Token bootstrap | Add `GET /api/update/token` for the browser UI only. Return the bearer token over same-origin requests and cache it in memory on the frontend. |
+| Release notes source | Use the GitHub Release body already returned by the backend's release fetch path. Stable and prerelease workflows must publish a non-empty body so the UI has meaningful text to render. |
 
 ---
 
 ## Technical Plan
 
-### Affected Components
+### 1. CI and Release Publishing
 
-| Area | File | Change |
-|:-----|:-----|:-------|
-| CI | `.github/workflows/release.yml` | Add matrix build jobs before release job; attach artifacts |
-| Rust | `src/update/github.rs` | `select_asset()` uses `std::env::consts::{OS, ARCH}` |
-| Rust | `src/main.rs` | Replace one-shot `tokio::spawn` with periodic 6h loop |
-| Rust | `src/api/update.rs` | Add `GET /api/update/token` handler |
-| Rust | `src/api/mod.rs` | Route the new token endpoint |
-| Frontend | `frontend/src/components/settings/UpdatesPanel.svelte` | Wire apply/rollback/upload buttons, reconnect overlay, release notes |
-| Frontend | `frontend/src/lib/api.ts` | Attach `Authorization` header to mutating calls using fetched token |
-| Frontend | `frontend/src/components/SettingsNav.svelte` (or sidebar) | Badge when `update_available` |
-| Frontend | `frontend/src/lib/stores.ts` | Store for update status shared across components |
-| Build | `VERSION` handling in CI | Nightly version rewrite for non-`release` branches |
+**Files**
 
-### Data Model Changes
+- [`.github/workflows/release.yml`](/home/kiriketsuki/dev/Personal/seeKi/.github/workflows/release.yml)
+- [`.github/CI-CD-Guide.md`](/home/kiriketsuki/dev/Personal/seeKi/.github/CI-CD-Guide.md)
+- [`README.md`](/home/kiriketsuki/dev/Personal/seeKi/README.md)
 
-- **Add `poll_interval_hours: u32`** to `UpdateSettings` (persisted to
-  `~/.seeki/update.json`). Value `0` means "Never". Default: `6`. Valid
-  values accepted by the settings endpoint: `0, 1, 6, 24`.
-- **Optional (Should-Have)**: add `dismissed_version: Option<String>` so
-  the badge can be dismissed without re-appearing for the same version.
+**Required changes**
 
-`UpdateState` already has `cache.latest()`, which serves the "available"
-read path.
+- Expand the workflow trigger set to:
+  - `release`
+  - `task/*`
+  - `feature/*`
+  - `bug/*`
+  - `hotfix/*`
+  - `workflow_dispatch`
+- Stop hardcoding `actions/checkout` to `ref: release`; the workflow must check out the triggering ref.
+- Keep the existing stable-only `release` branch behavior, including syncing `VERSION` from `main`, but gate that logic behind `if: github.ref_name == 'release'`.
+- Add a metadata job that computes:
+  - `build_version`
+  - `tag_name`
+  - `release_name`
+  - `prerelease`
+  - release body metadata such as branch name and commit SHA
+- For prerelease branches:
+  - derive a unique prerelease version in the workflow workspace
+  - write it into the workspace `VERSION` file before `cargo build`
+  - do not commit or push that rewritten version back to the source branch
+- Build a three-job matrix:
+  - `x86_64-unknown-linux-musl` on `ubuntu-latest`
+  - `x86_64-apple-darwin` on `macos-13`
+  - `aarch64-apple-darwin` on `macos-14`
+- Each build job must:
+  - install Node 20
+  - run `npm ci` and `npm run build` in `frontend/`
+  - build the Rust release binary for its target
+  - rename the output binary to the exact asset name expected by `select_asset()`
+  - generate a sidecar file named `<asset>.sha256`
+  - upload both files as workflow artifacts
+- The release job must download all artifacts and publish exactly six files to the GitHub Release.
 
-### API Contracts
+**Implementation note**
 
-**New**: `GET /api/update/token`
-- Auth: same-origin check (inspect `Origin` header against request `Host`;
-  reject if mismatch or if `Origin` is absent and the request is not from
-  a localhost source). No bearer token required.
-- Response: `{ "token": "<64-char-hex>" }`
-- Purpose: lets the frontend cache the token in memory for mutating calls.
+The release asset name is part of the runtime contract. The backend currently derives the checksum URL by appending `.sha256` to the binary asset URL, so the workflow must preserve that exact naming convention.
 
-**Extended**: `PATCH /api/update/settings`
-- Accepts `poll_interval_hours` in addition to the existing
-  `pre_release_channel` field. Validated: must be one of `0, 1, 6, 24`.
-  Persists via `UpdateSettings::save()`.
+### 2. Backend Update Runtime
 
-**Unchanged**: `/api/update/status`, `/api/update/check`,
-`/api/update/apply`, `/api/update/rollback`, `/api/update/wip`.
+**Files**
 
-### Build / Release Pipeline
+- [`src/update/github.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/github.rs)
+- [`src/update/mod.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/mod.rs)
+- [`src/main.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/main.rs)
+- [`src/api/update.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/api/update.rs)
+- [`src/api/mod.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/api/mod.rs)
 
-CI job graph:
+**Required changes**
 
+- Make release caching channel-aware.
+  - Today there is one cache entry for both stable and prerelease queries.
+  - After this change, a stable check must never satisfy a prerelease request, or vice versa.
+  - A split cache keyed by `include_prerelease` is acceptable.
+- Extend `UpdateSettings` with `poll_interval_hours`.
+  - persist to `~/.seeki/update.json`
+  - serde-default to `6`
+  - preserve backwards compatibility with existing files that only contain `pre_release_channel` and `last_checked`
+- Add a poller wake mechanism to `UpdateState` so settings changes can interrupt the sleep cycle.
+  - `tokio::sync::Notify` is sufficient
+- Replace the one-shot startup task in `main.rs` with a long-lived poller loop that:
+  - runs one check shortly after startup
+  - reads current settings at the start of each cycle
+  - sleeps for the selected interval
+  - waits on the settings-change notify when interval is `0`
+  - forces a refresh when `pre_release_channel` changes so the cache does not mask the new channel
+  - updates `last_checked` when a GitHub fetch completes successfully
+- Expand `select_asset()` to cover:
+  - `linux/x86_64` -> prefer `seeki-x86_64-linux-musl`, optionally fall back to `seeki-x86_64-linux-gnu`
+  - `macos/x86_64` -> `seeki-x86_64-darwin`
+  - `macos/aarch64` -> `seeki-aarch64-darwin`
+  - unsupported platforms -> `None`
+
+### 3. API Contract Cleanup
+
+The current frontend update code is hard to wire correctly because the API surfaces are inconsistent. This spec standardizes the browser-facing contract enough to support the UI without requiring the frontend to reason about raw asset lists.
+
+**Status response**
+
+`GET /api/update/status` returns:
+
+```json
+{
+  "current": "26.5.0.3a",
+  "latest": "26.5.0.3n260416g1a2b3c4",
+  "pre_release_channel": true,
+  "poll_interval_hours": 6,
+  "update_available": true,
+  "previous_exists": false,
+  "last_checked": "2026-04-16T09:00:00Z",
+  "release_notes": "..."
+}
 ```
-trigger (push to release | epic/* | feat/* | hotfix/* | dispatch)
-  │
-  ├── compute-version (ubuntu, sets VERSION + prerelease flag)
-  │
-  ├── build-linux-musl (ubuntu-latest, target: x86_64-unknown-linux-musl)
-  ├── build-macos-x86  (macos-13, target: x86_64-apple-darwin)
-  └── build-macos-arm  (macos-14, target: aarch64-apple-darwin)
-       │
-       └── release (needs: all builds; creates tag, uploads 6 artifacts)
+
+Notes:
+
+- `latest` and `release_notes` are `null` when no release is cached.
+- `release_notes` should come from the cached GitHub Release body so the UI can render it without a forced manual check.
+
+**Manual check**
+
+`POST /api/update/check`:
+
+- forces a GitHub refresh
+- updates the release cache
+- updates `last_checked`
+- returns the same shape as `GET /api/update/status`
+
+This removes the need for duplicate frontend types for "status" versus "check" responses.
+
+**Settings patch**
+
+`PATCH /api/update/settings` accepts:
+
+```json
+{
+  "pre_release_channel": true,
+  "poll_interval_hours": 6
+}
 ```
 
-Per-build steps: checkout → install Rust + target → install Node 20 →
-`npm ci && npm run build` in `frontend/` → `cargo build --release --target
-<triple>` → compute SHA256 → upload as job artifact.
+Rules:
 
-Release job: download all artifacts → create tag → create GitHub Release
-with `prerelease` flag set from the compute-version job output → attach
-all 6 files.
+- both fields are optional
+- `poll_interval_hours` must be one of `0`, `1`, `6`, `24`
+- a successful write notifies the background poller so the new interval or channel takes effect immediately
 
-### Dependencies
+**Token bootstrap**
 
-- GitHub Actions: `actions/checkout@v6`, `actions/cache` (cargo),
-  `actions/upload-artifact@v4`, `actions/download-artifact@v4`,
-  `softprops/action-gh-release@v2`.
-- Rust toolchain: stable + `x86_64-unknown-linux-musl`,
-  `x86_64-apple-darwin`, `aarch64-apple-darwin` targets.
-- Node 20 for frontend build.
-- `musl-tools` apt package on Linux runner for linking.
+`GET /api/update/token` returns:
 
-### Risks
+```json
+{
+  "token": "<64-char-hex>"
+}
+```
 
-| Risk | Likelihood | Mitigation |
-|:-----|:-----------|:-----------|
-| macOS Gatekeeper blocks unsigned binary on first launch | High | Document `xattr -d com.apple.quarantine` workaround; future: add signing + notarization |
-| Nightly VERSION string breaks `SeekiVersion::from_str()` parser | Medium | Resolve via Open Question 1 before CI build step lands |
-| Frontend disconnect detection is unreliable across browsers | Medium | Poll `/api/update/status` with a short timeout; treat any 5 consecutive failures as "restarting" |
-| Background poller wakes sleeping laptops / wastes battery | Low | 6h interval is gentle; `tokio::time::sleep` parks; no wakeups |
-| GitHub rate limits on `/releases/latest` from many customer instances | Low | 15-min cache + 6h poller = ~4 requests/day/instance — within unauthenticated limits (60/hr/IP) |
-| Token leak via browser devtools network panel | Accepted | Local-network tool; token rotates if user deletes `~/.config/seeki/update-token`; mutating endpoints already log calls |
-| macOS ARM/Intel runner exhaust on GH Actions free tier | Low | Matrix is 3 jobs; acceptable for this repo's release cadence |
+Rules:
+
+- no bearer token required
+- same-origin only
+- set `Cache-Control: no-store`
+- reject mismatched `Origin`
+- when `Origin` is absent, accept only when `Referer` resolves to the same scheme/host/port as the request host; otherwise reject with `403`
+
+### 4. Frontend Integration
+
+**Files**
+
+- [`frontend/src/components/settings/UpdatesPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/settings/UpdatesPanel.svelte)
+- [`frontend/src/components/SettingsPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsPanel.svelte)
+- [`frontend/src/components/SettingsContent.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsContent.svelte)
+- [`frontend/src/components/SettingsNav.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsNav.svelte)
+- [`frontend/src/components/Sidebar.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/Sidebar.svelte)
+- [`frontend/src/App.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/App.svelte)
+- [`frontend/src/lib/api.ts`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/lib/api.ts)
+- [`frontend/src/lib/types.ts`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/lib/types.ts)
+
+**Required changes**
+
+- Make `UpdatesPanel.svelte` the working implementation for Settings > Updates.
+- Reuse the good parts of `SettingsPanel.svelte` instead of re-inventing them:
+  - success and error banners
+  - confirmation step before install / rollback / WIP apply
+  - restart overlay and reconnect polling
+  - WIP upload handling
+- Consolidate update API helpers in `api.ts`.
+  - remove or repurpose the duplicated `checkForUpdates` / `checkForUpdate` split
+  - add one in-memory token cache
+  - automatically attach `Authorization: Bearer <token>` to:
+    - `POST /api/update/apply`
+    - `POST /api/update/wip`
+    - `POST /api/update/rollback`
+- Normalize update types in `types.ts` so the settings UI has one shared response model.
+- Extend the current settings route data flow instead of introducing a new global update store by default.
+  - `App.svelte` already owns `updateStatus` and `updateAvailable`
+  - wire that state down to `SettingsNav` and `UpdatesPanel`
+  - only add a dedicated store if implementation complexity proves otherwise
+- Wire both existing badge surfaces:
+  - pass `showSettingsBadge={updateAvailable}` into `Sidebar`
+  - pass `showUpdateBadge={updateAvailable}` into `SettingsNav`
+  - keep the footer gear badge working as it does today
+- Add settings controls for:
+  - pre-release channel
+  - poll interval (`Hourly`, `Every 6 hours`, `Daily`, `Never`)
+- Release notes must render in the current settings panel when cached release data exists.
+
+**Legacy modal handling**
+
+[`frontend/src/components/SettingsPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsPanel.svelte) is not the primary UI target, but it is still mounted from `App.svelte`. The implementation must either:
+
+- switch it to the same shared update helpers so it continues to work, or
+- intentionally remove update actions from it in the same PR
+
+What is not acceptable is leaving two different update surfaces where one works and the other still fails with `401`.
+
+### 5. Docs and Verification
+
+**Files**
+
+- [`README.md`](/home/kiriketsuki/dev/Personal/seeKi/README.md)
+- [`.github/CI-CD-Guide.md`](/home/kiriketsuki/dev/Personal/seeKi/.github/CI-CD-Guide.md)
+
+**Required changes**
+
+- document that release builds now publish download artifacts, not just tags
+- document supported platforms for auto-update
+- document the macOS quarantine workaround:
+  - `xattr -d com.apple.quarantine /path/to/seeki`
+- update CI docs so prerelease publishing matches the actual trigger set and branch vocabulary in the repo
 
 ---
 
 ## Acceptance Scenarios
 
 ```gherkin
-Feature: Auto-Update System
+Feature: Auto-update and CI release artifacts
 
   Background:
-    Given seeki is running as a systemd-managed service on the user's machine
-    And GitHub Releases contains a release newer than the running binary
-    And the release has assets matching the current platform
+    Given SeeKi is running under a service manager
+    And GitHub Releases contains binaries and .sha256 sidecars for the current platform
 
-  Rule: Passive discovery — user doesn't need to hunt for updates
+  Scenario: release branch push publishes a stable release with six assets
+    Given a push to the release branch
+    When the workflow completes
+    Then GitHub Release v{VERSION} exists
+    And prerelease is false
+    And the release contains exactly six assets
 
-    Scenario: Badge appears when a new release is published
-      Given the user has Settings open (or the app loaded) but is not on the Updates tab
-      When the background poller checks GitHub and finds a newer release
-      Then an "update available" badge appears on the Settings icon or Updates tab
-      And opening the Updates panel shows the new version number and release notes
+  Scenario: feature branch push publishes a prerelease from the current branch
+    Given a push to feature/89-auto-update-system-and-multi-platform-ci-release-pipeline
+    When the workflow completes
+    Then the workflow builds the checked-out feature branch, not the release branch
+    And the GitHub Release is marked prerelease
+    And the tag uses the CI-derived prerelease version
+    And the release contains exactly six assets
 
-    Scenario: No badge on the current version
-      Given the user has a fresh install matching the latest published release
-      When the poller runs
-      Then no badge appears
-      And the Updates panel shows "You're up to date"
+  Scenario: background polling surfaces a new release without a browser refresh
+    Given the app is open in the browser
+    And poll_interval_hours is 6
+    When the backend poller sees a newer release
+    Then update_available becomes true in /api/update/status
+    And the settings badge appears in the shell
+    And the Updates panel shows the latest version and release notes
 
-  Rule: One-click apply with visible restart
+  Scenario: changing pre-release channel forces a fresh channel-aware lookup
+    Given the stable release is cached
+    When the user enables pre-release updates
+    Then the backend does not reuse the stable cache entry for the pre-release lookup
+    And the next status response reflects the prerelease channel
 
-    Scenario: Apply installs the new release and returns the user to the new version
-      Given an update is available
-      And the user has opened the Updates panel
-      When the user clicks "Install update"
-      Then the frontend shows a "Restarting..." overlay
-      And the backend verifies SHA256, writes the new binary, and exits
-      And systemd restarts the process
-      And the frontend polls /api/update/status every 2 seconds
-      And within 30 seconds the page reloads on the new version
-      And the Rollback button is now visible
+  Scenario: user installs a release update from the current Settings workspace
+    Given update_available is true
+    When the user clicks Install update in Settings > Updates
+    Then the frontend fetches the update token
+    And the backend verifies the binary against its .sha256 sidecar
+    And the frontend shows a restarting overlay
+    And the browser reconnects and reloads onto the new version
+    And previous_exists becomes true
 
-    Scenario: SHA256 mismatch aborts the apply cleanly
-      Given the release asset's SHA256 sidecar does not match the downloaded bytes
-      When the user clicks "Install update"
-      Then the backend rejects with a clear error
-      And the running binary is untouched
-      And the frontend shows the error to the user without reloading
+  Scenario: rollback returns to the prior binary
+    Given a release update was applied successfully
+    When the user clicks Rollback
+    Then the frontend shows the same restarting overlay
+    And the app reloads on the prior version
+    And previous_exists becomes false
 
-    Scenario: Missing SHA256 sidecar aborts before download
-      Given a release is published without a .sha256 file
-      When the user clicks "Install update"
-      Then the backend responds with "Release is missing a SHA256 sidecar"
-      And no download is attempted
-
-  Rule: Rollback is a safety net, not a regression vector
-
-    Scenario: Rollback reverts to the prior binary
-      Given the user has applied an update
-      And the Rollback button is visible
-      When the user clicks "Rollback"
-      Then the frontend shows the same "Restarting..." overlay
-      And the prior binary is restored
-      And after restart, the Rollback button is no longer visible
-      And the running version matches the pre-apply version
-
-    Scenario: No rollback after fresh install
-      Given the user has never applied an update since install
-      When the user opens the Updates panel
-      Then the Rollback button is not rendered
-
-  Rule: Multi-platform asset selection
-
-    Scenario Outline: select_asset picks the correct binary for the current platform
-      Given the release contains <available_assets>
-      And the host platform is <os>/<arch>
-      When select_asset is invoked
-      Then the chosen asset name is <expected>
-
-      Examples:
-        | available_assets                                                | os    | arch    | expected                      |
-        | musl,darwin-x86,darwin-arm                                      | linux | x86_64  | seeki-x86_64-linux-musl       |
-        | musl,darwin-x86,darwin-arm                                      | macos | x86_64  | seeki-x86_64-darwin           |
-        | musl,darwin-x86,darwin-arm                                      | macos | aarch64 | seeki-aarch64-darwin          |
-        | musl only                                                       | macos | x86_64  | (none — returns None)         |
-
-  Rule: CI produces verifiable artifacts
-
-    Scenario: release branch push creates a stable release with 6 assets
-      Given a push to the release branch
-      When the workflow completes
-      Then a GitHub Release is created with prerelease: false
-      And the release has exactly 6 assets: 3 binaries + 3 sha256 files
-      And each binary's SHA256 matches its sidecar
-
-    Scenario: epic branch push creates a pre-release
-      Given a push to an epic/* branch
-      When the workflow completes
-      Then a GitHub Release is created with prerelease: true
-      And the tag includes a nightly marker matching the agreed scheme
-      And users with pre_release_channel: false do not see it in their poller
-
-  Rule: Token delivery is scoped to same-origin
-
-    Scenario: Frontend fetches the token to call mutating endpoints
-      Given the frontend is served by the seeki backend on 127.0.0.1:3141
-      When the Updates panel mounts
-      Then GET /api/update/token returns the bearer token as JSON
-      And the token is cached in memory for the session
-
-    Scenario: Cross-origin request to /api/update/token is rejected
-      Given an external page at http://evil.example makes a same-origin-less fetch
-      When the browser sends the request without a matching Origin header
-      Then the endpoint responds with 403 Forbidden
-      And no token is leaked
+  Scenario: cross-origin token request is rejected
+    Given a page from another origin calls GET /api/update/token
+    When the Origin or Referer does not match the request host
+    Then the response is 403
+    And no token is returned
 ```
+
+---
+
+## Test Plan
+
+### Backend tests
+
+- add unit tests for `select_asset()` covering:
+  - `linux/x86_64`
+  - `macos/x86_64`
+  - `macos/aarch64`
+  - unsupported platforms
+- add unit tests for `UpdateSettings` serde defaults and validation of `poll_interval_hours`
+- add API tests for:
+  - `GET /api/update/token` same-origin accept path
+  - `GET /api/update/token` cross-origin reject path
+  - `PATCH /api/update/settings` with valid and invalid intervals
+- add cache tests proving stable and prerelease lookups do not share the same cache entry
+
+### Frontend tests
+
+- add tests for token caching and auth-header attachment in `frontend/src/lib/api.ts`
+- add tests that the update status/check helpers now agree on one response shape
+- add UI coverage for:
+  - badge visibility when `update_available` is true
+  - poll interval selector wiring
+  - release notes rendering
+  - restart overlay behavior after apply / rollback
+
+### Manual verification
+
+- push a stable build through `release` and confirm six published assets
+- push a prerelease build through a `feature/*` branch and confirm six published assets
+- on Linux musl:
+  - detect update
+  - apply update
+  - reconnect
+  - roll back
+- on macOS:
+  - detect update
+  - apply update
+  - reconnect
+  - verify the quarantine workaround is documented if needed
 
 ---
 
 ## Task Breakdown
 
-| ID   | Task | Priority | Dependencies | Status |
-|:-----|:-----|:---------|:-------------|:-------|
-| T1   | Resolve Open Question 1 (nightly version scheme) | High | None | pending |
-| T2   | Resolve Open Question 3 (token delivery pattern) | High | None | pending |
-| T3   | Extend `.github/workflows/release.yml` with matrix build (musl + darwin-x86 + darwin-arm) | High | T1 | pending |
-| T3.1 | Add compute-version job that rewrites VERSION for non-release branches per T1 | High | T1 | pending |
-| T3.2 | Add build matrix jobs with frontend + cargo build + SHA256 computation | High | T3 | pending |
-| T3.3 | Refactor release job to consume uploaded artifacts and attach all 6 files | High | T3.2 | pending |
-| T3.4 | Add triggers for `epic/*`, `feat/*`, `hotfix/*` branches with `prerelease: true` | High | T3 | pending |
-| T4   | Update `select_asset()` in `src/update/github.rs` for multi-platform detection | High | None | pending |
-| T4.1 | Unit tests for `select_asset()` covering linux/musl, macos/x86, macos/arm, unsupported platforms | High | T4 | pending |
-| T5   | Replace one-shot poller in `main.rs` with a loop that re-reads `UpdateSettings.poll_interval_hours` each cycle; `0` parks indefinitely on a settings-change notify | High | T5.0 | pending |
-| T5.0 | Add `poll_interval_hours: u32` to `UpdateSettings` with serde default of 6; extend `PATCH /api/update/settings` to accept and validate it | High | None | pending |
-| T6   | Add `GET /api/update/token` handler and route it | High | T2 | pending |
-| T6.1 | Same-origin / localhost guard on the token endpoint | High | T6 | pending |
-| T6.2 | Integration test: valid same-origin request returns token; cross-origin rejected | Med | T6.1 | pending |
-| T7   | Wire `UpdatesPanel.svelte` to real apply / rollback / upload endpoints | High | T6 | pending |
-| T7.1 | Implement "Restarting..." overlay with disconnect detection + polling | High | T7 | pending |
-| T7.2 | Page reload after successful reconnect | High | T7.1 | pending |
-| T7.3 | Hide Rollback button when `previous_exists: false` | High | T7 | pending |
-| T7.4 | Release notes preview from `body` field | Med | T7 | pending |
-| T7.5 | Poller interval selector in Updates panel (Hourly / 6-hourly / Daily / Never) wired to `PATCH /api/update/settings` | High | T5.0, T7 | pending |
-| T8   | Update-available badge in `SettingsNav.svelte` / sidebar | High | T7 | pending |
-| T8.1 | Shared store for update status (`frontend/src/lib/stores.ts`) | High | T8 | pending |
-| T9   | Attach bearer token to mutating frontend calls in `api.ts` | High | T6 | pending |
-| T10  | WIP upload UI wiring for sg-server ops use | Med | T7 | pending |
-| T11  | End-to-end manual test on sg-server: apply, rollback, verify badge | High | T3, T4, T5, T6, T7 | pending |
-| T12  | Document macOS Gatekeeper workaround in README | Med | T3 | pending |
+| ID | Task | Files | Priority | Depends On |
+|:---|:-----|:------|:---------|:-----------|
+| CI-1 | Refactor release workflow to build the triggering ref, derive stable/prerelease metadata, and publish six assets | `release.yml` | High | None |
+| CI-2 | Update CI/release docs to reflect the new workflow behavior and branch triggers | `.github/CI-CD-Guide.md`, `README.md` | Med | CI-1 |
+| BE-1 | Make release caching channel-aware and extend platform asset selection | `src/update/github.rs` | High | None |
+| BE-2 | Add `poll_interval_hours`, settings-change wakeups, and long-lived background polling | `src/update/mod.rs`, `src/main.rs`, `src/api/update.rs` | High | BE-1 |
+| BE-3 | Standardize update API contracts and add `GET /api/update/token` | `src/api/update.rs`, `src/api/mod.rs` | High | BE-2 |
+| FE-1 | Consolidate update API helpers and types, including in-memory token caching | `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts` | High | BE-3 |
+| FE-2 | Implement the working Settings > Updates experience using the shared update API path | `frontend/src/components/settings/UpdatesPanel.svelte`, `frontend/src/components/SettingsContent.svelte` | High | FE-1 |
+| FE-3 | Wire update badges through the current app shell | `frontend/src/App.svelte`, `frontend/src/components/Sidebar.svelte`, `frontend/src/components/SettingsNav.svelte` | High | FE-2 |
+| FE-4 | Keep the legacy modal on the same auth-capable update API path, or remove conflicting update actions from it | `frontend/src/components/SettingsPanel.svelte` | Med | FE-1 |
+| TEST-1 | Add backend/frontend automated coverage and run manual apply/rollback verification | backend + frontend test files | High | CI-1, BE-3, FE-4 |
+
+---
+
+## Risks and Mitigations
+
+| Risk | Likelihood | Mitigation |
+|:-----|:-----------|:-----------|
+| Prerelease workflow builds the wrong code because checkout stays pinned to `release` | High | Make `checkout` follow the triggering ref and gate stable-only steps behind `github.ref_name == 'release'` |
+| Stable and prerelease channels leak into each other through the shared cache | High | Key the cache by channel and force refresh on channel change |
+| Two frontend settings surfaces drift apart | High | Treat `UpdatesPanel.svelte` as canonical and require the legacy modal to use the same update API path |
+| Token endpoint is too permissive | Medium | Same-origin checks only, `Cache-Control: no-store`, no CORS expansion |
+| Token endpoint is too strict for the browser UI | Medium | Allow either matching `Origin` or matching `Referer`; test both allowed and rejected paths |
+| Unsigned macOS binaries alarm users | High | Document the quarantine workaround now; defer notarization |
+| Release notes panel is empty on prereleases | Medium | Ensure CI writes a non-empty release body for automated prereleases |
 
 ---
 
 ## Exit Criteria
 
-- [ ] All Must-Have scenarios pass manual testing on sg-server (Ubuntu 20
-      musl) and at least one macOS machine
-- [ ] `cargo test` green on the `select_asset()` platform detection suite
-- [ ] CI workflow green on both a push to `release` (stable) and a push to
-      an `epic/*` branch (pre-release), with 6 assets per release
-- [ ] No regressions on the existing `/api/update/*` endpoints
-- [ ] `UpdatesPanel.svelte` no longer contains the "patcher backend
-      unavailable" placeholder copy
-- [ ] `cargo clippy` green
-- [ ] Manual rollback test: apply → rollback → verify version reverts and
-      Rollback button hides
-- [ ] All four Open Questions remain resolved (see table above)
-- [ ] Setting `poll_interval_hours` to `0` (Never) in Settings stops the
-      poller within the current cycle without requiring a restart
+- [ ] `release.yml` publishes six assets for stable releases and prereleases
+- [ ] prerelease publishing uses `task/*`, `feature/*`, `bug/*`, or `hotfix/*` triggers and builds the actual triggering ref
+- [ ] `GET /api/update/status` exposes `poll_interval_hours` and cached `release_notes`
+- [ ] changing `pre_release_channel` does not reuse a stale stable-cache entry
+- [ ] the current Settings workspace can check, apply, roll back, and upload WIP builds
+- [ ] mutating update calls from the browser succeed without manual token pasting
+- [ ] both the shell badge and the settings-nav badge reflect `update_available`
+- [ ] `SettingsPanel.svelte` is either on the shared auth-capable path or no longer exposes broken update actions
+- [ ] backend and frontend tests covering the new contracts are green
+- [ ] README and CI docs match the shipped workflow
 
 ---
 
 ## References
 
-- Existing update module: `src/update/{mod,github,swap,wip,auth,version}.rs`
-- Existing update API: `src/api/update.rs`
-- Existing workflow: `.github/workflows/release.yml`
-- Brainstorm context: user approved design 2026-04-16 (targets Ubuntu
-  20/22/24/26 + Arch + macOS Intel + macOS ARM; UX = notify + one-click +
-  rollback; repo already public)
-- Related: today's hotfix commit `bd5f6f7` (resolves partial #71 merge so
-  the current branch compiles)
-
----
-
-## Verification
-
-**Local verification (sg-server + dev machine)**:
-
-1. Build a musl binary locally: `cargo build --release --target
-   x86_64-unknown-linux-musl`.
-2. Tag a test release manually: `gh release create v26.5.0.3aN260416
-   --prerelease --notes "Test" target/.../seeki#seeki-x86_64-linux-musl
-   <sha256-file>` (once CI is in place, this is automatic).
-3. Restart seeki on sg-server with the current binary; wait up to 6h (or
-   call `POST /api/update/check` manually) and verify the Updates panel
-   shows the new version.
-4. Click Install update → verify overlay → verify page reload on new
-   version → verify Rollback button visible.
-5. Click Rollback → verify reversion → verify Rollback button hides.
-
-**CI verification**:
-
-- Push to `epic/61-epic-ux-tuning` → confirm pre-release created with 6
-  assets, SHA256 sums match.
-- Push to `release` → confirm stable release with 6 assets.
-
-**Unit test**: `cargo test --package seeki select_asset` covers the four
-platform cases including the unsupported-platform path.
-
----
-
-*Authored by: Clault KiperS 4.6*
+- [`src/update/mod.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/mod.rs)
+- [`src/update/github.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/github.rs)
+- [`src/update/swap.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/swap.rs)
+- [`src/update/wip.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/wip.rs)
+- [`src/update/auth.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/auth.rs)
+- [`src/update/version.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/update/version.rs)
+- [`src/api/update.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/api/update.rs)
+- [`src/main.rs`](/home/kiriketsuki/dev/Personal/seeKi/src/main.rs)
+- [`frontend/src/components/settings/UpdatesPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/settings/UpdatesPanel.svelte)
+- [`frontend/src/components/SettingsPanel.svelte`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/components/SettingsPanel.svelte)
+- [`frontend/src/lib/api.ts`](/home/kiriketsuki/dev/Personal/seeKi/frontend/src/lib/api.ts)
+- [`.github/workflows/release.yml`](/home/kiriketsuki/dev/Personal/seeKi/.github/workflows/release.yml)
