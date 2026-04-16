@@ -50,14 +50,34 @@ pub struct QueryResult {
     pub page_size: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    pub const fn as_sql(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SortEntry {
+    pub column: String,
+    pub direction: SortDirection,
+}
+
 /// Bundled parameters for querying rows from a table.
 pub struct RowQueryParams<'a> {
     pub schema: &'a str,
     pub table: &'a str,
     pub page: u32,
     pub page_size: u32,
-    pub sort_column: Option<&'a str>,
-    pub sort_direction: Option<&'a str>,
+    pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
 }
@@ -66,8 +86,7 @@ pub struct RowQueryParams<'a> {
 pub struct ExportQueryParams<'a> {
     pub schema: &'a str,
     pub table: &'a str,
-    pub sort_column: Option<&'a str>,
-    pub sort_direction: Option<&'a str>,
+    pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
 }
@@ -152,6 +171,12 @@ impl DatabasePool {
     pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
         match self {
             Self::Postgres(pool, _) => postgres::query_rows(pool, params).await,
+        }
+    }
+
+    pub fn ssh_connected(&self) -> bool {
+        match self {
+            Self::Postgres(_, tunnel) => tunnel.is_some(),
         }
     }
 

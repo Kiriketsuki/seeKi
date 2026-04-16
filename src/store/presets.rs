@@ -102,6 +102,23 @@ pub async fn set_last_used(
     Ok(())
 }
 
+/// Delete all browsing state (last-used, sort presets, filter presets) for one connection.
+pub async fn clear_all(pool: &SqlitePool, conn_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM table_last_used_state WHERE connection_id = ?")
+        .bind(conn_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM table_sort_presets WHERE connection_id = ?")
+        .bind(conn_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM table_filter_presets WHERE connection_id = ?")
+        .bind(conn_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 // ── Sort presets ──────────────────────────────────────────────────────────────
 
 pub async fn list_sort_presets(

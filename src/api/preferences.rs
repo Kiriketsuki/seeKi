@@ -22,6 +22,8 @@ pub fn router() -> Router {
             "/presets/last-used/{schema}/{table}",
             get(get_last_used).post(set_last_used),
         )
+        // Clear all browsing state — Normal mode only
+        .route("/presets", delete(clear_all_presets))
         // Named sort presets — Normal mode only
         .route(
             "/presets/sort/{schema}/{table}",
@@ -66,6 +68,7 @@ async fn set_settings(
         if json.len() > MAX_VALUE_BYTES {
             return Err(Err::bad_request("value exceeds maximum size"));
         }
+        validate_known_setting(k, v)?;
     }
     let pairs: Vec<(&str, &Value)> = entries
         .iter()
@@ -75,6 +78,48 @@ async fn set_settings(
         .await
         .map_err(Err::internal)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn validate_known_setting(key: &str, value: &Value) -> Result<(), Err> {
+    match key {
+        "branding.title" => {
+            let Some(title) = value.as_str() else {
+                return Err(Err::bad_request("branding.title must be a string"));
+            };
+            if title.trim().is_empty() {
+                return Err(Err::bad_request("branding.title must not be empty"));
+            }
+        }
+        "branding.subtitle" => {
+            if !(value.is_string() || value.is_null()) {
+                return Err(Err::bad_request(
+                    "branding.subtitle must be a string or null",
+                ));
+            }
+        }
+        "appearance.date_format" => {
+            let Some(format) = value.as_str() else {
+                return Err(Err::bad_request("appearance.date_format must be a string"));
+            };
+            if !matches!(
+                format,
+                "system" | "YYYY-MM-DD" | "DD/MM/YYYY" | "MM/DD/YYYY"
+            ) {
+                return Err(Err::bad_request("appearance.date_format is not supported"));
+            }
+        }
+        "appearance.row_density" => {
+            let Some(density) = value.as_str() else {
+                return Err(Err::bad_request("appearance.row_density must be a string"));
+            };
+            if !matches!(density, "comfortable" | "compact") {
+                return Err(Err::bad_request("appearance.row_density is not supported"));
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
 
 // ── Last-used table state ─────────────────────────────────────────────────────
@@ -114,6 +159,19 @@ async fn set_last_used(
     }
     let conn_id = require_conn_id(&mode).await?;
     presets::set_last_used(store.pool(), &conn_id, &schema, &table, &body)
+        .await
+        .map_err(Err::internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── Clear all browsing state ──────────────────────────────────────────────────
+
+async fn clear_all_presets(
+    Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
+) -> Result<StatusCode, Err> {
+    let conn_id = require_conn_id(&mode).await?;
+    presets::clear_all(store.pool(), &conn_id)
         .await
         .map_err(Err::internal)?;
     Ok(StatusCode::NO_CONTENT)
@@ -350,10 +408,8 @@ mod tests {
     use super::*;
     use axum::{Router, body::Body, http::Request};
     use http_body_util::BodyExt;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
 
-    use crate::app_mode::{AppMode, initial_mode};
+    use crate::app_mode::initial_mode;
     use crate::store::testutil::ephemeral_store;
 
     fn setup_router(mode: crate::app_mode::SharedAppMode, store: Store) -> Router {
@@ -449,6 +505,54 @@ mod tests {
             .uri("/preferences/settings")
             .header("content-type", "application/json")
             .body(Body::from(body))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn settings_reject_empty_branding_title() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"branding.title":"   "}"#))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn settings_reject_invalid_date_format() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"appearance.date_format":"RFC3339"}"#))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn settings_reject_invalid_row_density() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"appearance.row_density":"spacious"}"#))
             .unwrap();
         let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

@@ -15,8 +15,6 @@
   /* Glass surfaces */
   --sk-glass-sidebar: rgba(255, 255, 255, 0.5);
   --sk-glass-sidebar-blur: blur(20px);
-  --sk-glass-toolbar: rgba(255, 255, 255, 0.4);
-  --sk-glass-toolbar-blur: blur(20px);
   --sk-glass-grid: rgba(255, 255, 255, 0.55);
   --sk-glass-grid-blur: blur(24px);
   --sk-glass-statusbar: rgba(255, 255, 255, 0.4);
@@ -61,7 +59,10 @@
   /* Sidebar */
   --sk-sidebar-width: 210px;
   --sk-sidebar-collapsed: 48px;
-  --sk-toolstrip-width: 40px;
+  --sk-dock-height: 40px;
+  --sk-dock-inset: 20px;
+  --sk-dock-panel-width: 560px;
+  --sk-dock-clearance: 108px; /* dock-height(40) + dock-inset(20) + panel-padding-budget(48) */
 
   /* Zebra striping */
   --sk-row-alt: rgba(245, 240, 235, 0.3);
@@ -72,4 +73,31 @@
     rgba(255, 255, 255, 0.4) 4px,
     rgba(255, 255, 255, 0.4) 8px
   );
+
+  /* Density tokens */
+  --sk-table-header-min-height: 52px;
+  --sk-toolbar-gap: var(--sk-space-sm);
+  --sk-toolbar-padding-y: var(--sk-space-md);
+  --sk-tool-button-size: 32px;
+  --sk-statusbar-padding-y: var(--sk-space-sm);
+  --sk-grid-header-gap: 6px;
+  --sk-grid-filter-padding-y: 4px;
+  --sk-grid-filter-padding-x: 8px;
+  --sk-grid-filter-header-height: 72px;
+  --sk-grid-badge-padding-y: 2px;
+  --sk-grid-badge-padding-x: 8px;
+}
+
+.sk-density--compact {
+  --sk-table-header-min-height: 44px;
+  --sk-toolbar-gap: 6px;
+  --sk-toolbar-padding-y: var(--sk-space-sm);
+  --sk-tool-button-size: 28px;
+  --sk-statusbar-padding-y: 6px;
+  --sk-grid-header-gap: 4px;
+  --sk-grid-filter-padding-y: 2px;
+  --sk-grid-filter-padding-x: 6px;
+  --sk-grid-filter-header-height: 62px;
+  --sk-grid-badge-padding-y: 1px;
+  --sk-grid-badge-padding-x: 6px;
 }
