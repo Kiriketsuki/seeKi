@@ -598,7 +598,11 @@
       ...appSettings,
       ...entries,
     };
-    displayConfig = await fetchDisplayConfig();
+    try {
+      displayConfig = await fetchDisplayConfig();
+    } catch {
+      // Save succeeded; display-config refresh failure is non-fatal.
+    }
   }
 
   async function handleSaveAppearance(nextAppearance: AppearanceSettings) {
