@@ -155,6 +155,12 @@ impl DatabasePool {
         }
     }
 
+    pub fn ssh_connected(&self) -> bool {
+        match self {
+            Self::Postgres(_, tunnel) => tunnel.is_some(),
+        }
+    }
+
     /// Get a reference to the underlying PostgreSQL pool for streaming operations.
     /// Returns None if the pool is not PostgreSQL.
     pub fn pg_pool(&self) -> Option<&sqlx::PgPool> {

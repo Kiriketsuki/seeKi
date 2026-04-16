@@ -195,8 +195,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--sk-space-sm);
-    padding: var(--sk-space-md) 0;
+    gap: var(--sk-toolbar-gap);
+    padding: var(--sk-toolbar-padding-y) 0;
     background: var(--sk-glass-sidebar);
     backdrop-filter: var(--sk-glass-sidebar-blur);
     -webkit-backdrop-filter: var(--sk-glass-sidebar-blur);
@@ -211,8 +211,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: var(--sk-tool-button-size);
+    height: var(--sk-tool-button-size);
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
     background: var(--sk-glass-button);

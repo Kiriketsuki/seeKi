@@ -2,6 +2,8 @@
   import { onMount, tick } from 'svelte';
   import { Search, X } from 'lucide-svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import SettingsNav from './components/SettingsNav.svelte';
+  import SettingsContent from './components/SettingsContent.svelte';
   import TableList from './components/TableList.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import TableHeader from './components/TableHeader.svelte';
@@ -13,21 +15,34 @@
     fetchRows,
     fetchDisplayConfig,
     fetchStatus,
+    fetchSettings,
     fetchLastUsedState,
     saveLastUsedState,
+    saveSettings,
   } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
+    AppearanceSettings,
+    BrandingSettings,
     TableInfo,
     ColumnInfo,
     QueryResult,
     DisplayConfig,
+    SettingsEntries,
+    SidebarMode,
     SortState,
     FilterState,
     SortDirection,
     SortColumn,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
+  import { sidebarMode } from './lib/stores';
+  import {
+    buildAppearanceSettingsEntries,
+    buildBrandingSettingsEntries,
+    parseAppearanceSettings,
+    parseBrandingSettings,
+  } from './lib/settings';
   import SetupWizard from './components/SetupWizard.svelte';
 
   let tables: TableInfo[] = $state([]);
@@ -36,6 +51,7 @@
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
+  let appSettings: SettingsEntries = $state({});
   let sidebarCollapsed: boolean = $state(
     typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   );
@@ -56,6 +72,8 @@
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let lastUsedSaveId: ReturnType<typeof setTimeout> | null = null;
+  let modeShortcutId: ReturnType<typeof setTimeout> | null = null;
+  let pendingModeShortcut: 'g' | null = null;
   let selectRequestId = 0;
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
@@ -74,6 +92,15 @@
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
+  let brandingSettings = $derived.by(
+    () => parseBrandingSettings(appSettings, displayConfig)
+  );
+  let appearanceSettings = $derived.by(() => parseAppearanceSettings(appSettings));
+  let densityClass = $derived.by(() =>
+    appearanceSettings.rowDensity === 'compact'
+      ? 'sk-density--compact'
+      : 'sk-density--comfortable'
+  );
   let sortLabel = $derived.by(() => {
     if (!sortState.column || !sortState.direction) {
       return 'No active sort';
@@ -91,12 +118,14 @@
         isSetup = true;
         return;
       }
-      const [fetchedTables, config] = await Promise.all([
+      const [fetchedTables, config, settings] = await Promise.all([
         fetchTables(),
         fetchDisplayConfig(),
+        fetchSettings(),
       ]);
       tables = fetchedTables;
       displayConfig = config;
+      appSettings = settings;
       if (tables.length > 0) {
         await selectTable(tables[0]);
       }
@@ -147,6 +176,28 @@
           handleSearchClear();
         }
       }
+
+      if (!inTextField && !isShortcut && !event.shiftKey) {
+        if (pendingModeShortcut === 'g') {
+          if (key === 's') {
+            event.preventDefault();
+            setSidebarMode('settings');
+            return;
+          }
+
+          if (key === 't') {
+            event.preventDefault();
+            setSidebarMode('tables');
+            return;
+          }
+
+          clearModeShortcut();
+        }
+
+        if (key === 'g') {
+          armModeShortcut();
+        }
+      }
     }
 
     window.addEventListener('keydown', handleKeydown);
@@ -154,6 +205,7 @@
       window.removeEventListener('keydown', handleKeydown);
       clearFilterDebounce();
       clearSearchDebounce();
+      clearModeShortcut();
     };
   });
 
@@ -169,6 +221,28 @@
       clearTimeout(searchDebounceId);
       searchDebounceId = null;
     }
+  }
+
+  function clearModeShortcut() {
+    if (modeShortcutId != null) {
+      clearTimeout(modeShortcutId);
+      modeShortcutId = null;
+    }
+    pendingModeShortcut = null;
+  }
+
+  function armModeShortcut() {
+    clearModeShortcut();
+    pendingModeShortcut = 'g';
+    modeShortcutId = setTimeout(() => {
+      modeShortcutId = null;
+      pendingModeShortcut = null;
+    }, 900);
+  }
+
+  function setSidebarMode(nextMode: SidebarMode) {
+    clearModeShortcut();
+    sidebarMode.set(nextMode);
   }
 
   function normalizeColumnVisibility(
@@ -510,6 +584,25 @@
     const base = `/api/export/${encodeURIComponent(selectedSchema)}/${encodeURIComponent(selectedTable)}/csv`;
     window.open(`${base}${qs ? `?${qs}` : ''}`, '_blank');
   }
+
+  async function handleSaveBranding(nextBranding: BrandingSettings) {
+    const entries = buildBrandingSettingsEntries(nextBranding);
+    await saveSettings(entries);
+    appSettings = {
+      ...appSettings,
+      ...entries,
+    };
+    displayConfig = await fetchDisplayConfig();
+  }
+
+  async function handleSaveAppearance(nextAppearance: AppearanceSettings) {
+    const entries = buildAppearanceSettingsEntries(nextAppearance);
+    await saveSettings(entries);
+    appSettings = {
+      ...appSettings,
+      ...entries,
+    };
+  }
 </script>
 
 {#if isSetup}
@@ -544,100 +637,119 @@
     </main>
   </div>
 {:else}
-  <div class="layout">
+  <div class={`layout ${densityClass}`}>
     <Sidebar
       bind:collapsed={sidebarCollapsed}
       onToggle={() => sidebarCollapsed = !sidebarCollapsed}
+      onSelectMode={setSidebarMode}
       title={displayConfig?.branding?.title ?? 'SeeKi'}
       subtitle={displayConfig?.branding?.subtitle ?? ''}
+      mode={$sidebarMode}
+      showModeSwitch={true}
     >
       {#if !sidebarCollapsed}
-        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+        {#if $sidebarMode === 'tables'}
+          <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+        {:else}
+          <SettingsNav />
+        {/if}
       {/if}
     </Sidebar>
-    <Toolbar
-      sortState={sortState}
-      sortDescription={sortLabel}
-      filtersVisible={filtersVisible}
-      activeFilterCount={activeFilterCount}
-      searchActive={searchActive}
-      searchVisible={searchVisible}
-      columnsOpen={columnsOpen}
-      columns={columns}
-      columnVisibility={columnVisibility}
-      hiddenColumnCount={hiddenColumnCount}
-      hasTable={!!selectedTable}
-      onToggleSearch={toggleSearch}
-      onToggleFilters={toggleFilters}
-      onToggleColumns={toggleColumns}
-      onToggleColumnVisibility={handleToggleColumnVisibility}
-      onShowAllColumns={handleShowAllColumns}
-      onCloseColumns={closeColumns}
-      onExport={exportCsv}
-    />
-    <main class="main">
-      <div class="table-panel">
-        <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
-        {#if searchVisible}
-          <div id="search-panel" class="search-panel" class:active={searchActive}>
-            <div class="search-box">
-              <Search size={14} />
-              <input
-                bind:this={searchInputEl}
-                type="text"
-                class="search-input"
-                class:has-value={searchQuery.length > 0}
-                placeholder="Search all text columns..."
-                value={searchTerm}
-                oninput={handleSearchInput}
-                aria-label="Search rows"
-              />
-              <button
-                type="button"
-                class="clear-search"
-                aria-label="Clear search"
-                onclick={handleSearchClear}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        {/if}
-      </div>
-      {#if tableError}
-        <div class="table-error-banner">
-          <span>{tableError}</span>
-          <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
-        </div>
-      {/if}
-      <div class="grid-area">
-        <div class="grid-shell" class:loading-overlay={tableLoading}>
-          <DataGrid
-            columns={visibleColumns}
-            rows={queryResult?.rows ?? []}
-            {sortState}
-            {filters}
-            {filtersVisible}
-            onSortChange={handleSortChange}
-            onFilterChange={handleFilterChange}
-          />
-          {#if tableLoading}
-            <div class="grid-loading">
-              <div class="loading-spinner"></div>
+    {#if $sidebarMode === 'tables'}
+      <Toolbar
+        sortState={sortState}
+        sortDescription={sortLabel}
+        filtersVisible={filtersVisible}
+        activeFilterCount={activeFilterCount}
+        searchActive={searchActive}
+        searchVisible={searchVisible}
+        columnsOpen={columnsOpen}
+        columns={columns}
+        columnVisibility={columnVisibility}
+        hiddenColumnCount={hiddenColumnCount}
+        hasTable={!!selectedTable}
+        onToggleSearch={toggleSearch}
+        onToggleFilters={toggleFilters}
+        onToggleColumns={toggleColumns}
+        onToggleColumnVisibility={handleToggleColumnVisibility}
+        onShowAllColumns={handleShowAllColumns}
+        onCloseColumns={closeColumns}
+        onExport={exportCsv}
+      />
+      <main class="main">
+        <div class="table-panel">
+          <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
+          {#if searchVisible}
+            <div id="search-panel" class="search-panel" class:active={searchActive}>
+              <div class="search-box">
+                <Search size={14} />
+                <input
+                  bind:this={searchInputEl}
+                  type="text"
+                  class="search-input"
+                  class:has-value={searchQuery.length > 0}
+                  placeholder="Search all text columns..."
+                  value={searchTerm}
+                  oninput={handleSearchInput}
+                  aria-label="Search rows"
+                />
+                <button
+                  type="button"
+                  class="clear-search"
+                  aria-label="Clear search"
+                  onclick={handleSearchClear}
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
           {/if}
         </div>
-      </div>
-      <StatusBar
-        total={queryResult?.total_rows ?? 0}
-        start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
-        end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
-        page={queryResult?.page ?? 1}
-        totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
-        loading={tableLoading}
-        onPageChange={goToPage}
-      />
-    </main>
+        {#if tableError}
+          <div class="table-error-banner">
+            <span>{tableError}</span>
+            <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
+          </div>
+        {/if}
+        <div class="grid-area">
+          <div class="grid-shell" class:loading-overlay={tableLoading}>
+            <DataGrid
+              columns={visibleColumns}
+              rows={queryResult?.rows ?? []}
+              dateFormat={appearanceSettings.dateFormat}
+              {sortState}
+              {filters}
+              {filtersVisible}
+              onSortChange={handleSortChange}
+              onFilterChange={handleFilterChange}
+            />
+            {#if tableLoading}
+              <div class="grid-loading">
+                <div class="loading-spinner"></div>
+              </div>
+            {/if}
+          </div>
+        </div>
+        <StatusBar
+          total={queryResult?.total_rows ?? 0}
+          start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
+          end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
+          page={queryResult?.page ?? 1}
+          totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
+          loading={tableLoading}
+          onPageChange={goToPage}
+        />
+      </main>
+    {:else}
+      <main class="main settings-main">
+        <SettingsContent
+          branding={brandingSettings}
+          appearance={appearanceSettings}
+          onSaveBranding={handleSaveBranding}
+          onSaveAppearance={handleSaveAppearance}
+        />
+      </main>
+    {/if}
   </div>
 {/if}
 
@@ -655,6 +767,10 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+  }
+
+  .settings-main {
+    overflow: hidden;
   }
 
   .table-panel {

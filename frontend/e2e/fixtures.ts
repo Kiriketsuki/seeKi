@@ -126,6 +126,28 @@ export class SeekiHelpers {
     await this.page.locator('.sidebar .toggle').click();
   }
 
+  /** Switch the sidebar workspace to Settings. */
+  async openSettings(): Promise<void> {
+    const settingsButton = this.page.locator('button', { hasText: 'Settings' }).first();
+    if (await settingsButton.isVisible()) {
+      await settingsButton.click();
+      return;
+    }
+
+    await this.page.locator('.collapsed-modes button[aria-label="Show settings workspace"]').click();
+  }
+
+  /** Switch the sidebar workspace back to Tables. */
+  async openTables(): Promise<void> {
+    const tablesButton = this.page.locator('button', { hasText: 'Tables' }).first();
+    if (await tablesButton.isVisible()) {
+      await tablesButton.click();
+      return;
+    }
+
+    await this.page.locator('.collapsed-modes button[aria-label="Show tables workspace"]').click();
+  }
+
   /** Check if sidebar is collapsed. */
   async isSidebarCollapsed(): Promise<boolean> {
     const sidebar = this.page.locator('.sidebar');

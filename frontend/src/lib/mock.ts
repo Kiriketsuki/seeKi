@@ -1,8 +1,12 @@
 import type {
+  ConnectionStatusResponse,
   TableInfo,
   ColumnInfo,
   QueryResult,
   DisplayConfig,
+  SettingsEntries,
+  UpdateStatusResponse,
+  VersionResponse,
 } from './types';
 
 const MOCK_ROW_COUNT = 200;
@@ -515,4 +519,35 @@ export function mockFetchDisplayConfig(): DisplayConfig {
       ]),
     ),
   };
+}
+
+export function mockFetchSettings(): SettingsEntries {
+  return {
+    'appearance.date_format': 'system',
+    'appearance.row_density': 'comfortable',
+  };
+}
+
+export function mockFetchConnectionStatus(): ConnectionStatusResponse {
+  return {
+    database_kind: 'postgres',
+    host: 'db.internal',
+    port: 5432,
+    database: 'fleet',
+    schemas: ['public', 'reporting'],
+    ssh_enabled: true,
+    ssh_connected: true,
+  };
+}
+
+export function mockFetchVersion(): VersionResponse {
+  return {
+    version: '26.5.0.3a',
+    commit: 'abc123def456',
+    built_at: '2026-04-15T00:00:00Z',
+  };
+}
+
+export function mockFetchUpdateStatus(): UpdateStatusResponse | null {
+  return null;
 }
