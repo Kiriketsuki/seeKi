@@ -30,6 +30,8 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
         .route("/tables/{schema}/{table}/columns", get(get_columns))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
+        .route("/connection-status", get(get_connection_status))
+        .route("/version", get(get_version))
         .route("/export/{schema}/{table}/csv", get(export_csv))
         .route("/status", get(status))
         .route("/setup/test-connection", post(setup::test_connection))
@@ -78,6 +80,24 @@ struct BrandingResponse {
 }
 
 #[derive(Serialize)]
+struct ConnectionStatusResponse {
+    database_kind: &'static str,
+    host: Option<String>,
+    port: Option<u16>,
+    database: Option<String>,
+    schemas: Vec<String>,
+    ssh_enabled: bool,
+    ssh_connected: bool,
+}
+
+#[derive(Serialize)]
+struct VersionResponse {
+    version: &'static str,
+    commit: &'static str,
+    built_at: &'static str,
+}
+
+#[derive(Serialize)]
 struct TableDisplayConfig {
     display_name: String,
     columns: HashMap<String, ColumnDisplayConfig>,
@@ -90,8 +110,10 @@ struct ColumnDisplayConfig {
 
 async fn get_display_config(
     Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
 ) -> Result<Json<DisplayConfigResponse>, AppError> {
     let state = require_state(&mode).await?;
+    let settings = load_settings_map(&store).await?;
     let schemas = state.config.database.effective_schemas();
     let all_tables = state.db.list_tables(&schemas).await?;
     let allowed_tables: Vec<_> = all_tables
@@ -136,12 +158,77 @@ async fn get_display_config(
     }
 
     Ok(Json(DisplayConfigResponse {
-        branding: BrandingResponse {
-            title: state.config.branding.title.clone(),
-            subtitle: state.config.branding.subtitle.clone(),
-        },
+        branding: overlay_branding_settings(
+            BrandingResponse {
+                title: state.config.branding.title.clone(),
+                subtitle: state.config.branding.subtitle.clone(),
+            },
+            &settings,
+        ),
         tables,
     }))
+}
+
+async fn get_connection_status(
+    Extension(mode): Extension<SharedAppMode>,
+) -> Result<Json<ConnectionStatusResponse>, AppError> {
+    let state = require_state(&mode).await?;
+    let details = state
+        .config
+        .database
+        .sanitized_connection_info()
+        .map_err(AppError::internal)?;
+
+    Ok(Json(ConnectionStatusResponse {
+        database_kind: state.config.database.kind.as_str(),
+        host: details.host,
+        port: details.port,
+        database: details.database,
+        schemas: state.config.database.effective_schemas(),
+        ssh_enabled: state.config.ssh.is_some(),
+        ssh_connected: state.db.ssh_connected(),
+    }))
+}
+
+async fn get_version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        version: env!("SEEKI_VERSION"),
+        commit: env!("SEEKI_GIT_COMMIT"),
+        built_at: env!("SEEKI_BUILT_AT"),
+    })
+}
+
+async fn load_settings_map(store: &Store) -> Result<HashMap<String, serde_json::Value>, AppError> {
+    Ok(crate::store::settings::get_all(store.pool())
+        .await?
+        .into_iter()
+        .collect())
+}
+
+fn overlay_branding_settings(
+    defaults: BrandingResponse,
+    settings: &HashMap<String, serde_json::Value>,
+) -> BrandingResponse {
+    BrandingResponse {
+        title: read_optional_string_setting(settings, "branding.title", defaults.title),
+        subtitle: read_optional_string_setting(settings, "branding.subtitle", defaults.subtitle),
+    }
+}
+
+fn read_optional_string_setting(
+    settings: &HashMap<String, serde_json::Value>,
+    key: &str,
+    fallback: Option<String>,
+) -> Option<String> {
+    match settings.get(key) {
+        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        Some(serde_json::Value::Null) => None,
+        Some(other) => {
+            tracing::warn!(setting = key, value = ?other, "ignoring non-string app setting");
+            fallback
+        }
+        None => fallback,
+    }
 }
 
 async fn list_tables(
@@ -622,6 +709,13 @@ impl AppError {
         }
     }
 
+    pub(super) fn internal(message: impl Into<String>) -> Self {
+        Self {
+            status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            message: message.into(),
+        }
+    }
+
     pub(super) fn service_unavailable(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
@@ -668,6 +762,14 @@ impl axum::response::IntoResponse for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{Router, body::Body, http::Request};
+    use http_body_util::BodyExt;
+    use sqlx::postgres::PgPoolOptions;
+    use tower::ServiceExt;
+
+    use crate::app_mode::initial_mode;
+    use crate::config::{AppConfig, DatabaseConfig, ServerConfig, TablesConfig};
+    use crate::store::testutil::ephemeral_store;
 
     fn test_columns() -> Vec<ColumnInfo> {
         vec![
@@ -764,6 +866,120 @@ mod tests {
         assert_eq!(vl["display_name"], "Fleet Log");
         assert_eq!(vl["columns"]["posn_lat"]["display_name"], "Latitude");
         assert_eq!(vl["columns"]["supervisor_id"]["display_name"], "Supervisor");
+    }
+
+    #[test]
+    fn overlay_branding_settings_prefers_saved_values() {
+        let settings = HashMap::from([
+            (
+                "branding.title".to_string(),
+                serde_json::Value::String("Fleet DB".into()),
+            ),
+            (
+                "branding.subtitle".to_string(),
+                serde_json::Value::String("Operations".into()),
+            ),
+        ]);
+
+        let branding = overlay_branding_settings(
+            BrandingResponse {
+                title: Some("SeeKi".into()),
+                subtitle: Some("Viewer".into()),
+            },
+            &settings,
+        );
+
+        assert_eq!(branding.title.as_deref(), Some("Fleet DB"));
+        assert_eq!(branding.subtitle.as_deref(), Some("Operations"));
+    }
+
+    #[test]
+    fn overlay_branding_settings_falls_back_for_invalid_value_types() {
+        let settings = HashMap::from([("branding.title".to_string(), serde_json::json!(false))]);
+
+        let branding = overlay_branding_settings(
+            BrandingResponse {
+                title: Some("SeeKi".into()),
+                subtitle: None,
+            },
+            &settings,
+        );
+
+        assert_eq!(branding.title.as_deref(), Some("SeeKi"));
+    }
+
+    #[tokio::test]
+    async fn connection_status_route_returns_sanitized_runtime_metadata() {
+        let (store, _dir) = ephemeral_store().await;
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://user:pass@db.internal:5544/fleet")
+            .unwrap();
+        let config = AppConfig {
+            server: ServerConfig {
+                host: "127.0.0.1".into(),
+                port: 3141,
+            },
+            database: DatabaseConfig {
+                url: "postgres://user:pass@db.internal:5544/fleet".into(),
+                kind: crate::config::DatabaseKind::Postgres,
+                max_connections: 5,
+                schemas: Some(vec!["public".into(), "reporting".into()]),
+            },
+            tables: TablesConfig::default(),
+            display: crate::config::DisplayConfig::default(),
+            branding: crate::config::BrandingConfig::default(),
+            ssh: Some(crate::config::SshConfig {
+                host: "jumpbox.internal".into(),
+                port: 22,
+                username: "tester".into(),
+                auth_method: crate::config::SshAuthMethod::Agent,
+                key_path: None,
+                known_hosts: crate::config::KnownHostsPolicy::Add,
+            }),
+        };
+        let mode = initial_mode(Some(crate::AppState {
+            db: crate::db::DatabasePool::Postgres(pool, None),
+            config,
+        }));
+        let app: Router = router(mode, store);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/connection-status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["database_kind"], "postgres");
+        assert_eq!(json["host"], "db.internal");
+        assert_eq!(json["port"], 5544);
+        assert_eq!(json["database"], "fleet");
+        assert_eq!(json["schemas"], serde_json::json!(["public", "reporting"]));
+        assert_eq!(json["ssh_enabled"], true);
+        assert_eq!(json["ssh_connected"], false);
+        assert!(json.get("url").is_none());
+        assert!(json.get("username").is_none());
+        assert!(json.get("password").is_none());
+    }
+
+    #[test]
+    fn version_response_serializes_embedded_build_metadata() {
+        let response = serde_json::to_value(VersionResponse {
+            version: env!("SEEKI_VERSION"),
+            commit: env!("SEEKI_GIT_COMMIT"),
+            built_at: env!("SEEKI_BUILT_AT"),
+        })
+        .unwrap();
+
+        assert!(response["version"].as_str().unwrap().len() >= 1);
+        assert!(response["commit"].as_str().unwrap().len() >= 1);
+        assert!(response["built_at"].as_str().unwrap().len() >= 1);
     }
 
     #[test]

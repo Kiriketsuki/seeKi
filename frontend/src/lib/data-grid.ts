@@ -1,5 +1,5 @@
 import type { ColumnRegular } from '@revolist/svelte-datagrid';
-import type { ColumnInfo, SortDirection, SortState } from './types';
+import type { ColumnInfo, DateFormatPreference, SortDirection, SortState } from './types';
 
 const INTEGER_TYPES = new Set([
   'smallint',
@@ -39,6 +39,11 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: 'short',
   day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
 });
@@ -128,6 +133,7 @@ export function getColumnDisplayName(column: ColumnInfo): string {
 export function formatCellValue(
   column: ColumnInfo,
   value: unknown,
+  dateFormat: DateFormatPreference = 'system',
 ): FormattedCellValue {
   if (value == null) {
     return {
@@ -154,7 +160,7 @@ export function formatCellValue(
     if (!Number.isNaN(parsed.getTime())) {
       return {
         kind: 'timestamp',
-        display: dateFormatter.format(parsed),
+        display: formatDate(parsed, dateFormat),
         tooltip: raw,
       };
     }
@@ -171,7 +177,7 @@ export function formatCellValue(
     if (!Number.isNaN(parsed.getTime())) {
       return {
         kind: 'timestamp',
-        display: formatter.format(parsed),
+        display: formatDateTime(parsed, dateFormat),
         tooltip: raw,
       };
     }
@@ -199,6 +205,35 @@ export function formatCellValue(
     kind: 'text',
     display: String(value),
   };
+}
+
+function formatDate(date: Date, dateFormat: DateFormatPreference): string {
+  if (dateFormat === 'system') {
+    return dateFormatter.format(date);
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  switch (dateFormat) {
+    case 'YYYY-MM-DD':
+      return `${year}-${month}-${day}`;
+    case 'DD/MM/YYYY':
+      return `${day}/${month}/${year}`;
+    case 'MM/DD/YYYY':
+      return `${month}/${day}/${year}`;
+    default:
+      return dateFormatter.format(date);
+  }
+}
+
+function formatDateTime(date: Date, dateFormat: DateFormatPreference): string {
+  if (dateFormat === 'system') {
+    return formatter.format(date);
+  }
+
+  return `${formatDate(date, dateFormat)} ${timeFormatter.format(date)}`;
 }
 
 export function buildSortableColumn(

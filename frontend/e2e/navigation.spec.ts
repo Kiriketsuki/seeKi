@@ -50,7 +50,7 @@ test.describe('Navigation — Table Switching', () => {
     expect(statusBar).toMatch(/Showing \d+ - \d+ of \d+/);
   });
 
-  test('switching tables resets sort and filters', async ({ page, seeki }) => {
+  test('switching tables resets search state and toolbar defaults', async ({ page, seeki }) => {
     const tableNames = await seeki.getSidebarTableNames();
     test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
 
@@ -79,6 +79,31 @@ test.describe('Navigation — Table Switching', () => {
     await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
     await expect(page.locator('.sk-grid-header__sort')).toHaveCount(0);
     await expect(page.locator('[role="columnheader"]').first().locator('.sk-grid-header')).not.toHaveAttribute('aria-sort');
+  });
+
+  test('switching to settings and back preserves the current table workspace', async ({ page, seeki }) => {
+    const tableNames = await seeki.getSidebarTableNames();
+    test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
+
+    const secondTableName = tableNames[1];
+    await seeki.selectTable(secondTableName);
+
+    await seeki.clickSearchToggle();
+    const searchInput = page.locator('.search-input');
+    await expect(searchInput).toBeVisible();
+    const rowsLoaded = seeki.pendingRowsResponse();
+    await searchInput.fill('a');
+    await rowsLoaded;
+    await expect(searchInput).toHaveValue('a');
+
+    await seeki.openSettings();
+    await expect(page.locator('h1')).toContainText('Updates');
+
+    await seeki.openTables();
+    await seeki.waitForGridLoaded();
+
+    await expect(page.locator('button.table-item.active')).toContainText(secondTableName);
+    await expect(page.locator('.search-input')).toHaveValue('a');
   });
 });
 

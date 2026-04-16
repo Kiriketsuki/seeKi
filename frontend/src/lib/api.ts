@@ -1,4 +1,6 @@
 import type {
+  ConnectionStatusResponse,
+  SettingsEntries,
   TableInfo,
   ColumnInfo,
   QueryResult,
@@ -19,12 +21,18 @@ import type {
   SortPreset,
   FilterPreset,
   LastUsedTableState,
+  UpdateStatusResponse,
+  VersionResponse,
 } from './types';
 import {
   mockFetchTables,
   mockFetchColumns,
   mockFetchRows,
+  mockFetchConnectionStatus,
   mockFetchDisplayConfig,
+  mockFetchSettings,
+  mockFetchUpdateStatus,
+  mockFetchVersion,
 } from './mock';
 
 const USE_MOCK = import.meta.env.VITE_MOCK === 'true';
@@ -165,6 +173,24 @@ export async function fetchDisplayConfig(): Promise<DisplayConfig> {
   return data;
 }
 
+export async function fetchConnectionStatus(): Promise<ConnectionStatusResponse> {
+  if (USE_MOCK) return mockFetchConnectionStatus();
+  const data = await apiFetch<ConnectionStatusResponse>('/api/connection-status');
+  assertShape(
+    data,
+    ['database_kind', 'host', 'port', 'database', 'schemas', 'ssh_enabled', 'ssh_connected'],
+    '/api/connection-status',
+  );
+  return data;
+}
+
+export async function fetchVersion(): Promise<VersionResponse> {
+  if (USE_MOCK) return mockFetchVersion();
+  const data = await apiFetch<VersionResponse>('/api/version');
+  assertShape(data, ['version', 'commit', 'built_at'], '/api/version');
+  return data;
+}
+
 export async function fetchStatus(): Promise<StatusResponse> {
   if (USE_MOCK) return { mode: 'normal' };
   const data = await apiFetch<StatusResponse>('/api/status');
@@ -215,12 +241,52 @@ export async function setupTestConnection(req: {
 
 // ── Preferences API ───────────────────────────────────────────────────────────
 
-export async function fetchSettings(): Promise<Record<string, unknown>> {
-  return apiFetch<Record<string, unknown>>('/api/preferences/settings');
+export async function fetchSettings(): Promise<SettingsEntries> {
+  if (USE_MOCK) return mockFetchSettings();
+  return apiFetch<SettingsEntries>('/api/preferences/settings');
 }
 
-export async function saveSettings(entries: Record<string, unknown>): Promise<void> {
+export async function saveSettings(entries: SettingsEntries): Promise<void> {
   await apiPost('/api/preferences/settings', entries);
+}
+
+function isApiStatusError(error: unknown, status: number): boolean {
+  return error instanceof Error && error.message.startsWith(`API error ${status}`);
+}
+
+export async function fetchUpdateStatus(): Promise<UpdateStatusResponse | null> {
+  if (USE_MOCK) return mockFetchUpdateStatus();
+  try {
+    const data = await apiFetch<UpdateStatusResponse>('/api/update/status');
+    assertShape(
+      data,
+      ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
+      '/api/update/status',
+    );
+    return data;
+  } catch (error) {
+    if (isApiStatusError(error, 404) || isApiStatusError(error, 503)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function checkForUpdates(): Promise<UpdateStatusResponse | null> {
+  try {
+    const data = await apiPost<UpdateStatusResponse>('/api/update/check', {});
+    assertShape(
+      data,
+      ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
+      '/api/update/check',
+    );
+    return data;
+  } catch (error) {
+    if (isApiStatusError(error, 404) || isApiStatusError(error, 503)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function fetchLastUsedState(

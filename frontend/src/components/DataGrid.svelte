@@ -9,6 +9,7 @@
   import type { VNode } from '@revolist/revogrid';
   import type {
     ColumnInfo,
+    DateFormatPreference,
     FilterState,
     SortState,
   } from '../lib/types';
@@ -24,6 +25,7 @@
   let {
     columns = [],
     rows = [],
+    dateFormat = 'system',
     sortState = [],
     filters = {},
     filtersVisible = false,
@@ -32,6 +34,7 @@
   }: {
     columns: ColumnInfo[];
     rows: Record<string, unknown>[];
+    dateFormat?: DateFormatPreference;
     sortState?: SortState;
     filters?: FilterState;
     filtersVisible?: boolean;
@@ -185,7 +188,7 @@
       );
     }
 
-    const formatted = formatCellValue(info, props.value);
+    const formatted = formatCellValue(info, props.value, dateFormat);
 
     if (formatted.kind === 'null') {
       return h(
@@ -298,7 +301,7 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sk-grid-header-gap);
     width: 100%;
     color: inherit;
   }
@@ -361,7 +364,7 @@
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     line-height: 1.3;
-    padding: 4px 8px;
+    padding: var(--sk-grid-filter-padding-y) var(--sk-grid-filter-padding-x);
     outline: none;
   }
 
@@ -411,7 +414,7 @@
     align-items: center;
     justify-content: center;
     min-width: 42px;
-    padding: 2px 8px;
+    padding: var(--sk-grid-badge-padding-y) var(--sk-grid-badge-padding-x);
     border-radius: 999px;
     font-size: var(--sk-font-size-sm);
     font-weight: 600;
@@ -433,7 +436,7 @@
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header .header-rgRow) {
-    height: 72px;
+    height: var(--sk-grid-filter-header-height);
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header .rgHeaderCell) {

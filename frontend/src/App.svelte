@@ -1,18 +1,24 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import SettingsNav from './components/SettingsNav.svelte';
+  import SettingsContent from './components/SettingsContent.svelte';
   import TableList from './components/TableList.svelte';
   import ActionDock from './components/ActionDock.svelte';
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus, fetchUpdateStatus, fetchLastUsedState, saveLastUsedState } from './lib/api';
+  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus, fetchUpdateStatus, fetchSettings, fetchLastUsedState, saveLastUsedState, saveSettings } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
+    AppearanceSettings,
+    BrandingSettings,
     TableInfo,
     ColumnInfo,
     QueryResult,
     DisplayConfig,
+    SettingsEntries,
+    SidebarMode,
     SortState,
     FilterState,
     UpdateStatus,
@@ -20,6 +26,13 @@
     SortColumn,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
+  import { sidebarMode } from './lib/stores';
+  import {
+    buildAppearanceSettingsEntries,
+    buildBrandingSettingsEntries,
+    parseAppearanceSettings,
+    parseBrandingSettings,
+  } from './lib/settings';
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
 
@@ -29,6 +42,7 @@
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
+  let appSettings: SettingsEntries = $state({});
   let sidebarCollapsed: boolean = $state(
     typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   );
@@ -55,6 +69,8 @@
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let lastUsedSaveId: ReturnType<typeof setTimeout> | null = null;
+  let modeShortcutId: ReturnType<typeof setTimeout> | null = null;
+  let pendingModeShortcut: 'g' | null = null;
   let selectRequestId = 0;
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
@@ -73,6 +89,16 @@
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
+  let brandingSettings = $derived.by(
+    () => parseBrandingSettings(appSettings, displayConfig)
+  );
+  let appearanceSettings = $derived.by(() => parseAppearanceSettings(appSettings));
+  let densityClass = $derived.by(() =>
+    appearanceSettings.rowDensity === 'compact'
+      ? 'sk-density--compact'
+      : 'sk-density--comfortable'
+  );
+
   onMount(async () => {
     try {
       const status = await fetchStatus();
@@ -80,12 +106,14 @@
         isSetup = true;
         return;
       }
-      const [fetchedTables, config] = await Promise.all([
+      const [fetchedTables, config, settings] = await Promise.all([
         fetchTables(),
         fetchDisplayConfig(),
+        fetchSettings(),
       ]);
       tables = fetchedTables;
       displayConfig = config;
+      appSettings = settings;
       if (tables.length > 0) {
         await selectTable(tables[0]);
       }
@@ -150,6 +178,28 @@
           void tick().then(() => filterButtonEl?.focus());
         }
       }
+
+      if (!inTextField && !isShortcut && !event.shiftKey) {
+        if (pendingModeShortcut === 'g') {
+          if (key === 's') {
+            event.preventDefault();
+            setSidebarMode('settings');
+            return;
+          }
+
+          if (key === 't') {
+            event.preventDefault();
+            setSidebarMode('tables');
+            return;
+          }
+
+          clearModeShortcut();
+        }
+
+        if (key === 'g') {
+          armModeShortcut();
+        }
+      }
     }
 
     window.addEventListener('keydown', handleKeydown);
@@ -157,6 +207,7 @@
       window.removeEventListener('keydown', handleKeydown);
       clearFilterDebounce();
       clearSearchDebounce();
+      clearModeShortcut();
     };
   });
 
@@ -539,6 +590,25 @@
     const base = `/api/export/${encodeURIComponent(selectedSchema)}/${encodeURIComponent(selectedTable)}/csv`;
     window.open(`${base}${qs ? `?${qs}` : ''}`, '_blank');
   }
+
+  async function handleSaveBranding(nextBranding: BrandingSettings) {
+    const entries = buildBrandingSettingsEntries(nextBranding);
+    await saveSettings(entries);
+    appSettings = {
+      ...appSettings,
+      ...entries,
+    };
+    displayConfig = await fetchDisplayConfig();
+  }
+
+  async function handleSaveAppearance(nextAppearance: AppearanceSettings) {
+    const entries = buildAppearanceSettingsEntries(nextAppearance);
+    await saveSettings(entries);
+    appSettings = {
+      ...appSettings,
+      ...entries,
+    };
+  }
 </script>
 
 {#if isSetup}
@@ -580,88 +650,105 @@
     onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
   />
 {:else}
-  <div class="layout">
+  <div class={`layout ${densityClass}`}>
     <Sidebar
       bind:collapsed={sidebarCollapsed}
       onToggle={() => sidebarCollapsed = !sidebarCollapsed}
+      onSelectMode={setSidebarMode}
       title={displayConfig?.branding?.title ?? 'SeeKi'}
       subtitle={displayConfig?.branding?.subtitle ?? ''}
-      {updateAvailable}
-      onSettingsClick={() => settingsOpen = true}
+      mode={$sidebarMode}
+      showModeSwitch={true}
     >
       {#if !sidebarCollapsed}
-        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+        {#if $sidebarMode === 'tables'}
+          <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+        {:else}
+          <SettingsNav />
+        {/if}
       {/if}
     </Sidebar>
-    <main class="main">
-      <div class="table-panel">
-        <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
-      </div>
-      {#if tableError}
-        <div class="table-error-banner">
-          <span>{tableError}</span>
-          <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
+    {#if $sidebarMode === 'tables'}
+      <main class="main">
+        <div class="table-panel">
+          <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
         </div>
-      {/if}
-      <div class="grid-area">
-        <div class="grid-shell">
-          <div class="grid-content">
-            <DataGrid
-              columns={visibleColumns}
-              rows={queryResult?.rows ?? []}
-              {sortState}
-              {filters}
-              {filtersVisible}
-              onSortChange={handleSortChange}
-              onFilterChange={handleFilterChange}
-            />
+        {#if tableError}
+          <div class="table-error-banner">
+            <span>{tableError}</span>
+            <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
           </div>
-          {#if selectedTable}
-            <ActionDock
-              searchVisible={searchVisible}
-              searchTerm={searchTerm}
-              searchActive={searchActive}
-              filtersVisible={filtersVisible}
-              activeFilterCount={activeFilterCount}
-              columnsOpen={columnsOpen}
-              columns={columns}
-              columnVisibility={columnVisibility}
-              hiddenColumnCount={hiddenColumnCount}
-              hasTable={!!selectedTable}
-              disabled={tableLoading}
-              sortState={sortState}
-              onToggleSearch={toggleSearch}
-              onSearchInput={handleSearchInput}
-              onSearchClear={handleSearchClear}
-              onToggleFilters={toggleFilters}
-              onToggleColumns={toggleColumns}
-              onToggleColumnVisibility={handleToggleColumnVisibility}
-              onShowAllColumns={handleShowAllColumns}
-              onCloseColumns={closeColumns}
-              onExport={exportCsv}
-              onSearchInputRef={setSearchInputEl}
-              onSearchButtonRef={setSearchButtonEl}
-              onColumnsButtonRef={setColumnsButtonEl}
-              onFilterButtonRef={setFilterButtonEl}
-            />
-          {/if}
-          {#if tableLoading}
-            <div class="grid-loading">
-              <div class="loading-spinner"></div>
+        {/if}
+        <div class="grid-area">
+          <div class="grid-shell">
+            <div class="grid-content">
+              <DataGrid
+                columns={visibleColumns}
+                rows={queryResult?.rows ?? []}
+                dateFormat={appearanceSettings.dateFormat}
+                {sortState}
+                {filters}
+                {filtersVisible}
+                onSortChange={handleSortChange}
+                onFilterChange={handleFilterChange}
+              />
             </div>
-          {/if}
+            {#if selectedTable}
+              <ActionDock
+                searchVisible={searchVisible}
+                searchTerm={searchTerm}
+                searchActive={searchActive}
+                filtersVisible={filtersVisible}
+                activeFilterCount={activeFilterCount}
+                columnsOpen={columnsOpen}
+                columns={columns}
+                columnVisibility={columnVisibility}
+                hiddenColumnCount={hiddenColumnCount}
+                hasTable={!!selectedTable}
+                disabled={tableLoading}
+                sortState={sortState}
+                onToggleSearch={toggleSearch}
+                onSearchInput={handleSearchInput}
+                onSearchClear={handleSearchClear}
+                onToggleFilters={toggleFilters}
+                onToggleColumns={toggleColumns}
+                onToggleColumnVisibility={handleToggleColumnVisibility}
+                onShowAllColumns={handleShowAllColumns}
+                onCloseColumns={closeColumns}
+                onExport={exportCsv}
+                onSearchInputRef={setSearchInputEl}
+                onSearchButtonRef={setSearchButtonEl}
+                onColumnsButtonRef={setColumnsButtonEl}
+                onFilterButtonRef={setFilterButtonEl}
+              />
+            {/if}
+            {#if tableLoading}
+              <div class="grid-loading">
+                <div class="loading-spinner"></div>
+              </div>
+            {/if}
+          </div>
         </div>
-      </div>
-      <StatusBar
-        total={queryResult?.total_rows ?? 0}
-        start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
-        end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
-        page={queryResult?.page ?? 1}
-        totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
-        loading={tableLoading}
-        onPageChange={goToPage}
-      />
-    </main>
+        <StatusBar
+          total={queryResult?.total_rows ?? 0}
+          start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
+          end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
+          page={queryResult?.page ?? 1}
+          totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
+          loading={tableLoading}
+          onPageChange={goToPage}
+        />
+      </main>
+    {:else}
+      <main class="main settings-main">
+        <SettingsContent
+          branding={brandingSettings}
+          appearance={appearanceSettings}
+          onSaveBranding={handleSaveBranding}
+          onSaveAppearance={handleSaveAppearance}
+        />
+      </main>
+    {/if}
   </div>
   <SettingsPanel
     bind:open={settingsOpen}
@@ -684,6 +771,10 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+  }
+
+  .settings-main {
+    overflow: hidden;
   }
 
   .table-panel {

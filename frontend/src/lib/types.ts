@@ -198,3 +198,57 @@ export interface LastUsedTableState {
   filters: FilterState;
   search_term: string | null;
 }
+
+export type SidebarMode = 'tables' | 'settings';
+
+export type SettingsSection =
+  | 'updates'
+  | 'branding'
+  | 'appearance'
+  | 'connection'
+  | 'about';
+
+export type DateFormatPreference =
+  | 'system'
+  | 'YYYY-MM-DD'
+  | 'DD/MM/YYYY'
+  | 'MM/DD/YYYY';
+
+export type RowDensityPreference = 'comfortable' | 'compact';
+
+export interface BrandingSettings {
+  title: string;
+  subtitle: string;
+}
+
+export interface AppearanceSettings {
+  dateFormat: DateFormatPreference;
+  rowDensity: RowDensityPreference;
+}
+
+export type SettingsEntries = Record<string, unknown>;
+
+export interface ConnectionStatusResponse {
+  database_kind: 'postgres' | 'sqlite';
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  schemas: string[];
+  ssh_enabled: boolean;
+  ssh_connected: boolean;
+}
+
+export interface VersionResponse {
+  version: string;
+  commit: string;
+  built_at: string;
+}
+
+export interface UpdateStatusResponse {
+  current: string;
+  latest: string | null;
+  pre_release_channel: boolean;
+  update_available: boolean;
+  previous_exists: boolean;
+  last_checked: string;
+}
