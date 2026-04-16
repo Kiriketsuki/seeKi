@@ -38,6 +38,7 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
         .route("/version", get(update::get_version))
         .route("/update/status", get(update::get_update_status))
         .route("/update/check", post(update::check_update))
+        .route("/update/token", get(update::get_update_token))
         .route("/update/settings", patch(update::update_settings))
         // The three mutating update endpoints are gated by bearer-token auth.
         .merge(update::protected_update_router())
@@ -693,6 +694,13 @@ impl AppError {
         }
     }
 
+    pub(super) fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: axum::http::StatusCode::FORBIDDEN,
+            message: message.into(),
+        }
+    }
+
     pub(super) fn internal(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -954,16 +962,16 @@ mod tests {
 
     #[test]
     fn version_response_serializes_embedded_build_metadata() {
-        let response = serde_json::to_value(VersionResponse {
+        let response = serde_json::to_value(update::VersionResponse {
             version: env!("SEEKI_VERSION"),
             commit: env!("SEEKI_GIT_COMMIT"),
             built_at: env!("SEEKI_BUILT_AT"),
         })
         .unwrap();
 
-        assert!(response["version"].as_str().unwrap().len() >= 1);
-        assert!(response["commit"].as_str().unwrap().len() >= 1);
-        assert!(response["built_at"].as_str().unwrap().len() >= 1);
+        assert!(!response["version"].as_str().unwrap().is_empty());
+        assert!(!response["commit"].as_str().unwrap().is_empty());
+        assert!(!response["built_at"].as_str().unwrap().is_empty());
     }
 
     #[test]

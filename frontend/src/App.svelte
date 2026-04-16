@@ -91,6 +91,7 @@
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let lastUsedSaveId: ReturnType<typeof setTimeout> | null = null;
   let modeShortcutId: ReturnType<typeof setTimeout> | null = null;
+  let updateStatusPollId: ReturnType<typeof setInterval> | null = null;
   let pendingModeShortcut: 'g' | null = null;
   let selectRequestId = 0;
   let activeFilterCount = $derived(
@@ -120,34 +121,54 @@
       : 'sk-density--comfortable'
   );
 
-  onMount(async () => {
+  function applyUpdateStatus(status: UpdateStatus | null) {
+    updateStatus = status;
+    updateAvailable = status?.update_available ?? false;
+  }
+
+  async function refreshUpdateStatus() {
     try {
-      const status = await fetchStatus();
-      if (status.mode === 'setup') {
-        isSetup = true;
-        return;
-      }
-      const [fetchedTables, config, settings] = await Promise.all([
-        fetchTables(),
-        fetchDisplayConfig(),
-        fetchSettings(),
-      ]);
-      tables = fetchedTables;
-      displayConfig = config;
-      appSettings = settings;
-      if (tables.length > 0) {
-        await selectTable(tables[0]);
-      }
-      // Non-critical: check for update availability in the background
-      fetchUpdateStatus().then(status => {
-        updateStatus = status;
-        if (status !== null) updateAvailable = status.update_available;
-      }).catch(() => {}); // silently fail — update check is non-critical
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to connect to database';
-    } finally {
-      loading = false;
+      applyUpdateStatus(await fetchUpdateStatus());
+    } catch {
+      // Update status is non-critical for the rest of the app shell.
     }
+  }
+
+  onMount(() => {
+    void (async () => {
+      try {
+        const status = await fetchStatus();
+        if (status.mode === 'setup') {
+          isSetup = true;
+          return;
+        }
+        const [fetchedTables, config, settings] = await Promise.all([
+          fetchTables(),
+          fetchDisplayConfig(),
+          fetchSettings(),
+        ]);
+        tables = fetchedTables;
+        displayConfig = config;
+        appSettings = settings;
+        if (tables.length > 0) {
+          await selectTable(tables[0]);
+        }
+        void refreshUpdateStatus();
+        updateStatusPollId = setInterval(() => {
+          void refreshUpdateStatus();
+        }, 60_000);
+      } catch (e) {
+        error = e instanceof Error ? e.message : 'Failed to connect to database';
+      } finally {
+        loading = false;
+      }
+    })();
+
+    return () => {
+      if (updateStatusPollId === null) return;
+      clearInterval(updateStatusPollId);
+      updateStatusPollId = null;
+    };
   });
 
   onMount(() => {
@@ -647,6 +668,7 @@
       title="SeeKi"
       subtitle=""
       {updateAvailable}
+      showSettingsBadge={updateAvailable}
       onSettingsClick={() => settingsOpen = true}
     >
       {#if !sidebarCollapsed}
@@ -666,7 +688,7 @@
   <SettingsPanel
     bind:open={settingsOpen}
     initialStatus={updateStatus}
-    onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
+    onStatusChange={(s) => { applyUpdateStatus(s); }}
   />
 {:else}
   <div class={`layout ${densityClass}`}>
@@ -676,7 +698,9 @@
       onSelectMode={setSidebarMode}
       title={displayConfig?.branding?.title ?? 'SeeKi'}
       subtitle={displayConfig?.branding?.subtitle ?? ''}
+      {updateAvailable}
       mode={$sidebarMode}
+      showSettingsBadge={updateAvailable}
       showModeSwitch={true}
     >
       {#if !sidebarCollapsed}
@@ -685,7 +709,7 @@
             {#if $sidebarMode === 'tables'}
               <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
             {:else}
-              <SettingsNav />
+              <SettingsNav showUpdateBadge={updateAvailable} />
             {/if}
           </div>
         {/key}
@@ -769,8 +793,10 @@
             <SettingsContent
               branding={brandingSettings}
               appearance={appearanceSettings}
+              {updateStatus}
               onSaveBranding={handleSaveBranding}
               onSaveAppearance={handleSaveAppearance}
+              onUpdateStatusChange={(s) => { applyUpdateStatus(s); }}
             />
           </main>
         {/if}
@@ -780,7 +806,7 @@
   <SettingsPanel
     bind:open={settingsOpen}
     initialStatus={updateStatus}
-    onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
+    onStatusChange={(s) => { applyUpdateStatus(s); }}
   />
 {/if}
 

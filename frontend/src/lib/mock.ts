@@ -5,8 +5,8 @@ import type {
   QueryResult,
   DisplayConfig,
   SettingsEntries,
-  UpdateStatusResponse,
-  VersionResponse,
+  UpdateStatus,
+  VersionInfo,
 } from './types';
 
 const MOCK_ROW_COUNT = 200;
@@ -591,7 +591,7 @@ export function mockFetchConnectionStatus(): ConnectionStatusResponse {
   };
 }
 
-export function mockFetchVersion(): VersionResponse {
+export function mockFetchVersion(): VersionInfo {
   return {
     version: '26.5.0.3a',
     commit: 'abc123def456',
@@ -599,6 +599,15 @@ export function mockFetchVersion(): VersionResponse {
   };
 }
 
-export function mockFetchUpdateStatus(): UpdateStatusResponse | null {
-  return null;
+export function mockFetchUpdateStatus(): UpdateStatus | null {
+  return {
+    current: '26.5.0.3a',
+    latest: '26.5.0.3n260416g1a2b3c4',
+    pre_release_channel: false,
+    poll_interval_hours: 6,
+    update_available: true,
+    previous_exists: false,
+    last_checked: '2026-04-16T09:00:00Z',
+    release_notes: '## Mock release\n\n- Added update polling\n- Added release badges',
+  };
 }

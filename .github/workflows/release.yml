@@ -1,116 +1,295 @@
 name: Release Management
 
 on:
-    # Fires on any push to release (merge commits, direct pushes, tag-free cherries)
-    # as well as explicit manual dispatch. The prior pull_request:closed trigger
-    # silently no-ops in some merge paths, so we widen the surface here.
-    push:
-        branches:
-            - release
-    workflow_dispatch:
+  push:
+    branches:
+      - release
+      - "task/**"
+      - "feature/**"
+      - "bug/**"
+      - "hotfix/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-    create-release:
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v6
-              with:
-                  ref: release
-                  fetch-depth: 0
+  metadata:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      build_version: ${{ steps.prepare.outputs.build_version }}
+      tag_name: ${{ steps.prepare.outputs.tag_name }}
+      release_name: ${{ steps.prepare.outputs.release_name }}
+      prerelease: ${{ steps.prepare.outputs.prerelease }}
+      release_body: ${{ steps.prepare.outputs.release_body }}
+      checkout_ref: ${{ steps.prepare.outputs.checkout_ref }}
+      target_sha: ${{ steps.prepare.outputs.target_sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
 
-            - name: Read version
-              id: get_version
-              run: |
-                  if [ ! -f VERSION ]; then
-                    echo "Error: No VERSION file found"
-                    exit 1
-                  fi
+      - name: Sync VERSION from main
+        if: github.ref_name == 'release'
+        run: |
+          set -euo pipefail
 
-                  VERSION=$(cat VERSION | tr -d '[:space:]')
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-                  echo "Creating release for version: $VERSION"
+          git fetch origin main
 
-                  # Parse version components
-                  if [[ $VERSION =~ ^([0-9]{2})\.([0-9]+)\.([0-9]+)\.([0-9]+)([a-zA-Z]*)$ ]]; then
-                    YY="${BASH_REMATCH[1]}"
-                    MAJOR="${BASH_REMATCH[2]}"
-                    MINOR="${BASH_REMATCH[3]}"
-                    PATCH="${BASH_REMATCH[4]}"
-                    SUFFIX="${BASH_REMATCH[5]}"
-                    echo "year=20$YY" >> $GITHUB_OUTPUT
-                    echo "major=$MAJOR" >> $GITHUB_OUTPUT
-                    echo "minor=$MINOR" >> $GITHUB_OUTPUT
-                    echo "patch=$PATCH" >> $GITHUB_OUTPUT
-                  fi
+          MAIN_VERSION="$(git show origin/main:VERSION | tr -d '[:space:]')"
+          RELEASE_VERSION="$(tr -d '[:space:]' < VERSION)"
 
-            - name: Sync VERSION from main
-              run: |
-                  git fetch origin main
-                  MAIN_VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
-                  RELEASE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          if [ "$MAIN_VERSION" != "$RELEASE_VERSION" ]; then
+            echo "Syncing VERSION from main: $MAIN_VERSION"
+            printf '%s\n' "$MAIN_VERSION" > VERSION
 
-                  if [ "$MAIN_VERSION" != "$RELEASE_VERSION" ]; then
-                    echo "Syncing VERSION from main: $MAIN_VERSION"
-                    echo "$MAIN_VERSION" > VERSION
+            if [ -f package.json ]; then
+              sed -i "s/\"version\": \".*\"/\"version\": \"$MAIN_VERSION\"/" package.json
+            fi
 
-                    if [ -f package.json ]; then
-                      sed -i "s/\"version\": \".*\"/\"version\": \"$MAIN_VERSION\"/" package.json
-                    fi
+            find . -maxdepth 4 -name "pyproject.toml" \
+              -not -path "*/node_modules/*" \
+              -not -path "*/.pio/*" \
+              -not -path "*/vendor/*" \
+              -not -path "*/.venv/*" | while read -r f; do
+              if grep -q '^version' "$f"; then
+                sed -i "s/^version = \".*\"/version = \"$MAIN_VERSION\"/" "$f"
+              fi
+            done
 
-                    find . -maxdepth 4 -name "pyproject.toml" \
-                      -not -path "*/node_modules/*" \
-                      -not -path "*/.pio/*" \
-                      -not -path "*/vendor/*" \
-                      -not -path "*/.venv/*" | while read -r f; do
-                      if grep -q '^version' "$f"; then
-                        sed -i "s/^version = \".*\"/version = \"$MAIN_VERSION\"/" "$f"
-                      fi
-                    done
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git diff --cached --quiet || {
+              git commit -m "ci: sync version $MAIN_VERSION from main [skip ci]"
+              git push origin HEAD:release
+            }
+          fi
 
-                    git config user.name "github-actions[bot]"
-                    git config user.email "github-actions[bot]@users.noreply.github.com"
-                    git add -A
-                    git diff --cached --quiet || {
-                      git commit -m "ci: sync version $MAIN_VERSION from main [skip ci]"
-                      git push origin release
-                    }
+      - name: Prepare release metadata
+        id: prepare
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
 
-                    echo "version=$MAIN_VERSION" >> $GITHUB_OUTPUT
-                  fi
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ -z "$VERSION" ]; then
+            echo "VERSION file is empty"
+            exit 1
+          fi
 
-            - name: Create git tag
-              run: |
-                  VERSION=$(cat VERSION | tr -d '[:space:]')
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ "$REF_NAME" = "release" ]; then
+            BUILD_VERSION="$VERSION"
+            PRERELEASE=false
+            RELEASE_NAME="Release v$BUILD_VERSION"
+            CHANNEL="stable"
+            PUBLISH_REASON="Published automatically from the release branch after syncing VERSION from main."
+          else
+            BASE_VERSION="$(printf '%s' "$VERSION" | sed -E 's/^([0-9]{2}\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+            if [ -z "$BASE_VERSION" ]; then
+              echo "Unable to derive prerelease base version from: $VERSION"
+              exit 1
+            fi
 
-                  if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-                    echo "Tag v$VERSION already exists, skipping."
-                  else
-                    git tag -a "v$VERSION" -m "Release version $VERSION"
-                    git push origin "v$VERSION"
-                  fi
+            BUILD_STAMP="$(date -u +%y%m%d)"
+            SHORT_SHA="$(git rev-parse --short=7 HEAD | tr '[:upper:]' '[:lower:]')"
+            BUILD_VERSION="${BASE_VERSION}n${BUILD_STAMP}g${SHORT_SHA}"
+            PRERELEASE=true
+            RELEASE_NAME="Prerelease v$BUILD_VERSION"
+            CHANNEL="prerelease"
+            PUBLISH_REASON="Published automatically from a supported work branch or workflow dispatch."
+          fi
 
-            - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: v${{ steps.get_version.outputs.version }}
-                  name: Release v${{ steps.get_version.outputs.version }}
-                  body: |
-                      ## Release v${{ steps.get_version.outputs.version }}
+          TAG_NAME="v$BUILD_VERSION"
+          TARGET_SHA="$(git rev-parse HEAD)"
+          COMMIT_SHORT="$(git rev-parse --short=12 HEAD)"
 
-                      **Version**: `${{ steps.get_version.outputs.version }}`
-                      **Year**: ${{ steps.get_version.outputs.year }}
+          {
+            echo "build_version=$BUILD_VERSION"
+            echo "tag_name=$TAG_NAME"
+            echo "release_name=$RELEASE_NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "checkout_ref=$TARGET_SHA"
+            echo "target_sha=$TARGET_SHA"
+            echo "release_body<<EOF"
+            echo "## $RELEASE_NAME"
+            echo
+            echo "- Branch: \`$REF_NAME\`"
+            echo "- Commit: \`$COMMIT_SHORT\`"
+            echo "- Channel: \`$CHANNEL\`"
+            echo
+            echo "$PUBLISH_REASON"
+            echo
+            echo "Published runtime assets:"
+            echo "- \`seeki-x86_64-linux-musl\` + \`seeki-x86_64-linux-musl.sha256\`"
+            echo "- \`seeki-x86_64-darwin\` + \`seeki-x86_64-darwin.sha256\`"
+            echo "- \`seeki-aarch64-darwin\` + \`seeki-aarch64-darwin.sha256\`"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-                      ### Version Components
-                      - **Epics (Major)**: ${{ steps.get_version.outputs.major }}
-                      - **Features (Minor)**: ${{ steps.get_version.outputs.minor }}
-                      - **Tasks/Bugs (Patch)**: ${{ steps.get_version.outputs.patch }}
+  build:
+    name: Build ${{ matrix.target }}
+    needs: metadata
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset_name: seeki-x86_64-linux-musl
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset_name: seeki-x86_64-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset_name: seeki-aarch64-darwin
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.checkout_ref }}
+          fetch-depth: 0
 
-                      ### Changes
-                      ${{ github.event.pull_request.body }}
-                  draft: false
-                  prerelease: false
+      - name: Write build VERSION
+        run: |
+          printf '%s\n' '${{ needs.metadata.outputs.build_version }}' > VERSION
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Run tests
+        run: cargo test --locked --target ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Package release assets
+        env:
+          ASSET_NAME: ${{ matrix.asset_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+          cp "target/$TARGET/release/seeki" "release-assets/$ASSET_NAME"
+          chmod +x "release-assets/$ASSET_NAME"
+          shasum -a 256 "release-assets/$ASSET_NAME" | awk '{print $1}' > "release-assets/$ASSET_NAME.sha256"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            release-assets/${{ matrix.asset_name }}
+            release-assets/${{ matrix.asset_name }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs:
+      - metadata
+      - build
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'release' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.checkout_ref }}
+          fetch-depth: 0
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Validate release asset contract
+        run: |
+          set -euo pipefail
+
+          expected_files=(
+            seeki-x86_64-linux-musl
+            seeki-x86_64-linux-musl.sha256
+            seeki-x86_64-darwin
+            seeki-x86_64-darwin.sha256
+            seeki-aarch64-darwin
+            seeki-aarch64-darwin.sha256
+          )
+
+          actual_count="$(find release-assets -maxdepth 1 -type f | wc -l | tr -d '[:space:]')"
+          if [ "$actual_count" != "6" ]; then
+            echo "Expected exactly 6 release files, found $actual_count"
+            find release-assets -maxdepth 1 -type f | sort
+            exit 1
+          fi
+
+          for file in "${expected_files[@]}"; do
+            test -f "release-assets/$file"
+          done
+
+      - name: Create stable git tag
+        if: github.ref_name == 'release'
+        env:
+          TAG_NAME: ${{ needs.metadata.outputs.tag_name }}
+          TARGET_SHA: ${{ needs.metadata.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "Tag $TAG_NAME already exists, skipping."
+          else
+            git tag -a "$TAG_NAME" "$TARGET_SHA" -m "Release version ${{ needs.metadata.outputs.build_version }}"
+            git push origin "$TAG_NAME"
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.metadata.outputs.tag_name }}
+          target_commitish: ${{ needs.metadata.outputs.target_sha }}
+          name: ${{ needs.metadata.outputs.release_name }}
+          body: ${{ needs.metadata.outputs.release_body }}
+          draft: false
+          prerelease: ${{ needs.metadata.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/seeki-x86_64-linux-musl
+            release-assets/seeki-x86_64-linux-musl.sha256
+            release-assets/seeki-x86_64-darwin
+            release-assets/seeki-x86_64-darwin.sha256
+            release-assets/seeki-aarch64-darwin
+            release-assets/seeki-aarch64-darwin.sha256

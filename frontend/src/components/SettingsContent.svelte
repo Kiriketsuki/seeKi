@@ -9,18 +9,23 @@
   import type {
     AppearanceSettings,
     BrandingSettings,
+    UpdateStatus,
   } from '../lib/types';
 
   let {
     branding,
     appearance,
+    updateStatus,
     onSaveBranding,
     onSaveAppearance,
+    onUpdateStatusChange,
   }: {
     branding: BrandingSettings;
     appearance: AppearanceSettings;
+    updateStatus: UpdateStatus | null;
     onSaveBranding: (branding: BrandingSettings) => Promise<void>;
     onSaveAppearance: (appearance: AppearanceSettings) => Promise<void>;
+    onUpdateStatusChange: (status: UpdateStatus) => void;
   } = $props();
 </script>
 
@@ -28,7 +33,7 @@
   {#key $activeSettingsSection}
     <div class="settings-panel-enter">
       {#if $activeSettingsSection === 'updates'}
-        <UpdatesPanel />
+        <UpdatesPanel initialStatus={updateStatus} onStatusChange={onUpdateStatusChange} />
       {:else if $activeSettingsSection === 'branding'}
         <BrandingPanel {branding} onSave={onSaveBranding} />
       {:else if $activeSettingsSection === 'appearance'}

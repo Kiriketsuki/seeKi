@@ -3,9 +3,9 @@
     X, RefreshCw, Download, RotateCcw, Upload,
     CircleCheck, AlertCircle,
   } from 'lucide-svelte';
-  import type { UpdateStatus, VersionInfo, CheckResult, WipUploadResult } from '../lib/types';
+  import type { UpdateStatus, VersionInfo, WipUploadResult } from '../lib/types';
   import {
-    fetchVersion, fetchUpdateStatus, checkForUpdate,
+    fetchVersion, fetchUpdateStatus, checkForUpdates,
     applyUpdate, uploadWipBinary, rollbackUpdate, updateSettings,
   } from '../lib/api';
 
@@ -22,7 +22,6 @@
   // ── State ──────────────────────────────────────────────────────────
   let status = $state<UpdateStatus | null>(null);
   let versionInfo = $state<VersionInfo | null>(null);
-  let checkResult = $state<CheckResult | null>(null);
   let wipResult = $state<WipUploadResult | null>(null);
 
   let checking = $state(false);
@@ -47,7 +46,6 @@
       status = initialStatus;
       errorMsg = null;
       successMsg = null;
-      checkResult = null;
       wipResult = null;
       confirmAction = null;
       restarting = false;
@@ -133,16 +131,12 @@
     checking = true;
     errorMsg = null;
     successMsg = null;
-    checkResult = null;
     try {
-      const result = await checkForUpdate();
-      checkResult = result;
-      // Refresh status
-      const s = await fetchUpdateStatus();
-      status = s;
-      if (s !== null) onStatusChange?.(s);
-      if (result.update_available) {
-        successMsg = `Update available: ${result.latest}`;
+      const nextStatus = await checkForUpdates();
+      status = nextStatus;
+      if (nextStatus !== null) onStatusChange?.(nextStatus);
+      if (nextStatus?.update_available) {
+        successMsg = `Update available: ${nextStatus.latest}`;
       } else {
         successMsg = 'You are running the latest version.';
       }
@@ -229,9 +223,9 @@
     errorMsg = null;
     try {
       const next = !status.pre_release_channel;
-      await updateSettings(next);
-      status = { ...status, pre_release_channel: next };
-      onStatusChange?.(status);
+      const nextStatus = await updateSettings({ preReleaseChannel: next });
+      status = nextStatus;
+      onStatusChange?.(nextStatus);
     } catch (e) {
       errorMsg = e instanceof Error ? e.message : 'Failed to update settings';
     } finally {
