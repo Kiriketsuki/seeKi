@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod github;
+pub mod poller;
 pub mod swap;
 pub mod version;
 pub mod wip;
@@ -15,13 +16,33 @@ pub use github::ReleaseCache;
 #[allow(unused_imports)]
 pub use version::SeekiVersion;
 
+fn default_poll_interval_hours() -> u8 {
+    6
+}
+
+pub fn is_valid_poll_interval_hours(value: u8) -> bool {
+    matches!(value, 0 | 1 | 6 | 24)
+}
+
 // ── Persistent update settings ───────────────────────────────────────────────
 
 /// User-facing update preferences, persisted to `~/.seeki/update.json`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateSettings {
     pub pre_release_channel: bool,
+    #[serde(default = "default_poll_interval_hours")]
+    pub poll_interval_hours: u8,
     pub last_checked: Option<String>,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self {
+            pre_release_channel: false,
+            poll_interval_hours: default_poll_interval_hours(),
+            last_checked: None,
+        }
+    }
 }
 
 impl UpdateSettings {
@@ -63,6 +84,7 @@ pub struct UpdateState {
     pub settings: Mutex<UpdateSettings>,
     pub swap_lock: Mutex<()>,
     pub shutdown: std::sync::Arc<tokio::sync::Notify>,
+    pub settings_changed: std::sync::Arc<tokio::sync::Notify>,
     /// Server-side record of each staged WIP upload's SHA256, keyed by
     /// `upload_id`. Populated by the upload handler and consumed (removed) by
     /// the apply handler so the expected digest is never round-tripped through
@@ -88,8 +110,64 @@ impl UpdateState {
             settings: Mutex::new(UpdateSettings::load()),
             swap_lock: Mutex::new(()),
             shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
+            settings_changed: std::sync::Arc::new(tokio::sync::Notify::new()),
             wip_manifests: Mutex::new(HashMap::new()),
             token,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_settings_defaults_poll_interval_to_six_hours() {
+        let settings = UpdateSettings::default();
+        assert_eq!(settings.poll_interval_hours, 6);
+        assert!(!settings.pre_release_channel);
+        assert!(settings.last_checked.is_none());
+    }
+
+    #[test]
+    fn update_settings_deserialize_old_shape_with_default_interval() {
+        let settings: UpdateSettings = serde_json::from_str(
+            r#"{"pre_release_channel":true,"last_checked":"2026-04-16T09:00:00Z"}"#,
+        )
+        .unwrap();
+
+        assert!(settings.pre_release_channel);
+        assert_eq!(settings.poll_interval_hours, 6);
+        assert_eq!(
+            settings.last_checked.as_deref(),
+            Some("2026-04-16T09:00:00Z")
+        );
+    }
+
+    #[test]
+    fn update_settings_roundtrip_preserves_poll_interval() {
+        let settings = UpdateSettings {
+            pre_release_channel: true,
+            poll_interval_hours: 24,
+            last_checked: Some("2026-04-16T09:00:00Z".to_string()),
+        };
+
+        let json = serde_json::to_string(&settings).unwrap();
+        let restored: UpdateSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.poll_interval_hours, 24);
+        assert!(restored.pre_release_channel);
+        assert_eq!(
+            restored.last_checked.as_deref(),
+            Some("2026-04-16T09:00:00Z")
+        );
+    }
+
+    #[test]
+    fn poll_interval_validation_accepts_allowed_values() {
+        assert!(is_valid_poll_interval_hours(0));
+        assert!(is_valid_poll_interval_hours(1));
+        assert!(is_valid_poll_interval_hours(6));
+        assert!(is_valid_poll_interval_hours(24));
+        assert!(!is_valid_poll_interval_hours(12));
     }
 }

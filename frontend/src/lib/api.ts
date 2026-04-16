@@ -14,15 +14,13 @@ import type {
   SetupSaveResponse,
   VersionInfo,
   UpdateStatus,
-  CheckResult,
   WipUploadResult,
   ApplyResult,
   RollbackResult,
   SortPreset,
   FilterPreset,
   LastUsedTableState,
-  UpdateStatusResponse,
-  VersionResponse,
+  UpdatePollIntervalHours,
 } from './types';
 import {
   mockFetchTables,
@@ -50,6 +48,8 @@ function assertShape(data: unknown, fields: string[], context: string): void {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const SETUP_TIMEOUT_MS = 60_000;
+let updateTokenValue: string | null = null;
+let updateTokenPromise: Promise<string> | null = null;
 
 async function apiFetch<T = void>(path: string, method = 'GET'): Promise<T> {
   const controller = new AbortController();
@@ -88,6 +88,40 @@ async function apiPost<T = void>(path: string, body: unknown): Promise<T> {
   try {
     res = await fetch(path, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Request timed out — the server may be busy. Try again.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `API error ${res.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = `API error ${res.status}: ${parsed.error}`;
+    } catch {
+      if (text) message += `: ${text}`;
+    }
+    throw new Error(message);
+  }
+  if (res.status === 204) return undefined as unknown as T;
+  return res.json() as Promise<T>;
+}
+
+async function apiPatch<T = void>(path: string, body: unknown): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -202,6 +236,57 @@ export async function getStatus(): Promise<StatusResponse> {
   return fetchStatus();
 }
 
+export async function fetchUpdateToken(): Promise<string> {
+  if (USE_MOCK) return 'mock-update-token';
+  if (updateTokenValue) return updateTokenValue;
+
+  if (!updateTokenPromise) {
+    updateTokenPromise = apiFetch<{ token: string }>('/api/update/token')
+      .then((data) => {
+        assertShape(data, ['token'], '/api/update/token');
+        updateTokenValue = data.token;
+        return data.token;
+      })
+      .catch((error) => {
+        updateTokenPromise = null;
+        throw error;
+      });
+  }
+
+  return updateTokenPromise;
+}
+
+function resetUpdateTokenCache(): void {
+  updateTokenValue = null;
+  updateTokenPromise = null;
+}
+
+function withBearerHeader(headers: HeadersInit | undefined, token: string): Headers {
+  const merged = new Headers(headers);
+  merged.set('Authorization', `Bearer ${token}`);
+  return merged;
+}
+
+async function fetchWithUpdateAuth(path: string, init: RequestInit): Promise<Response> {
+  let token = await fetchUpdateToken();
+  let response = await fetch(path, {
+    ...init,
+    headers: withBearerHeader(init.headers, token),
+  });
+
+  if (response.status !== 401 || USE_MOCK) {
+    return response;
+  }
+
+  resetUpdateTokenCache();
+  token = await fetchUpdateToken();
+  response = await fetch(path, {
+    ...init,
+    headers: withBearerHeader(init.headers, token),
+  });
+  return response;
+}
+
 export async function setupTestConnection(req: {
   kind: string;
   url: string;
@@ -254,15 +339,22 @@ function isApiStatusError(error: unknown, status: number): boolean {
   return error instanceof Error && error.message.startsWith(`API error ${status}`);
 }
 
+const UPDATE_STATUS_FIELDS = [
+  'current',
+  'latest',
+  'pre_release_channel',
+  'poll_interval_hours',
+  'update_available',
+  'previous_exists',
+  'last_checked',
+  'release_notes',
+];
+
 export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
   if (USE_MOCK) return mockFetchUpdateStatus();
   try {
     const data = await apiFetch<UpdateStatus>('/api/update/status');
-    assertShape(
-      data,
-      ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
-      '/api/update/status',
-    );
+    assertShape(data, UPDATE_STATUS_FIELDS, '/api/update/status');
     return data;
   } catch (error) {
     if (isApiStatusError(error, 404) || isApiStatusError(error, 503)) {
@@ -275,11 +367,7 @@ export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
 export async function checkForUpdates(): Promise<UpdateStatus | null> {
   try {
     const data = await apiPost<UpdateStatus>('/api/update/check', {});
-    assertShape(
-      data,
-      ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
-      '/api/update/check',
-    );
+    assertShape(data, UPDATE_STATUS_FIELDS, '/api/update/check');
     return data;
   } catch (error) {
     if (isApiStatusError(error, 404) || isApiStatusError(error, 503)) {
@@ -407,38 +495,12 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
 
 // ── Update Patcher API ──────────────────────────────────────────────────
 
-export async function checkForUpdate(): Promise<CheckResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch('/api/update/check', {
-      method: 'POST',
-      signal: controller.signal,
-    });
-  } catch (e) {
-    clearTimeout(timeout);
-    if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new Error('Update check timed out.');
-    }
-    throw e;
-  }
-  clearTimeout(timeout);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let message = `Update check failed (${res.status})`;
-    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
-    throw new Error(message);
-  }
-  return res.json();
-}
-
 export async function applyUpdate(source: 'release' | 'wip', wipUploadId?: string): Promise<ApplyResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch('/api/update/apply', {
+    res = await fetchWithUpdateAuth('/api/update/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source, wip_upload_id: wipUploadId }),
@@ -467,7 +529,7 @@ export async function uploadWipBinary(file: File): Promise<WipUploadResult> {
   let res: Response;
   try {
     const arrayBuffer = await file.arrayBuffer();
-    res = await fetch('/api/update/wip', {
+    res = await fetchWithUpdateAuth('/api/update/wip', {
       method: 'POST',
       body: arrayBuffer,
       signal: controller.signal,
@@ -494,7 +556,7 @@ export async function rollbackUpdate(): Promise<RollbackResult> {
   const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch('/api/update/rollback', {
+    res = await fetchWithUpdateAuth('/api/update/rollback', {
       method: 'POST',
       signal: controller.signal,
     });
@@ -515,16 +577,19 @@ export async function rollbackUpdate(): Promise<RollbackResult> {
   return res.json();
 }
 
-export async function updateSettings(preReleaseChannel: boolean): Promise<void> {
-  const res = await fetch('/api/update/settings', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pre_release_channel: preReleaseChannel }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let message = `Settings update failed (${res.status})`;
-    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
-    throw new Error(message);
+export async function updateSettings(options: {
+  preReleaseChannel?: boolean;
+  pollIntervalHours?: UpdatePollIntervalHours;
+}): Promise<UpdateStatus> {
+  const payload: Record<string, unknown> = {};
+  if (options.preReleaseChannel !== undefined) {
+    payload.pre_release_channel = options.preReleaseChannel;
   }
+  if (options.pollIntervalHours !== undefined) {
+    payload.poll_interval_hours = options.pollIntervalHours;
+  }
+
+  const data = await apiPatch<UpdateStatus>('/api/update/settings', payload);
+  assertShape(data, UPDATE_STATUS_FIELDS, '/api/update/settings');
+  return data;
 }
