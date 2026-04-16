@@ -169,7 +169,7 @@ async fn get_connection_status(
         .config
         .database
         .sanitized_connection_info()
-        .map_err(AppError::internal)?;
+        .map_err(|e| AppError::internal(e.to_string()))?;
 
     Ok(Json(ConnectionStatusResponse {
         database_kind: state.config.database.kind.as_str(),
