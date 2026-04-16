@@ -136,6 +136,12 @@ pub struct DatabaseConfig {
     pub schemas: Option<Vec<String>>,
 }
 
+pub struct SanitizedConnectionInfo {
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub database: Option<String>,
+}
+
 impl DatabaseConfig {
     /// Return the effective list of schemas. Falls back to `["public"]` if unset.
     pub fn effective_schemas(&self) -> Vec<String> {
@@ -143,6 +149,22 @@ impl DatabaseConfig {
             Some(v) if !v.is_empty() => v.clone(),
             _ => vec!["public".to_string()],
         }
+    }
+
+    /// Parse the database URL and return host/port/database without credentials.
+    pub fn sanitized_connection_info(&self) -> anyhow::Result<SanitizedConnectionInfo> {
+        let parsed = url::Url::parse(&self.url)?;
+        Ok(SanitizedConnectionInfo {
+            host: parsed.host_str().map(str::to_string),
+            port: parsed.port(),
+            database: parsed
+                .path()
+                .trim_start_matches('/')
+                .split('?')
+                .next()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+        })
     }
 }
 
@@ -152,6 +174,15 @@ pub enum DatabaseKind {
     #[default]
     Postgres,
     Sqlite,
+}
+
+impl DatabaseKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DatabaseKind::Postgres => "postgres",
+            DatabaseKind::Sqlite => "sqlite",
+        }
+    }
 }
 
 fn default_host() -> String {
