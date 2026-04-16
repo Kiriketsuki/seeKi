@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import PanelFrame from './PanelFrame.svelte';
   import type { AppearanceSettings } from '../../lib/types';
 
@@ -16,7 +17,7 @@
   let error = $state('');
   let success = $state('');
 
-  $effect(() => {
+  onMount(() => {
     dateFormat = appearance.dateFormat;
     rowDensity = appearance.rowDensity;
   });

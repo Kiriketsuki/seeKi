@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import PanelFrame from './PanelFrame.svelte';
   import type { BrandingSettings } from '../../lib/types';
 
@@ -17,7 +18,7 @@
   let success = $state('');
   let titleEmpty = $derived(title.trim().length === 0);
 
-  $effect(() => {
+  onMount(() => {
     title = branding.title;
     subtitle = branding.subtitle;
   });
