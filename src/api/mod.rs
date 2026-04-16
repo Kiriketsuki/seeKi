@@ -31,7 +31,6 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
         .route("/tables/{schema}/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
         .route("/connection-status", get(get_connection_status))
-        .route("/version", get(get_version))
         .route("/export/{schema}/{table}/csv", get(export_csv))
         .route("/status", get(status))
         .route("/setup/test-connection", post(setup::test_connection))
@@ -88,13 +87,6 @@ struct ConnectionStatusResponse {
     schemas: Vec<String>,
     ssh_enabled: bool,
     ssh_connected: bool,
-}
-
-#[derive(Serialize)]
-struct VersionResponse {
-    version: &'static str,
-    commit: &'static str,
-    built_at: &'static str,
 }
 
 #[derive(Serialize)]
@@ -188,14 +180,6 @@ async fn get_connection_status(
         ssh_enabled: state.config.ssh.is_some(),
         ssh_connected: state.db.ssh_connected(),
     }))
-}
-
-async fn get_version() -> Json<VersionResponse> {
-    Json(VersionResponse {
-        version: env!("SEEKI_VERSION"),
-        commit: env!("SEEKI_GIT_COMMIT"),
-        built_at: env!("SEEKI_BUILT_AT"),
-    })
 }
 
 async fn load_settings_map(store: &Store) -> Result<HashMap<String, serde_json::Value>, AppError> {
