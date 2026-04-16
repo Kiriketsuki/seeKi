@@ -22,6 +22,8 @@ pub fn router() -> Router {
             "/presets/last-used/{schema}/{table}",
             get(get_last_used).post(set_last_used),
         )
+        // Clear all browsing state — Normal mode only
+        .route("/presets", delete(clear_all_presets))
         // Named sort presets — Normal mode only
         .route(
             "/presets/sort/{schema}/{table}",
@@ -157,6 +159,19 @@ async fn set_last_used(
     }
     let conn_id = require_conn_id(&mode).await?;
     presets::set_last_used(store.pool(), &conn_id, &schema, &table, &body)
+        .await
+        .map_err(Err::internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── Clear all browsing state ──────────────────────────────────────────────────
+
+async fn clear_all_presets(
+    Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
+) -> Result<StatusCode, Err> {
+    let conn_id = require_conn_id(&mode).await?;
+    presets::clear_all(store.pool(), &conn_id)
         .await
         .map_err(Err::internal)?;
     Ok(StatusCode::NO_CONTENT)

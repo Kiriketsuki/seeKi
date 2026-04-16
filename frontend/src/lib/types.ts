@@ -206,6 +206,7 @@ export type SettingsSection =
   | 'branding'
   | 'appearance'
   | 'connection'
+  | 'data'
   | 'about';
 
 export type DateFormatPreference =

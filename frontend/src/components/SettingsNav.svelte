@@ -13,6 +13,7 @@
     { id: 'branding', label: 'Branding' },
     { id: 'appearance', label: 'Appearance' },
     { id: 'connection', label: 'Connection' },
+    { id: 'data', label: 'Data' },
     { id: 'about', label: 'About' },
   ];
 </script>
@@ -37,7 +38,8 @@
   .settings-nav {
     display: flex;
     flex-direction: column;
-    gap: var(--sk-space-xs);
+    gap: 2px;
+    padding: var(--sk-space-xs) 0;
   }
 
   .nav-item {
@@ -46,20 +48,24 @@
     justify-content: space-between;
     gap: var(--sk-space-sm);
     width: 100%;
-    border: 1px solid transparent;
-    border-radius: var(--sk-radius-md);
-    background: transparent;
+    border: none;
+    border-radius: var(--sk-radius-sm);
+    background: none;
     color: var(--sk-text);
-    padding: var(--sk-space-sm) var(--sk-space-md);
-    font: inherit;
+    padding: var(--sk-space-xs) var(--sk-space-md);
+    font-family: var(--sk-font-ui);
+    font-size: var(--sk-font-size-body);
     text-align: left;
     cursor: pointer;
   }
 
-  .nav-item:hover,
+  .nav-item:hover {
+    background: var(--sk-border);
+  }
+
   .nav-item.active {
-    background: rgba(255, 149, 0, 0.12);
-    border-color: rgba(255, 149, 0, 0.18);
+    background: var(--sk-accent);
+    color: white;
   }
 
   .badge {
@@ -68,5 +74,9 @@
     border-radius: 999px;
     background: var(--sk-accent);
     flex-shrink: 0;
+  }
+
+  .nav-item.active .badge {
+    background: white;
   }
 </style>

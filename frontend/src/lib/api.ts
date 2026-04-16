@@ -69,8 +69,8 @@ async function apiFetch<T = void>(path: string, method = 'GET'): Promise<T> {
     const text = await res.text().catch(() => '');
     let message = `API error ${res.status}`;
     try {
-      const body = JSON.parse(text);
-      if (body?.error) message = body.error;
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = `API error ${res.status}: ${parsed.error}`;
     } catch {
       if (text) message += `: ${text}`;
     }
@@ -104,8 +104,8 @@ async function apiPost<T = void>(path: string, body: unknown): Promise<T> {
     const text = await res.text().catch(() => '');
     let message = `API error ${res.status}`;
     try {
-      const body = JSON.parse(text);
-      if (body?.error) message = body.error;
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = `API error ${res.status}: ${parsed.error}`;
     } catch {
       if (text) message += `: ${text}`;
     }
@@ -358,6 +358,10 @@ export async function deleteFilterPreset(
 ): Promise<void> {
   const path = `/api/preferences/presets/filter/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/${encodeURIComponent(name)}`;
   await apiFetch(path, 'DELETE');
+}
+
+export async function clearAllPresets(): Promise<void> {
+  await apiFetch('/api/preferences/presets', 'DELETE');
 }
 
 export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveResponse> {
