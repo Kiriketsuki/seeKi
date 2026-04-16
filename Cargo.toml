@@ -59,12 +59,10 @@ getrandom = "0.2"
 [dev-dependencies]
 http-body-util = "0.1.3"
 
-<<<<<<< HEAD
+[build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
 strip = true
-=======
-[build-dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
->>>>>>> 9d06c4a (feat(settings): add settings page with controls, preferences, and branding)

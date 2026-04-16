@@ -42,7 +42,7 @@ pub async fn require_update_token(
 pub async fn get_version() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "version": env!("SEEKI_VERSION"),
-        "commit": env!("SEEKI_COMMIT"),
+        "commit": env!("SEEKI_GIT_COMMIT"),
         "built_at": env!("SEEKI_BUILT_AT"),
     }))
 }
