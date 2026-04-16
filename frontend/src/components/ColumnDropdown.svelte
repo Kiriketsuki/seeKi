@@ -27,7 +27,7 @@
   );
 </script>
 
-<div id="columns-panel" class="dropdown" role="region" aria-label="Column visibility">
+<div class="dropdown" role="region" aria-label="Column visibility">
   <div class="dropdown-header">
     <div>
       <div class="title">Columns</div>
@@ -65,20 +65,11 @@
 
 <style>
   .dropdown {
-    position: absolute;
-    top: 0;
-    left: calc(100% + var(--sk-space-md));
-    z-index: 20;
-    width: 240px;
-    max-height: min(70vh, 560px);
+    width: 100%;
+    max-height: min(50vh, 320px);
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-lg);
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    box-shadow: var(--sk-shadow-card);
+    background: transparent;
     overflow: hidden;
   }
 

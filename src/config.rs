@@ -144,6 +144,17 @@ impl DatabaseConfig {
             _ => vec!["public".to_string()],
         }
     }
+
+    pub fn sanitized_connection_info(&self) -> Result<SanitizedConnectionInfo, String> {
+        match self.kind {
+            DatabaseKind::Postgres => parse_postgres_connection_info(&self.url),
+            DatabaseKind::Sqlite => Ok(SanitizedConnectionInfo {
+                host: None,
+                port: None,
+                database: Some(self.url.clone()),
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default, Clone, Copy)]
@@ -152,6 +163,22 @@ pub enum DatabaseKind {
     #[default]
     Postgres,
     Sqlite,
+}
+
+impl DatabaseKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Postgres => "postgres",
+            Self::Sqlite => "sqlite",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SanitizedConnectionInfo {
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub database: Option<String>,
 }
 
 fn default_host() -> String {
@@ -164,6 +191,21 @@ fn default_port() -> u16 {
 
 fn default_max_connections() -> u32 {
     5
+}
+
+fn parse_postgres_connection_info(url: &str) -> Result<SanitizedConnectionInfo, String> {
+    let parsed = url::Url::parse(url).map_err(|err| format!("Invalid database URL: {err}"))?;
+    let database = parsed
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string);
+
+    Ok(SanitizedConnectionInfo {
+        host: parsed.host_str().map(str::to_string),
+        port: Some(parsed.port().unwrap_or(5432)),
+        database,
+    })
 }
 
 pub fn display_name_table(schema: &str, table: &str, config: &DisplayConfig) -> String {
@@ -885,6 +927,44 @@ schemas = []
             err.to_string().contains("schemas must not be empty"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn sanitized_connection_info_parses_postgres_without_credentials() {
+        let config = load_config(
+            r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://user:pass@db.internal:5544/fleet"
+"#,
+        );
+
+        let info = config.database.sanitized_connection_info().unwrap();
+        assert_eq!(info.host.as_deref(), Some("db.internal"));
+        assert_eq!(info.port, Some(5544));
+        assert_eq!(info.database.as_deref(), Some("fleet"));
+    }
+
+    #[test]
+    fn sanitized_connection_info_defaults_postgres_port() {
+        let config = load_config(
+            r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+
+[database]
+kind = "postgres"
+url = "postgres://user:pass@db.internal/fleet"
+"#,
+        );
+
+        let info = config.database.sanitized_connection_info().unwrap();
+        assert_eq!(info.port, Some(5432));
     }
 
     #[test]

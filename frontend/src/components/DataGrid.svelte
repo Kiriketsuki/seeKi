@@ -9,21 +9,24 @@
   import type { VNode } from '@revolist/revogrid';
   import type {
     ColumnInfo,
+    DateFormatPreference,
     FilterState,
-    SortDirection,
     SortState,
   } from '../lib/types';
   import {
     buildSortableColumn,
+    cycleSort,
     formatCellValue,
     getColumnDisplayName,
+    replaceSort,
     sortStateToConfig,
   } from '../lib/data-grid';
 
   let {
     columns = [],
     rows = [],
-    sortState,
+    dateFormat = 'system',
+    sortState = [],
     filters = {},
     filtersVisible = false,
     onSortChange,
@@ -31,16 +34,17 @@
   }: {
     columns: ColumnInfo[];
     rows: Record<string, unknown>[];
-    sortState: SortState;
+    dateFormat?: DateFormatPreference;
+    sortState?: SortState;
     filters?: FilterState;
     filtersVisible?: boolean;
-    onSortChange?: (column: string, direction: SortDirection | null) => void;
+    onSortChange?: (nextSortState: SortState) => void;
     onFilterChange?: (column: string, value: string) => void;
   } = $props();
 
   type SortEventDetail = {
     column: ColumnRegular;
-    order?: SortDirection;
+    order?: 'asc' | 'desc';
     additive: boolean;
   };
 
@@ -61,11 +65,34 @@
     const filterValue = String(
       (props as ColumnTemplateProp & { filterValue?: string }).filterValue ?? ''
     );
-    const isSorted = props.order != null;
+    const activeSortIndex = sortState.findIndex(
+      (entry) => entry.column === String(props.prop)
+    );
+    const activeOrder = activeSortIndex >= 0 ? sortState[activeSortIndex].direction : null;
+    const isSorted = activeOrder != null;
+    const sortRank = activeSortIndex >= 0 ? activeSortIndex + 1 : null;
+    const sortAriaLabel =
+      activeOrder != null
+        ? sortState.length > 1 && sortRank != null
+          ? `Sort ${activeOrder === 'asc' ? 'ascending' : 'descending'}, priority ${sortRank} of ${sortState.length}`
+          : `Sort ${activeOrder === 'asc' ? 'ascending' : 'descending'}`
+        : undefined;
 
-    const ariaSortValue = props.order === 'asc'
+    // `aria-sort="ascending"` on multiple columns is ambiguous; add a visually-hidden
+    // text node inside the header so screen readers announce which position this column
+    // holds in the sort stack (primary, secondary, etc.).
+    const priorityAnnouncement =
+      isSorted && sortRank != null && sortState.length > 1
+        ? sortRank === 1
+          ? 'Primary sort.'
+          : sortRank === 2
+            ? 'Secondary sort.'
+            : `Sort priority ${sortRank} of ${sortState.length}.`
+        : null;
+
+    const ariaSortValue = activeOrder === 'asc'
       ? 'ascending'
-      : props.order === 'desc'
+      : activeOrder === 'desc'
         ? 'descending'
         : undefined;
 
@@ -89,21 +116,37 @@
           },
           [
             h('span', { class: { 'sk-grid-header__label': true } }, label),
-            h(
-              'span',
-              {
-                class: {
-                  'sk-grid-header__sort': true,
-                  'is-active': isSorted,
-              },
-              'aria-hidden': 'true',
-            },
-              props.order === 'asc'
-                ? '▲'
-                : props.order === 'desc'
-                  ? '▼'
-                  : ''
-            ),
+            priorityAnnouncement
+              ? h('span', { class: { 'sk-sr-only': true } }, priorityAnnouncement)
+              : null,
+            isSorted
+              ? h(
+                  'span',
+                  {
+                    class: {
+                      'sk-grid-header__sort': true,
+                      'is-active': true,
+                    },
+                    role: 'img',
+                    ...(sortAriaLabel ? { 'aria-label': sortAriaLabel, title: sortAriaLabel } : {}),
+                  },
+                  [
+                    h('span', { 'aria-hidden': 'true' }, activeOrder === 'asc' ? '↑' : '↓'),
+                    sortRank != null && sortState.length > 1
+                      ? h(
+                          'sup',
+                          {
+                            class: {
+                              'sk-grid-header__sort-rank': true,
+                            },
+                            'aria-hidden': 'true',
+                          },
+                          String(sortRank)
+                        )
+                      : null,
+                  ]
+                )
+              : null,
           ]
         ),
         showFilters
@@ -145,7 +188,7 @@
       );
     }
 
-    const formatted = formatCellValue(info, props.value);
+    const formatted = formatCellValue(info, props.value, dateFormat);
 
     if (formatted.kind === 'null') {
       return h(
@@ -197,28 +240,16 @@
   function handleBeforeSorting(event: CustomEvent<SortEventDetail>) {
     event.preventDefault();
     const column = String(event.detail.column.prop);
-
-    // RevoGrid's internal cycle doesn't advance when we preventDefault(),
-    // so we implement our own: unsorted → asc → desc → unsorted
-    let nextDirection: SortDirection | null;
-    if (sortState.column !== column) {
-      nextDirection = 'asc';
-    } else if (sortState.direction === 'asc') {
-      nextDirection = 'desc';
-    } else if (sortState.direction === 'desc') {
-      nextDirection = null;
-    } else {
-      nextDirection = 'asc';
-    }
-
-    onSortChange?.(column, nextDirection);
+    const next = event.detail.additive
+      ? cycleSort(sortState, column)
+      : replaceSort(sortState, column);
+    onSortChange?.(next);
   }
 
   let gridColumns: ColumnRegular[] = $derived(
     columns.map((column) =>
       buildSortableColumn(column, {
-        order:
-          sortState.column === column.name ? sortState.direction ?? undefined : undefined,
+        order: sortState.find((entry) => entry.column === column.name)?.direction,
         filterValue: filters[column.name] ?? '',
         showFilters: filtersVisible,
         columnTemplate: renderHeader,
@@ -228,7 +259,7 @@
   );
 </script>
 
-<div class="grid-card" class:filters-visible={filtersVisible}>
+<div id="data-grid" class="grid-card" class:filters-visible={filtersVisible}>
   <RevoGrid
     columns={gridColumns}
     source={rows}
@@ -270,7 +301,7 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sk-grid-header-gap);
     width: 100%;
     color: inherit;
   }
@@ -278,13 +309,14 @@
   .grid-card :global(.sk-grid-header__top) {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: var(--sk-space-sm);
     width: 100%;
     min-height: 18px;
   }
 
   .grid-card :global(.sk-grid-header__label) {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -292,13 +324,31 @@
   }
 
   .grid-card :global(.sk-grid-header__sort) {
-    min-width: 1ch;
+    flex: 0 0 auto;
     color: var(--sk-muted);
     font-size: 10px;
   }
 
   .grid-card :global(.sk-grid-header__sort.is-active) {
     color: var(--sk-accent);
+  }
+
+  .grid-card :global(.sk-sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .grid-card :global(.sk-grid-header__sort-rank) {
+    font-size: 0.75em;
+    line-height: 1;
+    vertical-align: super;
   }
 
   .grid-card :global(.sk-grid-filter) {
@@ -314,7 +364,7 @@
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     line-height: 1.3;
-    padding: 4px 8px;
+    padding: var(--sk-grid-filter-padding-y) var(--sk-grid-filter-padding-x);
     outline: none;
   }
 
@@ -364,7 +414,7 @@
     align-items: center;
     justify-content: center;
     min-width: 42px;
-    padding: 2px 8px;
+    padding: var(--sk-grid-badge-padding-y) var(--sk-grid-badge-padding-x);
     border-radius: 999px;
     font-size: var(--sk-font-size-sm);
     font-weight: 600;
@@ -386,7 +436,7 @@
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header .header-rgRow) {
-    height: 72px;
+    height: var(--sk-grid-filter-header-height);
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header .rgHeaderCell) {

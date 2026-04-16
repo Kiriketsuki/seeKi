@@ -1,4 +1,6 @@
 import type {
+  ConnectionStatusResponse,
+  SettingsEntries,
   TableInfo,
   ColumnInfo,
   QueryResult,
@@ -10,15 +12,27 @@ import type {
   TestConnectionResult,
   SetupSaveRequest,
   SetupSaveResponse,
+  VersionInfo,
+  UpdateStatus,
+  CheckResult,
+  WipUploadResult,
+  ApplyResult,
+  RollbackResult,
   SortPreset,
   FilterPreset,
   LastUsedTableState,
+  UpdateStatusResponse,
+  VersionResponse,
 } from './types';
 import {
   mockFetchTables,
   mockFetchColumns,
   mockFetchRows,
+  mockFetchConnectionStatus,
   mockFetchDisplayConfig,
+  mockFetchSettings,
+  mockFetchUpdateStatus,
+  mockFetchVersion,
 } from './mock';
 
 const USE_MOCK = import.meta.env.VITE_MOCK === 'true';
@@ -55,8 +69,8 @@ async function apiFetch<T = void>(path: string, method = 'GET'): Promise<T> {
     const text = await res.text().catch(() => '');
     let message = `API error ${res.status}`;
     try {
-      const body = JSON.parse(text);
-      if (body?.error) message = body.error;
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = `API error ${res.status}: ${parsed.error}`;
     } catch {
       if (text) message += `: ${text}`;
     }
@@ -90,8 +104,8 @@ async function apiPost<T = void>(path: string, body: unknown): Promise<T> {
     const text = await res.text().catch(() => '');
     let message = `API error ${res.status}`;
     try {
-      const body = JSON.parse(text);
-      if (body?.error) message = body.error;
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = `API error ${res.status}: ${parsed.error}`;
     } catch {
       if (text) message += `: ${text}`;
     }
@@ -122,8 +136,7 @@ export async function fetchColumns(
 export interface FetchRowsParams {
   page?: number;
   page_size?: number;
-  sort_column?: string;
-  sort_direction?: string;
+  sort?: string;
   search?: string;
   filters?: Record<string, string>;
 }
@@ -138,10 +151,7 @@ export async function fetchRows(
   if (params?.page != null) searchParams.set('page', String(params.page));
   if (params?.page_size != null)
     searchParams.set('page_size', String(params.page_size));
-  if (params?.sort_column)
-    searchParams.set('sort_column', params.sort_column);
-  if (params?.sort_direction)
-    searchParams.set('sort_direction', params.sort_direction);
+  if (params?.sort != null) searchParams.set('sort', params.sort);
   if (params?.search) searchParams.set('search', params.search);
   if (params?.filters) {
     for (const [col, val] of Object.entries(params.filters)) {
@@ -160,6 +170,24 @@ export async function fetchDisplayConfig(): Promise<DisplayConfig> {
   if (USE_MOCK) return mockFetchDisplayConfig();
   const data = await apiFetch<DisplayConfig>('/api/config/display');
   assertShape(data, ['branding', 'tables'], '/api/config/display');
+  return data;
+}
+
+export async function fetchConnectionStatus(): Promise<ConnectionStatusResponse> {
+  if (USE_MOCK) return mockFetchConnectionStatus();
+  const data = await apiFetch<ConnectionStatusResponse>('/api/connection-status');
+  assertShape(
+    data,
+    ['database_kind', 'host', 'port', 'database', 'schemas', 'ssh_enabled', 'ssh_connected'],
+    '/api/connection-status',
+  );
+  return data;
+}
+
+export async function fetchVersion(): Promise<VersionInfo> {
+  if (USE_MOCK) return mockFetchVersion();
+  const data = await apiFetch<VersionInfo>('/api/version');
+  assertShape(data, ['version', 'commit', 'built_at'], '/api/version');
   return data;
 }
 
@@ -213,12 +241,52 @@ export async function setupTestConnection(req: {
 
 // ── Preferences API ───────────────────────────────────────────────────────────
 
-export async function fetchSettings(): Promise<Record<string, unknown>> {
-  return apiFetch<Record<string, unknown>>('/api/preferences/settings');
+export async function fetchSettings(): Promise<SettingsEntries> {
+  if (USE_MOCK) return mockFetchSettings();
+  return apiFetch<SettingsEntries>('/api/preferences/settings');
 }
 
-export async function saveSettings(entries: Record<string, unknown>): Promise<void> {
+export async function saveSettings(entries: SettingsEntries): Promise<void> {
   await apiPost('/api/preferences/settings', entries);
+}
+
+function isApiStatusError(error: unknown, status: number): boolean {
+  return error instanceof Error && error.message.startsWith(`API error ${status}`);
+}
+
+export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
+  if (USE_MOCK) return mockFetchUpdateStatus();
+  try {
+    const data = await apiFetch<UpdateStatus>('/api/update/status');
+    assertShape(
+      data,
+      ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
+      '/api/update/status',
+    );
+    return data;
+  } catch (error) {
+    if (isApiStatusError(error, 404) || isApiStatusError(error, 503)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function checkForUpdates(): Promise<UpdateStatus | null> {
+  try {
+    const data = await apiPost<UpdateStatus>('/api/update/check', {});
+    assertShape(
+      data,
+      ['current', 'latest', 'pre_release_channel', 'update_available', 'previous_exists', 'last_checked'],
+      '/api/update/check',
+    );
+    return data;
+  } catch (error) {
+    if (isApiStatusError(error, 404) || isApiStatusError(error, 503)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function fetchLastUsedState(
@@ -292,6 +360,10 @@ export async function deleteFilterPreset(
   await apiFetch(path, 'DELETE');
 }
 
+export async function clearAllPresets(): Promise<void> {
+  await apiFetch('/api/preferences/presets', 'DELETE');
+}
+
 export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
@@ -331,4 +403,128 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
     throw new Error(message);
   }
   return res.json();
+}
+
+// ── Update Patcher API ──────────────────────────────────────────────────
+
+export async function checkForUpdate(): Promise<CheckResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/update/check', {
+      method: 'POST',
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Update check timed out.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Update check failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function applyUpdate(source: 'release' | 'wip', wipUploadId?: string): Promise<ApplyResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/update/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, wip_upload_id: wipUploadId }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Apply timed out — the server may be restarting.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Apply failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function uploadWipBinary(file: File): Promise<WipUploadResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    res = await fetch('/api/update/wip', {
+      method: 'POST',
+      body: arrayBuffer,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Upload timed out.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Upload failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function rollbackUpdate(): Promise<RollbackResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/update/rollback', {
+      method: 'POST',
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Rollback timed out — the server may be restarting.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Rollback failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function updateSettings(preReleaseChannel: boolean): Promise<void> {
+  const res = await fetch('/api/update/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pre_release_channel: preReleaseChannel }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `Settings update failed (${res.status})`;
+    try { const body = JSON.parse(text); if (body?.error) message = body.error; } catch {}
+    throw new Error(message);
+  }
 }

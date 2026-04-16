@@ -8,9 +8,12 @@ mod ssh;
 mod store;
 #[cfg(test)]
 mod testutil;
+mod update;
 
-use axum::Router;
+use std::sync::Arc;
+
 use axum::http::Method;
+use axum::{Extension, Router};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
 
@@ -54,7 +57,14 @@ async fn main() -> anyhow::Result<()> {
         let guard = mode.read().await;
         match &*guard {
             AppMode::Normal(state) => {
-                format!("{}:{}", state.config.server.host, state.config.server.port)
+                let host = state.config.server.host.trim();
+                let port = state.config.server.port;
+                if host.is_empty() || port == 0 {
+                    tracing::warn!("server.host or server.port is blank in config — falling back to 127.0.0.1:3141");
+                    "127.0.0.1:3141".to_string()
+                } else {
+                    format!("{host}:{port}")
+                }
             }
             AppMode::Setup => {
                 std::env::var("SEEKI_BIND").unwrap_or_else(|_| "127.0.0.1:3141".to_string())
@@ -62,16 +72,41 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let update_state = Arc::new(update::UpdateState::new());
+
+    // Sweep stale WIP uploads left behind by prior process instances. The
+    // WIP manifest is in-memory only, so any orphaned /tmp/seeki-wip-*
+    // files from before this startup are unreachable via /update/apply.
+    // TTL: 24h.
+    crate::update::wip::sweep_stale_uploads(std::time::Duration::from_secs(24 * 60 * 60));
+
+    // Spawn a non-blocking background check for updates
+    {
+        let update_bg = Arc::clone(&update_state);
+        tokio::spawn(async move {
+            let pre = {
+                let s = update_bg.settings.lock().await;
+                s.pre_release_channel
+            };
+            let _ = crate::update::github::check_latest(&update_bg.cache, pre, false).await;
+        });
+    }
+
+    let shutdown = std::sync::Arc::clone(&update_state.shutdown);
+
     let store = store::Store::open().await?;
 
     let app = Router::new()
         .nest("/api", api::router(mode.clone(), store))
+        .layer(Extension(update_state))
         .layer(localhost_cors())
         .fallback(embed::handler);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("SeeKi listening on http://{bind_addr}");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move { shutdown.notified().await })
+        .await?;
     Ok(())
 }
 
@@ -89,6 +124,9 @@ fn localhost_cors() -> CorsLayer {
                 false
             }
         }))
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
-        .allow_headers([axum::http::header::CONTENT_TYPE])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::AUTHORIZATION,
+        ])
 }

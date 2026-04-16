@@ -1,34 +1,61 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { Search, X } from 'lucide-svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import SettingsNav from './components/SettingsNav.svelte';
+  import SettingsContent from './components/SettingsContent.svelte';
   import TableList from './components/TableList.svelte';
-  import Toolbar from './components/Toolbar.svelte';
+  import ActionDock from './components/ActionDock.svelte';
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import {
-    fetchTables,
-    fetchColumns,
-    fetchRows,
-    fetchDisplayConfig,
-    fetchStatus,
-    fetchLastUsedState,
-    saveLastUsedState,
-  } from './lib/api';
+  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus, fetchUpdateStatus, fetchSettings, fetchLastUsedState, saveLastUsedState, saveSettings } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
+    AppearanceSettings,
+    BrandingSettings,
     TableInfo,
     ColumnInfo,
     QueryResult,
     DisplayConfig,
+    SettingsEntries,
+    SidebarMode,
     SortState,
     FilterState,
+    UpdateStatus,
     SortDirection,
     SortColumn,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
+  import { sidebarMode } from './lib/stores';
+
+  function setSidebarMode(mode: SidebarMode) {
+    sidebarMode.set(mode);
+  }
+
+  function clearModeShortcut() {
+    if (modeShortcutId !== null) {
+      clearTimeout(modeShortcutId);
+      modeShortcutId = null;
+    }
+    pendingModeShortcut = null;
+  }
+
+  function armModeShortcut() {
+    clearModeShortcut();
+    pendingModeShortcut = 'g';
+    modeShortcutId = setTimeout(() => {
+      pendingModeShortcut = null;
+      modeShortcutId = null;
+    }, 1000);
+  }
+  import {
+    buildAppearanceSettingsEntries,
+    buildBrandingSettingsEntries,
+    parseAppearanceSettings,
+    parseBrandingSettings,
+  } from './lib/settings';
   import SetupWizard from './components/SetupWizard.svelte';
+  import SettingsPanel from './components/SettingsPanel.svelte';
 
   let tables: TableInfo[] = $state([]);
   let selectedSchema: string = $state('');
@@ -36,6 +63,7 @@
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
+  let appSettings: SettingsEntries = $state({});
   let sidebarCollapsed: boolean = $state(
     typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   );
@@ -45,7 +73,7 @@
   let error: string | null = $state(null);
   let tableError: string | null = $state(null);
   let currentPage: number = $state(1);
-  let sortState: SortState = $state({ column: null, direction: null });
+  let sortState: SortState = $state([]);
   let filtersVisible: boolean = $state(false);
   let filters: FilterState = $state({});
   let searchTerm: string = $state('');
@@ -53,9 +81,17 @@
   let columnsOpen: boolean = $state(false);
   let columnVisibility: Record<string, boolean> = $state({});
   let searchInputEl: HTMLInputElement | null = $state(null);
+  let searchButtonEl: HTMLButtonElement | null = $state(null);
+  let columnsButtonEl: HTMLButtonElement | null = $state(null);
+  let filterButtonEl: HTMLButtonElement | null = $state(null);
+  let settingsOpen: boolean = $state(false);
+  let updateAvailable: boolean = $state(false);
+  let updateStatus: UpdateStatus | null = $state(null);
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let lastUsedSaveId: ReturnType<typeof setTimeout> | null = null;
+  let modeShortcutId: ReturnType<typeof setTimeout> | null = null;
+  let pendingModeShortcut: 'g' | null = null;
   let selectRequestId = 0;
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
@@ -74,15 +110,15 @@
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
-  let sortLabel = $derived.by(() => {
-    if (!sortState.column || !sortState.direction) {
-      return 'No active sort';
-    }
-
-    const currentColumn = columns.find((column) => column.name === sortState.column);
-    const displayName = currentColumn?.display_name ?? sortState.column;
-    return `${displayName} ${sortState.direction}`;
-  });
+  let brandingSettings = $derived.by(
+    () => parseBrandingSettings(appSettings, displayConfig)
+  );
+  let appearanceSettings = $derived.by(() => parseAppearanceSettings(appSettings));
+  let densityClass = $derived.by(() =>
+    appearanceSettings.rowDensity === 'compact'
+      ? 'sk-density--compact'
+      : 'sk-density--comfortable'
+  );
 
   onMount(async () => {
     try {
@@ -91,15 +127,22 @@
         isSetup = true;
         return;
       }
-      const [fetchedTables, config] = await Promise.all([
+      const [fetchedTables, config, settings] = await Promise.all([
         fetchTables(),
         fetchDisplayConfig(),
+        fetchSettings(),
       ]);
       tables = fetchedTables;
       displayConfig = config;
+      appSettings = settings;
       if (tables.length > 0) {
         await selectTable(tables[0]);
       }
+      // Non-critical: check for update availability in the background
+      fetchUpdateStatus().then(status => {
+        updateStatus = status;
+        if (status !== null) updateAvailable = status.update_available;
+      }).catch(() => {}); // silently fail — update check is non-critical
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to connect to database';
     } finally {
@@ -139,12 +182,43 @@
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
+          void tick().then(() => columnsButtonEl?.focus());
           return;
         }
 
         if (searchVisible || searchQuery.length > 0) {
           event.preventDefault();
           handleSearchClear();
+          void tick().then(() => searchButtonEl?.focus());
+          return;
+        }
+
+        if (filtersVisible) {
+          event.preventDefault();
+          filtersVisible = false;
+          void tick().then(() => filterButtonEl?.focus());
+        }
+      }
+
+      if (!inTextField && !isShortcut && !event.shiftKey) {
+        if (pendingModeShortcut === 'g') {
+          if (key === 's') {
+            event.preventDefault();
+            setSidebarMode('settings');
+            return;
+          }
+
+          if (key === 't') {
+            event.preventDefault();
+            setSidebarMode('tables');
+            return;
+          }
+
+          clearModeShortcut();
+        }
+
+        if (key === 'g') {
+          armModeShortcut();
         }
       }
     }
@@ -154,6 +228,7 @@
       window.removeEventListener('keydown', handleKeydown);
       clearFilterDebounce();
       clearSearchDebounce();
+      clearModeShortcut();
     };
   });
 
@@ -169,6 +244,16 @@
       clearTimeout(searchDebounceId);
       searchDebounceId = null;
     }
+  }
+
+  function serializeSortState(nextSortState: SortState): string | undefined {
+    if (nextSortState.length === 0) {
+      return undefined;
+    }
+
+    return nextSortState
+      .map(({ column, direction }) => `${column}:${direction}`)
+      .join(',');
   }
 
   function normalizeColumnVisibility(
@@ -248,6 +333,7 @@
       return;
     }
 
+    columnsOpen = false;
     void openSearch();
   }
 
@@ -257,10 +343,29 @@
 
   function toggleColumns() {
     columnsOpen = !columnsOpen;
+    if (columnsOpen) {
+      searchVisible = false;
+    }
   }
 
   function closeColumns() {
     columnsOpen = false;
+  }
+
+  function setSearchInputEl(node: HTMLInputElement | null) {
+    searchInputEl = node;
+  }
+
+  function setSearchButtonEl(node: HTMLButtonElement | null) {
+    searchButtonEl = node;
+  }
+
+  function setColumnsButtonEl(node: HTMLButtonElement | null) {
+    columnsButtonEl = node;
+  }
+
+  function setFilterButtonEl(node: HTMLButtonElement | null) {
+    filterButtonEl = node;
   }
 
   async function selectTable(table: TableInfo) {
@@ -278,7 +383,7 @@
     const storageKey = `${table.schema}.${table.name}`;
 
     // Fetch columns and last-used state in parallel; rows depend on last-used state.
-    let initialSortState: SortState = { column: null, direction: null };
+    let initialSortState: SortState = [];
     let initialFilters: FilterState = {};
     let initialSearch = '';
 
@@ -290,11 +395,8 @@
       if (myRequest !== selectRequestId) return;
 
       if (lastUsed) {
-        // Restore last-used sort: multi-column → use first entry as single-column sort
-        const firstSort = lastUsed.sort_columns[0] ?? null;
-        initialSortState = firstSort
-          ? { column: firstSort.col, direction: firstSort.dir }
-          : { column: null, direction: null };
+        // Restore last-used sort: convert SortColumn[] → SortEntry[]
+        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({ column: col, direction: dir }));
         initialFilters = lastUsed.filters;
         initialSearch = lastUsed.search_term ?? '';
       }
@@ -337,10 +439,7 @@
     clearLastUsedSaveDebounce();
     lastUsedSaveId = setTimeout(() => {
       lastUsedSaveId = null;
-      const sortCols: SortColumn[] =
-        nextSortState.column && nextSortState.direction
-          ? [{ col: nextSortState.column, dir: nextSortState.direction }]
-          : [];
+      const sortCols: SortColumn[] = nextSortState.map(({ column, direction }) => ({ col: column, dir: direction }));
       void saveLastUsedState(schema, table, {
         sort_columns: sortCols,
         filters: nextFilters,
@@ -358,9 +457,9 @@
     nextSearchTerm: string = searchTerm,
   ): FetchRowsParams {
     const params: FetchRowsParams = { page };
-    if (nextSortState.column && nextSortState.direction) {
-      params.sort_column = nextSortState.column;
-      params.sort_direction = nextSortState.direction;
+    const sort = serializeSortState(nextSortState);
+    if (sort != null) {
+      params.sort = sort;
     }
 
     const activeFilters = Object.fromEntries(
@@ -411,12 +510,9 @@
     await loadRows(page);
   }
 
-  function handleSortChange(column: string, direction: SortDirection | null) {
+  function handleSortChange(nextSortState: SortState) {
     clearFilterDebounce();
     clearSearchDebounce();
-    const nextSortState: SortState = direction
-      ? { column, direction }
-      : { column: null, direction: null };
     sortState = nextSortState;
     void loadRows(1, nextSortState);
     if (selectedSchema && selectedTable) {
@@ -498,8 +594,7 @@
 
     const params = buildRowsParams(1);
     const searchParams = new URLSearchParams();
-    if (params.sort_column) searchParams.set('sort_column', params.sort_column);
-    if (params.sort_direction) searchParams.set('sort_direction', params.sort_direction);
+    if (params.sort) searchParams.set('sort', params.sort);
     if (params.search) searchParams.set('search', params.search);
     if (params.filters) {
       for (const [col, val] of Object.entries(params.filters)) {
@@ -509,6 +604,29 @@
     const qs = searchParams.toString();
     const base = `/api/export/${encodeURIComponent(selectedSchema)}/${encodeURIComponent(selectedTable)}/csv`;
     window.open(`${base}${qs ? `?${qs}` : ''}`, '_blank');
+  }
+
+  async function handleSaveBranding(nextBranding: BrandingSettings) {
+    const entries = buildBrandingSettingsEntries(nextBranding);
+    await saveSettings(entries);
+    appSettings = {
+      ...appSettings,
+      ...entries,
+    };
+    try {
+      displayConfig = await fetchDisplayConfig();
+    } catch {
+      // Save succeeded; display-config refresh failure is non-fatal.
+    }
+  }
+
+  async function handleSaveAppearance(nextAppearance: AppearanceSettings) {
+    const entries = buildAppearanceSettingsEntries(nextAppearance);
+    await saveSettings(entries);
+    appSettings = {
+      ...appSettings,
+      ...entries,
+    };
   }
 </script>
 
@@ -528,6 +646,8 @@
       onToggle={() => sidebarCollapsed = !sidebarCollapsed}
       title="SeeKi"
       subtitle=""
+      {updateAvailable}
+      onSettingsClick={() => settingsOpen = true}
     >
       {#if !sidebarCollapsed}
         <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
@@ -543,102 +663,125 @@
       </div>
     </main>
   </div>
+  <SettingsPanel
+    bind:open={settingsOpen}
+    initialStatus={updateStatus}
+    onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
+  />
 {:else}
-  <div class="layout">
+  <div class={`layout ${densityClass}`}>
     <Sidebar
       bind:collapsed={sidebarCollapsed}
       onToggle={() => sidebarCollapsed = !sidebarCollapsed}
+      onSelectMode={setSidebarMode}
       title={displayConfig?.branding?.title ?? 'SeeKi'}
       subtitle={displayConfig?.branding?.subtitle ?? ''}
+      mode={$sidebarMode}
+      showModeSwitch={true}
     >
       {#if !sidebarCollapsed}
-        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+        {#key $sidebarMode}
+          <div class="sidebar-panel-enter">
+            {#if $sidebarMode === 'tables'}
+              <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+            {:else}
+              <SettingsNav />
+            {/if}
+          </div>
+        {/key}
       {/if}
     </Sidebar>
-    <Toolbar
-      sortState={sortState}
-      sortDescription={sortLabel}
-      filtersVisible={filtersVisible}
-      activeFilterCount={activeFilterCount}
-      searchActive={searchActive}
-      searchVisible={searchVisible}
-      columnsOpen={columnsOpen}
-      columns={columns}
-      columnVisibility={columnVisibility}
-      hiddenColumnCount={hiddenColumnCount}
-      hasTable={!!selectedTable}
-      onToggleSearch={toggleSearch}
-      onToggleFilters={toggleFilters}
-      onToggleColumns={toggleColumns}
-      onToggleColumnVisibility={handleToggleColumnVisibility}
-      onShowAllColumns={handleShowAllColumns}
-      onCloseColumns={closeColumns}
-      onExport={exportCsv}
-    />
-    <main class="main">
-      <div class="table-panel">
-        <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
-        {#if searchVisible}
-          <div id="search-panel" class="search-panel" class:active={searchActive}>
-            <div class="search-box">
-              <Search size={14} />
-              <input
-                bind:this={searchInputEl}
-                type="text"
-                class="search-input"
-                class:has-value={searchQuery.length > 0}
-                placeholder="Search all text columns..."
-                value={searchTerm}
-                oninput={handleSearchInput}
-                aria-label="Search rows"
-              />
-              <button
-                type="button"
-                class="clear-search"
-                aria-label="Clear search"
-                onclick={handleSearchClear}
-              >
-                <X size={14} />
-              </button>
+    {#key $sidebarMode}
+      <div class="main-panel-enter">
+        {#if $sidebarMode === 'tables'}
+          <main class="main">
+            <div class="table-panel">
+              <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
             </div>
-          </div>
+            {#if tableError}
+              <div class="table-error-banner">
+                <span>{tableError}</span>
+                <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
+              </div>
+            {/if}
+            <div class="grid-area">
+              <div class="grid-shell">
+                <div class="grid-content">
+                  <DataGrid
+                    columns={visibleColumns}
+                    rows={queryResult?.rows ?? []}
+                    dateFormat={appearanceSettings.dateFormat}
+                    {sortState}
+                    {filters}
+                    {filtersVisible}
+                    onSortChange={handleSortChange}
+                    onFilterChange={handleFilterChange}
+                  />
+                </div>
+                {#if selectedTable}
+                  <ActionDock
+                    searchVisible={searchVisible}
+                    searchTerm={searchTerm}
+                    searchActive={searchActive}
+                    filtersVisible={filtersVisible}
+                    activeFilterCount={activeFilterCount}
+                    columnsOpen={columnsOpen}
+                    columns={columns}
+                    columnVisibility={columnVisibility}
+                    hiddenColumnCount={hiddenColumnCount}
+                    hasTable={!!selectedTable}
+                    disabled={tableLoading}
+                    sortState={sortState}
+                    onToggleSearch={toggleSearch}
+                    onSearchInput={handleSearchInput}
+                    onSearchClear={handleSearchClear}
+                    onToggleFilters={toggleFilters}
+                    onToggleColumns={toggleColumns}
+                    onToggleColumnVisibility={handleToggleColumnVisibility}
+                    onShowAllColumns={handleShowAllColumns}
+                    onCloseColumns={closeColumns}
+                    onExport={exportCsv}
+                    onSearchInputRef={setSearchInputEl}
+                    onSearchButtonRef={setSearchButtonEl}
+                    onColumnsButtonRef={setColumnsButtonEl}
+                    onFilterButtonRef={setFilterButtonEl}
+                  />
+                {/if}
+                {#if tableLoading}
+                  <div class="grid-loading">
+                    <div class="loading-spinner"></div>
+                  </div>
+                {/if}
+              </div>
+            </div>
+            <StatusBar
+              total={queryResult?.total_rows ?? 0}
+              start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
+              end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
+              page={queryResult?.page ?? 1}
+              totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
+              loading={tableLoading}
+              onPageChange={goToPage}
+            />
+          </main>
+        {:else}
+          <main class="main settings-main">
+            <SettingsContent
+              branding={brandingSettings}
+              appearance={appearanceSettings}
+              onSaveBranding={handleSaveBranding}
+              onSaveAppearance={handleSaveAppearance}
+            />
+          </main>
         {/if}
       </div>
-      {#if tableError}
-        <div class="table-error-banner">
-          <span>{tableError}</span>
-          <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
-        </div>
-      {/if}
-      <div class="grid-area">
-        <div class="grid-shell" class:loading-overlay={tableLoading}>
-          <DataGrid
-            columns={visibleColumns}
-            rows={queryResult?.rows ?? []}
-            {sortState}
-            {filters}
-            {filtersVisible}
-            onSortChange={handleSortChange}
-            onFilterChange={handleFilterChange}
-          />
-          {#if tableLoading}
-            <div class="grid-loading">
-              <div class="loading-spinner"></div>
-            </div>
-          {/if}
-        </div>
-      </div>
-      <StatusBar
-        total={queryResult?.total_rows ?? 0}
-        start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
-        end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
-        page={queryResult?.page ?? 1}
-        totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
-        loading={tableLoading}
-        onPageChange={goToPage}
-      />
-    </main>
+    {/key}
   </div>
+  <SettingsPanel
+    bind:open={settingsOpen}
+    initialStatus={updateStatus}
+    onStatusChange={(s) => { updateStatus = s; updateAvailable = s.update_available; }}
+  />
 {/if}
 
 <style>
@@ -649,6 +792,18 @@
     overflow: hidden;
   }
 
+  .sidebar-panel-enter {
+    animation: sk-fade-in 180ms ease-out;
+  }
+
+  .main-panel-enter {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    animation: sk-fade-in 200ms ease-out;
+  }
+
   .main {
     flex: 1;
     display: flex;
@@ -657,74 +812,15 @@
     min-height: 0;
   }
 
+  .settings-main {
+    overflow: hidden;
+  }
+
   .table-panel {
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-sm);
     padding: var(--sk-space-lg) var(--sk-space-2xl) 0;
-  }
-
-  .search-panel {
-    display: flex;
-    align-items: center;
-    min-height: 0;
-  }
-
-  .search-box {
-    display: flex;
-    align-items: center;
-    gap: var(--sk-space-sm);
-    width: min(520px, 100%);
-    padding: var(--sk-space-xs) var(--sk-space-md);
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-md);
-    background: var(--sk-glass-input);
-    backdrop-filter: var(--sk-glass-input-blur);
-    -webkit-backdrop-filter: var(--sk-glass-input-blur);
-    color: var(--sk-muted);
-    box-shadow: var(--sk-shadow-card);
-  }
-
-  .search-panel.active .search-box {
-    border-color: rgba(0, 169, 165, 0.32);
-    box-shadow: var(--sk-shadow-card), var(--sk-shadow-accent);
-    color: var(--sk-accent);
-  }
-
-  .search-input {
-    flex: 1;
-    border: none;
-    outline: none;
-    background: none;
-    font-family: var(--sk-font-ui);
-    font-size: var(--sk-font-size-body);
-    color: var(--sk-text);
-    min-width: 0;
-  }
-
-  .search-input::placeholder {
-    color: var(--sk-muted);
-  }
-
-  .clear-search {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-sm);
-    background: var(--sk-glass-button);
-    backdrop-filter: var(--sk-glass-button-blur);
-    -webkit-backdrop-filter: var(--sk-glass-button-blur);
-    color: var(--sk-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .clear-search:hover {
-    color: var(--sk-text);
-    border-color: rgba(0, 169, 165, 0.24);
   }
 
   .grid-area {
@@ -743,14 +839,17 @@
     position: relative;
   }
 
-  .loading-overlay {
-    opacity: 0.5;
-    pointer-events: none;
+  .grid-content {
+    position: absolute;
+    inset: 0 0 var(--sk-dock-clearance) 0;
+    min-width: 0;
+    min-height: 0;
   }
 
   .grid-loading {
     position: absolute;
-    inset: 0;
+    inset: 0 0 var(--sk-dock-clearance) 0;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: center;
