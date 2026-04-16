@@ -54,7 +54,7 @@
       </button>
       <button type="button" disabled>Install update</button>
       <button type="button" disabled>Upload WIP build</button>
-      <button type="button" disabled={!status.previous_exists}>Rollback</button>
+      <button type="button" disabled>Rollback</button>
     </div>
   {:else}
     <div class="card muted">
