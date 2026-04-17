@@ -31,10 +31,16 @@ pub struct GitHubAsset {
 pub struct ReleaseCache {
     stable: Mutex<Option<CacheEntry>>,
     prerelease: Mutex<Option<CacheEntry>>,
+    prerelease_list: Mutex<Option<ListCacheEntry>>,
 }
 
 struct CacheEntry {
     release: GitHubRelease,
+    fetched_at: Instant,
+}
+
+struct ListCacheEntry {
+    releases: Vec<GitHubRelease>,
     fetched_at: Instant,
 }
 
@@ -43,6 +49,7 @@ impl ReleaseCache {
         Self {
             stable: Mutex::new(None),
             prerelease: Mutex::new(None),
+            prerelease_list: Mutex::new(None),
         }
     }
 
@@ -55,10 +62,27 @@ impl ReleaseCache {
             .map(|e| e.release.clone())
     }
 
+    /// Return the cached list of recent prereleases if the cache is warm.
+    pub async fn prerelease_list(&self) -> Option<Vec<GitHubRelease>> {
+        let guard = self.prerelease_list.lock().await;
+        guard
+            .as_ref()
+            .filter(|e| e.fetched_at.elapsed() < CACHE_TTL)
+            .map(|e| e.releases.clone())
+    }
+
     async fn set(&self, include_prerelease: bool, release: GitHubRelease) {
         let mut guard = self.cache_slot(include_prerelease).lock().await;
         *guard = Some(CacheEntry {
             release,
+            fetched_at: Instant::now(),
+        });
+    }
+
+    async fn set_prerelease_list(&self, releases: Vec<GitHubRelease>) {
+        let mut guard = self.prerelease_list.lock().await;
+        *guard = Some(ListCacheEntry {
+            releases,
             fetched_at: Instant::now(),
         });
     }
@@ -105,7 +129,7 @@ pub async fn check_latest(
         .build()?;
 
     let release = if include_prerelease {
-        fetch_newest_prerelease(&client).await
+        fetch_newest_prerelease(&client, cache).await
     } else {
         fetch_latest_stable(&client).await
     };
@@ -315,8 +339,12 @@ async fn fetch_latest_stable(client: &reqwest::Client) -> anyhow::Result<Option<
     Ok(Some(release))
 }
 
+/// Number of recent prereleases to cache for the build picker.
+const PRERELEASE_LIST_SIZE: usize = 10;
+
 async fn fetch_newest_prerelease(
     client: &reqwest::Client,
+    cache: &ReleaseCache,
 ) -> anyhow::Result<Option<GitHubRelease>> {
     let resp = client
         .get(GITHUB_API_BASE)
@@ -326,7 +354,14 @@ async fn fetch_newest_prerelease(
     let releases: Vec<GitHubRelease> = resp.json().await?;
     // Filter to only prereleases — otherwise we'd return stable releases to
     // prerelease-channel users whenever a stable is published after a prerelease.
-    Ok(releases.into_iter().find(|r| r.prerelease))
+    let prereleases: Vec<GitHubRelease> = releases
+        .into_iter()
+        .filter(|r| r.prerelease)
+        .take(PRERELEASE_LIST_SIZE)
+        .collect();
+    let newest = prereleases.first().cloned();
+    cache.set_prerelease_list(prereleases).await;
+    Ok(newest)
 }
 
 #[cfg(test)]

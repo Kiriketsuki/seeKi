@@ -57,6 +57,13 @@ pub struct UpdateStatusResponse {
     pub previous_exists: bool,
     pub last_checked: Option<String>,
     pub release_notes: Option<String>,
+    pub available_builds: Vec<AvailableBuild>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AvailableBuild {
+    pub tag: String,
+    pub published_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,6 +92,27 @@ async fn build_update_status_response(update: &UpdateState) -> UpdateStatusRespo
         .is_some_and(|path| swap::has_previous(path));
 
     let (latest, update_available, release_notes) = release_metadata(&current, cached.as_ref());
+
+    // Expose the list of recent prereleases only when the prerelease channel
+    // is enabled — stable users should not see prerelease builds in the picker.
+    let available_builds = if settings.pre_release_channel {
+        update
+            .cache
+            .prerelease_list()
+            .await
+            .map(|list| {
+                list.into_iter()
+                    .map(|rel| AvailableBuild {
+                        tag: rel.tag_name.trim_start_matches('v').to_string(),
+                        published_at: rel.published_at,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     UpdateStatusResponse {
         current: current.to_string(),
         latest,
@@ -94,6 +122,7 @@ async fn build_update_status_response(update: &UpdateState) -> UpdateStatusRespo
         previous_exists,
         last_checked: settings.last_checked,
         release_notes,
+        available_builds,
     }
 }
 
@@ -107,13 +136,27 @@ fn release_metadata(
 
     let tag = release.tag_name.trim_start_matches('v').to_string();
     let update_available = match SeekiVersion::from_str(&tag) {
-        Ok(version) => version > *current,
+        Ok(version) => {
+            // Nightly build suffixes encode `{date}g{sha}`, which do not sort
+            // meaningfully against each other. GitHub's API already returns
+            // releases newest-first, so any different nightly tag is a valid
+            // forward update — fall back to tag identity in that case.
+            if is_nightly_suffix(&current.suffix) && is_nightly_suffix(&version.suffix) {
+                tag != current.to_string()
+            } else {
+                version > *current
+            }
+        }
         Err(error) => {
             tracing::warn!(tag = %tag, error = %error, "Failed to parse release version tag");
             false
         }
     };
     (Some(tag), update_available, Some(release.body.clone()))
+}
+
+fn is_nightly_suffix(suffix: &str) -> bool {
+    suffix.starts_with('n')
 }
 
 async fn persist_last_checked(update: &UpdateState) -> Result<(), AppError> {
@@ -222,6 +265,9 @@ pub async fn get_update_token(
 pub struct ApplyRequest {
     source: String,
     wip_upload_id: Option<String>,
+    /// Optional: install a specific release tag from the cached prerelease list
+    /// instead of the newest available. Used by the build picker UI.
+    release_tag: Option<String>,
 }
 
 pub async fn apply_update(
@@ -232,15 +278,35 @@ pub async fn apply_update(
 
     match req.source.as_str() {
         "release" => {
-            // Get cached release
+            // Get cached release — either the newest one, or a specific tag
+            // from the prerelease list when the build picker has selected one.
             let pre = {
                 let s = update.settings.lock().await;
                 s.pre_release_channel
             };
-            let release = github::check_latest(&update.cache, pre, false)
-                .await?
-                .release
-                .ok_or_else(|| AppError::bad_request("No release available — run check first"))?;
+
+            let release = if let Some(requested_tag) = req.release_tag.as_deref() {
+                let normalized = requested_tag.trim_start_matches('v');
+                let list = update.cache.prerelease_list().await.ok_or_else(|| {
+                    AppError::bad_request(
+                        "No build list cached — run check for updates first",
+                    )
+                })?;
+                list.into_iter()
+                    .find(|r| r.tag_name.trim_start_matches('v') == normalized)
+                    .ok_or_else(|| {
+                        AppError::bad_request(format!(
+                            "Build '{requested_tag}' not found in cached list"
+                        ))
+                    })?
+            } else {
+                github::check_latest(&update.cache, pre, false)
+                    .await?
+                    .release
+                    .ok_or_else(|| {
+                        AppError::bad_request("No release available — run check first")
+                    })?
+            };
 
             let asset = github::select_asset(&release.assets).ok_or_else(|| {
                 AppError::bad_request("No compatible binary found in release assets")

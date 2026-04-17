@@ -609,5 +609,6 @@ export function mockFetchUpdateStatus(): UpdateStatus | null {
     previous_exists: false,
     last_checked: '2026-04-16T09:00:00Z',
     release_notes: '## Mock release\n\n- Added update polling\n- Added release badges',
+    available_builds: [],
   };
 }
