@@ -371,7 +371,7 @@ struct PlannedViewQuery {
 }
 
 fn quote_identifier(name: &str) -> String {
-    format!(r#""{name}""#)
+    format!(r#""{}""#, name.replace('"', "\"\""))
 }
 
 fn qualified_table_sql(table: &TableKey) -> String {

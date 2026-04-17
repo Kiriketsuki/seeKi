@@ -910,7 +910,12 @@
   }
 
   async function handleDeleteSavedView(view: SavedViewSummary) {
-    await deleteView(view.id);
+    try {
+      await deleteView(view.id);
+    } catch (e) {
+      tableError = e instanceof Error ? e.message : 'Failed to delete view';
+      return;
+    }
     savedViews = savedViews.filter((candidate) => candidate.id !== view.id);
 
     if (builderReturnTarget.kind === 'view' && builderReturnTarget.viewId === view.id) {
