@@ -62,6 +62,15 @@
     status = initialStatus;
   });
 
+  $effect(() => {
+    if (!confirmAction) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') confirmAction = null;
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   let updateAvailable = $derived(status?.update_available ?? false);
   let previousExists = $derived(status?.previous_exists ?? false);
   let pollIntervalHours = $derived((status?.poll_interval_hours ?? 6) as UpdatePollIntervalHours);
@@ -364,29 +373,42 @@
     {/if}
 
     {#if confirmAction}
-      <div class="confirm-card">
-        <p class="confirm-copy">
-          {#if confirmAction === 'install'}
-            Install update {selectedBuildTag ?? status?.latest ?? ''}? SeeKi will restart after the binary swap.
-          {:else if confirmAction === 'rollback'}
-            Roll back to the previous binary? SeeKi will restart immediately afterwards.
-          {:else}
-            Apply the uploaded WIP binary ({wipResult ? formatBytes(wipResult.size) : ''})? SeeKi will restart after the swap.
-          {/if}
-        </p>
-        <div class="confirm-actions">
-          <button class="btn btn-secondary" type="button" onclick={() => (confirmAction = null)}>Cancel</button>
-          <button
-            class="btn btn-accent"
-            type="button"
-            onclick={() => {
-              if (confirmAction === 'install') void handleInstall();
-              else if (confirmAction === 'rollback') void handleRollback();
-              else void handleApplyWip();
-            }}
-          >
-            Confirm
-          </button>
+      <div
+        class="confirm-backdrop"
+        role="presentation"
+        onclick={(event) => {
+          if (event.target === event.currentTarget) confirmAction = null;
+        }}
+      >
+        <div
+          class="confirm-card confirm-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-copy"
+        >
+          <p class="confirm-copy" id="confirm-copy">
+            {#if confirmAction === 'install'}
+              Install update {selectedBuildTag ?? status?.latest ?? ''}? SeeKi will restart after the binary swap.
+            {:else if confirmAction === 'rollback'}
+              Roll back to the previous binary? SeeKi will restart immediately afterwards.
+            {:else}
+              Apply the uploaded WIP binary ({wipResult ? formatBytes(wipResult.size) : ''})? SeeKi will restart after the swap.
+            {/if}
+          </p>
+          <div class="confirm-actions">
+            <button class="btn btn-secondary" type="button" onclick={() => (confirmAction = null)}>Cancel</button>
+            <button
+              class="btn btn-accent"
+              type="button"
+              onclick={() => {
+                if (confirmAction === 'install') void handleInstall();
+                else if (confirmAction === 'rollback') void handleRollback();
+                else void handleApplyWip();
+              }}
+            >
+              Confirm
+            </button>
+          </div>
         </div>
       </div>
     {/if}
@@ -637,6 +659,41 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--sk-space-sm);
+  }
+
+  .confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sk-space-lg);
+    z-index: 1000;
+    animation: confirm-fade 120ms ease-out;
+  }
+
+  .confirm-modal {
+    max-width: 480px;
+    width: 100%;
+    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    animation: confirm-pop 140ms ease-out;
+  }
+
+  .confirm-actions {
+    justify-content: flex-end;
+  }
+
+  @keyframes confirm-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes confirm-pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
   .status-grid,
