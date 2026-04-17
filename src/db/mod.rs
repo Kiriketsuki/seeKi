@@ -3,7 +3,7 @@ pub mod postgres;
 use std::collections::HashMap;
 
 use crate::config::{DatabaseConfig, DatabaseKind};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Client-facing validation error (e.g. invalid column name in filter).
 /// The API layer maps this to HTTP 400.
@@ -91,6 +91,114 @@ pub struct ExportQueryParams<'a> {
     pub filters: &'a HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ViewAggregate {
+    Sum,
+    Avg,
+    Count,
+    Min,
+    Max,
+}
+
+impl ViewAggregate {
+    pub const fn as_sql(self) -> &'static str {
+        match self {
+            Self::Sum => "SUM",
+            Self::Avg => "AVG",
+            Self::Count => "COUNT",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewColumn {
+    pub source_schema: String,
+    pub source_table: String,
+    pub column_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aggregate: Option<ViewAggregate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FkHop {
+    pub from_schema: String,
+    pub from_table: String,
+    pub from_columns: Vec<String>,
+    pub to_schema: String,
+    pub to_table: String,
+    pub to_columns: Vec<String>,
+    pub constraint_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewSummary {
+    pub id: i64,
+    pub name: String,
+    pub base_schema: String,
+    pub base_table: String,
+    pub definition_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewDefinition {
+    pub id: i64,
+    pub name: String,
+    pub base_schema: String,
+    pub base_table: String,
+    pub definition_version: i64,
+    pub columns: Vec<ViewColumn>,
+    pub filters: HashMap<String, String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl SavedViewDefinition {
+    pub fn summary(&self) -> SavedViewSummary {
+        SavedViewSummary {
+            id: self.id,
+            name: self.name.clone(),
+            base_schema: self.base_schema.clone(),
+            base_table: self.base_table.clone(),
+            definition_version: self.definition_version,
+            created_at: self.created_at.clone(),
+            updated_at: self.updated_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ViewDraft<'a> {
+    pub base_schema: &'a str,
+    pub base_table: &'a str,
+    pub columns: &'a [ViewColumn],
+    pub filters: &'a HashMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ViewRowsQueryParams<'a> {
+    pub draft: ViewDraft<'a>,
+    pub page: u32,
+    pub page_size: u32,
+    pub sort: &'a [SortEntry],
+    pub search: Option<&'a str>,
+    pub filters: &'a HashMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ViewExportQueryParams<'a> {
+    pub draft: ViewDraft<'a>,
+    pub sort: &'a [SortEntry],
+    pub search: Option<&'a str>,
+    pub filters: &'a HashMap<String, String>,
+}
+
 pub enum DatabasePool {
     Postgres(sqlx::PgPool, Option<crate::ssh::SshTunnel>),
 }
@@ -171,6 +279,40 @@ impl DatabasePool {
     pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
         match self {
             Self::Postgres(pool, _) => postgres::query_rows(pool, params).await,
+        }
+    }
+
+    pub async fn lookup_fk_path(
+        &self,
+        base_schema: &str,
+        base_table: &str,
+        target_schema: &str,
+        target_table: &str,
+    ) -> anyhow::Result<Vec<FkHop>> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::lookup_fk_path(pool, base_schema, base_table, target_schema, target_table)
+                    .await
+            }
+        }
+    }
+
+    pub async fn preview_view(
+        &self,
+        draft: &ViewDraft<'_>,
+        page_size: u32,
+    ) -> anyhow::Result<QueryResult> {
+        match self {
+            Self::Postgres(pool, _) => postgres::preview_view(pool, draft, page_size).await,
+        }
+    }
+
+    pub async fn query_view_rows(
+        &self,
+        params: &ViewRowsQueryParams<'_>,
+    ) -> anyhow::Result<QueryResult> {
+        match self {
+            Self::Postgres(pool, _) => postgres::query_view_rows(pool, params).await,
         }
     }
 

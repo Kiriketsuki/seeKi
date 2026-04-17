@@ -396,3 +396,128 @@ describe('UPDATE_STATUS_FIELDS response-shape agreement', () => {
     expect(await fetchUpdateStatus()).toBeNull();
   });
 });
+
+describe('custom views API helpers', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('VITE_MOCK', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('fetchViews returns an empty list when the endpoint is not available yet', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('not found', { status: 404 }));
+    const { fetchViews } = await import('./api');
+
+    await expect(fetchViews()).resolves.toEqual([]);
+  });
+
+  it('createView posts the agreed payload shape', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        view: {
+          id: 7,
+          name: 'Sales per customer',
+          base_schema: 'public',
+          base_table: 'orders',
+          created_at: '2026-04-17T00:00:00Z',
+          updated_at: '2026-04-17T00:00:00Z',
+        },
+      }),
+    );
+    const { createView } = await import('./api');
+
+    await createView({
+      name: 'Sales per customer',
+      base_schema: 'public',
+      base_table: 'orders',
+      columns: [
+        {
+          source_schema: 'public',
+          source_table: 'customers',
+          column_name: 'name',
+          alias: 'customer_name',
+          aggregate: null,
+        },
+      ],
+      filters: { customer_name: 'acme' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/views',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Sales per customer',
+          base_schema: 'public',
+          base_table: 'orders',
+          columns: [
+            {
+              source_schema: 'public',
+              source_table: 'customers',
+              column_name: 'name',
+              alias: 'customer_name',
+              aggregate: null,
+            },
+          ],
+          filters: { customer_name: 'acme' },
+        }),
+      }),
+    );
+  });
+
+  it('fetchViewRows serializes sort, search, and filter params', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        columns: [],
+        rows: [],
+        total_rows: 0,
+        page: 1,
+        page_size: 50,
+      }),
+    );
+    const { fetchViewRows } = await import('./api');
+
+    await fetchViewRows(42, {
+      page: 2,
+      page_size: 25,
+      sort: 'customer_name:asc',
+      search: 'acme',
+      filters: {
+        customer_name: 'Acme',
+        sum_orders__total: '100',
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/views/42/rows?page=2&page_size=25&sort=customer_name%3Aasc&search=acme&filter.customer_name=Acme&filter.sum_orders__total=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('buildViewCsvUrl keeps the existing query semantics for saved-view export', async () => {
+    const { buildViewCsvUrl } = await import('./api');
+
+    expect(
+      buildViewCsvUrl(9, {
+        sort: 'customer_name:desc',
+        search: 'globex',
+        filters: { customer_name: 'Globex' },
+      }),
+    ).toBe('/api/views/9/csv?sort=customer_name%3Adesc&search=globex&filter.customer_name=Globex');
+  });
+
+  it('fetchFkPath returns an empty path when the endpoint is not available yet', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('not found', { status: 404 }));
+    const { fetchFkPath } = await import('./api');
+
+    await expect(fetchFkPath('public', 'orders', 'public', 'customers')).resolves.toEqual([]);
+  });
+});
