@@ -1,6 +1,13 @@
 -- Seed data for E2E tests.
 -- Mirrors the MEC-Miki schema with enough rows to exercise
 -- pagination (>50), sorting, filtering, NULLs, and booleans.
+-- The vehicles table provides FK relationships for custom views e2e tests.
+
+-- Parent table: vehicles (referenced by vehicle_logs and soc_readings)
+CREATE TABLE IF NOT EXISTS vehicles (
+    id    VARCHAR(20) PRIMARY KEY,
+    label VARCHAR(50) NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS vehicle_logs (
     id            SERIAL PRIMARY KEY,
@@ -23,9 +30,27 @@ CREATE TABLE IF NOT EXISTS soc_readings (
     read_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- Add FK constraints (idempotent: drop first, then add)
+ALTER TABLE vehicle_logs DROP CONSTRAINT IF EXISTS fk_vehicle_logs_vehicle;
+ALTER TABLE vehicle_logs ADD CONSTRAINT fk_vehicle_logs_vehicle
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id);
+
+ALTER TABLE soc_readings DROP CONSTRAINT IF EXISTS fk_soc_readings_vehicle;
+ALTER TABLE soc_readings ADD CONSTRAINT fk_soc_readings_vehicle
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id);
+
 -- Reset tables so the seed is idempotent (applied on every E2E setup run).
 -- RESTART IDENTITY resets the SERIAL counters so id values stay in the expected 1..200 / 1..80 ranges.
-TRUNCATE TABLE vehicle_logs, soc_readings RESTART IDENTITY;
+-- CASCADE required because of FK constraints.
+TRUNCATE TABLE vehicle_logs, soc_readings, vehicles RESTART IDENTITY CASCADE;
+
+-- Seed the vehicles parent table (5 vehicles matching the VH-001..VH-005 pattern)
+INSERT INTO vehicles (id, label) VALUES
+    ('VH-001', 'Shuttle Alpha'),
+    ('VH-002', 'Shuttle Beta'),
+    ('VH-003', 'Shuttle Gamma'),
+    ('VH-004', 'Shuttle Delta'),
+    ('VH-005', 'Shuttle Epsilon');
 
 -- Generate 200 vehicle_logs rows
 INSERT INTO vehicle_logs (vehicle_id, event_type, speed_kmh, is_active, latitude, longitude, notes, logged_at)
