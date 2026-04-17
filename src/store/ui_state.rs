@@ -48,7 +48,9 @@ mod tests {
     #[tokio::test]
     async fn get_missing_returns_none() {
         let (store, _dir) = ephemeral_store().await;
-        let result = get(store.pool(), "conn", "sidebar_collapsed").await.unwrap();
+        let result = get(store.pool(), "conn", "sidebar_collapsed")
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 

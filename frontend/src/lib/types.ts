@@ -22,6 +22,49 @@ export interface QueryResult {
   page_size: number;
 }
 
+export type ViewAggregate = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
+
+export interface ViewColumn {
+  source_schema: string;
+  source_table: string;
+  column_name: string;
+  alias?: string | null;
+  aggregate?: ViewAggregate | null;
+}
+
+export interface FkHop {
+  from_schema: string;
+  from_table: string;
+  from_columns: string[];
+  to_schema: string;
+  to_table: string;
+  to_columns: string[];
+  constraint_name: string;
+}
+
+export interface SavedViewSummary {
+  id: number;
+  name: string;
+  base_schema: string;
+  base_table: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedViewDefinition extends SavedViewSummary {
+  definition_version: number;
+  columns: ViewColumn[];
+  filters: FilterState;
+}
+
+export interface ViewDraft {
+  name: string;
+  base_schema: string;
+  base_table: string;
+  columns: ViewColumn[];
+  filters: FilterState;
+}
+
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortEntry {
@@ -39,6 +82,18 @@ export interface TablesResponse {
 
 export interface ColumnsResponse {
   columns: ColumnInfo[];
+}
+
+export interface SavedViewsResponse {
+  views: SavedViewSummary[];
+}
+
+export interface SavedViewResponse {
+  view: SavedViewDefinition;
+}
+
+export interface FkPathResponse {
+  path: FkHop[];
 }
 
 export interface StatusResponse {
@@ -141,6 +196,8 @@ export interface VersionInfo {
   built_at: string;
 }
 
+export type VersionResponse = VersionInfo;
+
 export type UpdatePollIntervalHours = 0 | 1 | 6 | 24;
 
 export interface UpdateStatus {
@@ -196,6 +253,11 @@ export interface LastUsedTableState {
 }
 
 export type SidebarMode = 'tables' | 'settings';
+
+export type TablesSurface =
+  | { kind: 'table' }
+  | { kind: 'builder' }
+  | { kind: 'view'; viewId: number };
 
 export type SettingsSection =
   | 'updates'

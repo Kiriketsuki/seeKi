@@ -1,8 +1,9 @@
 pub mod presets;
 pub mod settings;
 pub mod ui_state;
+pub mod views;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use sqlx::SqlitePool;
@@ -26,7 +27,7 @@ impl Store {
     ///
     /// On any open/migration failure, renames the existing file to
     /// `<name>.bak.<unix_timestamp>` and starts fresh rather than refusing to start.
-    pub(crate) async fn open_at(path: &PathBuf) -> anyhow::Result<Self> {
+    pub(crate) async fn open_at(path: &Path) -> anyhow::Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating store directory: {}", parent.display()))?;
@@ -57,7 +58,7 @@ impl Store {
         }
     }
 
-    pub(crate) async fn try_open(path: &PathBuf) -> anyhow::Result<Self> {
+    pub(crate) async fn try_open(path: &Path) -> anyhow::Result<Self> {
         let url = format!("sqlite://{}?mode=rwc", path.display());
         let opts = url
             .parse::<SqliteConnectOptions>()
@@ -105,10 +106,7 @@ fn is_migration_error(e: &anyhow::Error) -> bool {
 pub fn connection_id(url: &str) -> String {
     if let Ok(parsed) = url::Url::parse(url) {
         let host = parsed.host_str().unwrap_or("unknown");
-        let port = parsed
-            .port()
-            .map(|p| format!(":{p}"))
-            .unwrap_or_default();
+        let port = parsed.port().map(|p| format!(":{p}")).unwrap_or_default();
         let path = parsed.path().trim_start_matches('/');
         format!("{host}{port}/{path}")
     } else {
@@ -217,13 +215,19 @@ mod tests {
         assert!(result.is_err(), "migration error should propagate");
 
         // The original db file must NOT have been renamed
-        assert!(path.exists(), "original db must not be renamed on migration error");
+        assert!(
+            path.exists(),
+            "original db must not be renamed on migration error"
+        );
         let bak_count = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().contains("db.bak"))
             .count();
-        assert_eq!(bak_count, 0, "no .bak file should be created for migration errors");
+        assert_eq!(
+            bak_count, 0,
+            "no .bak file should be created for migration errors"
+        );
     }
 
     #[tokio::test]
@@ -242,11 +246,7 @@ mod tests {
         let bak_count = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .contains("db.bak")
-            })
+            .filter(|e| e.file_name().to_string_lossy().contains("db.bak"))
             .count();
         assert_eq!(bak_count, 1, "corrupt file should be renamed to .bak");
     }

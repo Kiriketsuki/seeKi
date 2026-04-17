@@ -47,7 +47,7 @@
     <div class="row">
       <div class="info">
         <strong>Clear browsing data</strong>
-        <p>Removes all remembered sort orders, filters, search terms, column visibility, and saved presets. Configuration (branding, appearance) is not affected.</p>
+        <p>Removes remembered sort orders, filters, search terms, column visibility, and saved presets. Saved views stay intact. Configuration (branding, appearance) is not affected.</p>
       </div>
       <div class="action">
         <button type="button" class="danger" onclick={handleClear} disabled={clearing}>

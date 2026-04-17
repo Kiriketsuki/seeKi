@@ -40,6 +40,7 @@ Existing tools are either too complex (DBeaver, Adminer), too heavy (NocoDB, Met
 - **Click-to-sort** -- click any column header to sort ascending, descending, or reset
 - **Global search** -- search across all text columns in the current table
 - **Per-column filters** -- filter individual columns directly from the header
+- **Custom views** -- build joined and aggregated views across related tables visually; no SQL required
 - **Column visibility** -- hide columns you don't need; preferences persist across sessions
 - **CSV export** -- export the current filtered/sorted view with friendly column names
 - **Friendly formatting** -- timestamps become "Apr 7, 3:58 PM", booleans become checkboxes, NULLs are visually distinct
@@ -262,7 +263,7 @@ cargo clippy
 
 ### v0.4 -- Power Features
 
-- [ ] Saved views (per-user column/filter/sort configurations)
+- [x] Custom views with joins and basic aggregates
 - [ ] Multi-column sort panel
 - [ ] Mobile card view (responsive breakpoint at 768px)
 - [ ] Export filtered/selected rows
