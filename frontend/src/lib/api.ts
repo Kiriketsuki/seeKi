@@ -484,6 +484,7 @@ const UPDATE_STATUS_FIELDS = [
   'previous_exists',
   'last_checked',
   'release_notes',
+  'available_builds',
 ];
 
 export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
@@ -631,7 +632,11 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
 
 // ── Update Patcher API ──────────────────────────────────────────────────
 
-export async function applyUpdate(source: 'release' | 'wip', wipUploadId?: string): Promise<ApplyResult> {
+export async function applyUpdate(
+  source: 'release' | 'wip',
+  wipUploadId?: string,
+  releaseTag?: string,
+): Promise<ApplyResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
   let res: Response;
@@ -639,7 +644,7 @@ export async function applyUpdate(source: 'release' | 'wip', wipUploadId?: strin
     res = await fetchWithUpdateAuth('/api/update/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source, wip_upload_id: wipUploadId }),
+      body: JSON.stringify({ source, wip_upload_id: wipUploadId, release_tag: releaseTag }),
       signal: controller.signal,
     });
   } catch (e) {

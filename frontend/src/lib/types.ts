@@ -209,6 +209,12 @@ export interface UpdateStatus {
   previous_exists: boolean;
   last_checked: string | null;
   release_notes: string | null;
+  available_builds: AvailableBuild[];
+}
+
+export interface AvailableBuild {
+  tag: string;
+  published_at: string;
 }
 
 export interface WipUploadResult {

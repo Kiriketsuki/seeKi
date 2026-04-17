@@ -55,6 +55,7 @@
   let dragOver = $state(false);
   let fileInputEl = $state<HTMLInputElement | null>(null);
   let restartPollId = $state<ReturnType<typeof setInterval> | null>(null);
+  let selectedBuildTag = $state<string | null>(null);
 
   $effect(() => {
     if (initialStatus === undefined) return;
@@ -64,12 +65,95 @@
   let updateAvailable = $derived(status?.update_available ?? false);
   let previousExists = $derived(status?.previous_exists ?? false);
   let pollIntervalHours = $derived((status?.poll_interval_hours ?? 6) as UpdatePollIntervalHours);
+  let availableBuilds = $derived(status?.available_builds ?? []);
+
+  // Install is enabled if the normal latest-vs-current check flagged an
+  // update, OR the user picked a specific build from the dropdown that
+  // differs from what is currently running.
+  let installEnabled = $derived.by(() => {
+    if (applying) return false;
+    if (selectedBuildTag && selectedBuildTag !== status?.current) return true;
+    return updateAvailable;
+  });
 
   let lastCheckedLabel = $derived.by(() => {
     if (!status?.last_checked) return '—';
     const parsed = new Date(status.last_checked);
     return Number.isNaN(parsed.getTime()) ? status.last_checked : parsed.toLocaleString();
   });
+
+  function formatBuildOption(build: { tag: string; published_at: string }): string {
+    const date = new Date(build.published_at);
+    const when = Number.isNaN(date.getTime()) ? build.published_at : date.toLocaleString();
+    return `${build.tag} — ${when}`;
+  }
+
+  // Minimal markdown renderer for release notes. Handles the format emitted by
+  // our CI (`## heading`, `- bullet`, `` `code` ``, paragraphs). Escapes HTML
+  // before applying inline formatting so untrusted text cannot inject markup.
+  function renderReleaseNotes(text: string): string {
+    const escape = (s: string) =>
+      s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    const inline = (s: string) =>
+      escape(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    const out: string[] = [];
+    let listOpen = false;
+    let paraBuf: string[] = [];
+
+    const flushPara = () => {
+      if (paraBuf.length > 0) {
+        out.push(`<p>${inline(paraBuf.join(' '))}</p>`);
+        paraBuf = [];
+      }
+    };
+    const closeList = () => {
+      if (listOpen) {
+        out.push('</ul>');
+        listOpen = false;
+      }
+    };
+
+    for (const raw of text.split('\n')) {
+      const line = raw.trimEnd();
+
+      if (line.trim().length === 0) {
+        flushPara();
+        closeList();
+        continue;
+      }
+
+      const heading = /^##\s+(.+)$/.exec(line);
+      if (heading) {
+        flushPara();
+        closeList();
+        out.push(`<h3>${inline(heading[1])}</h3>`);
+        continue;
+      }
+
+      const bullet = /^-\s+(.+)$/.exec(line);
+      if (bullet) {
+        flushPara();
+        if (!listOpen) {
+          out.push('<ul>');
+          listOpen = true;
+        }
+        out.push(`<li>${inline(bullet[1])}</li>`);
+        continue;
+      }
+
+      closeList();
+      paraBuf.push(line);
+    }
+
+    flushPara();
+    closeList();
+    return out.join('');
+  }
 
   void initialize();
 
@@ -118,7 +202,7 @@
     errorMsg = null;
     successMsg = null;
     try {
-      await applyUpdate('release');
+      await applyUpdate('release', undefined, selectedBuildTag ?? undefined);
       restarting = true;
       startReconnectPolling();
     } catch (error) {
@@ -283,7 +367,7 @@
       <div class="confirm-card">
         <p class="confirm-copy">
           {#if confirmAction === 'install'}
-            Install update {status?.latest ?? ''}? SeeKi will restart after the binary swap.
+            Install update {selectedBuildTag ?? status?.latest ?? ''}? SeeKi will restart after the binary swap.
           {:else if confirmAction === 'rollback'}
             Roll back to the previous binary? SeeKi will restart immediately afterwards.
           {:else}
@@ -370,6 +454,26 @@
           <span class="toggle-thumb"></span>
         </button>
       </div>
+
+      {#if status?.pre_release_channel && availableBuilds.length > 0}
+        <label class="setting-card">
+          <span class="setting-title">Available builds</span>
+          <span class="setting-copy">Choose a specific prerelease to install. Defaults to the newest available.</span>
+          <select
+            value={selectedBuildTag ?? ''}
+            onchange={(event) => {
+              const value = (event.currentTarget as HTMLSelectElement).value;
+              selectedBuildTag = value === '' ? null : value;
+            }}
+            disabled={applying}
+          >
+            <option value="">Newest available ({status?.latest ?? '—'})</option>
+            {#each availableBuilds as build}
+              <option value={build.tag}>{formatBuildOption(build)}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
     </div>
 
     <div class="actions">
@@ -379,7 +483,7 @@
         </span>
         {checking ? 'Checking…' : 'Check for updates'}
       </button>
-      <button class="btn btn-accent" type="button" onclick={() => (confirmAction = 'install')} disabled={!updateAvailable || applying}>
+      <button class="btn btn-accent" type="button" onclick={() => (confirmAction = 'install')} disabled={!installEnabled}>
         <Download size={14} />
         {applying ? 'Installing…' : 'Install update'}
       </button>
@@ -392,7 +496,7 @@
     <section class="section">
       <h2>Release notes</h2>
       {#if status?.release_notes}
-        <pre>{status.release_notes}</pre>
+        <div class="release-notes">{@html renderReleaseNotes(status.release_notes)}</div>
       {:else}
         <p class="muted">Run a check or wait for the background poller to cache release notes.</p>
       {/if}
@@ -518,6 +622,7 @@
   .confirm-card,
   .section,
   .setting-card,
+  .status-card,
   .wip-card {
     padding: var(--sk-space-lg);
   }
@@ -675,6 +780,55 @@
     font-family: var(--sk-font-ui);
     color: var(--sk-text);
     line-height: 1.6;
+  }
+
+  .release-notes {
+    color: var(--sk-text);
+    line-height: 1.6;
+  }
+
+  .release-notes :global(h3) {
+    margin: var(--sk-space-md) 0 var(--sk-space-sm);
+    font-size: var(--sk-font-size-md);
+    font-weight: 600;
+    color: var(--sk-text);
+  }
+
+  .release-notes :global(h3:first-child) {
+    margin-top: 0;
+  }
+
+  .release-notes :global(p) {
+    margin: 0 0 var(--sk-space-sm);
+  }
+
+  .release-notes :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .release-notes :global(ul) {
+    margin: 0 0 var(--sk-space-sm);
+    padding-left: var(--sk-space-lg);
+  }
+
+  .release-notes :global(ul:last-child) {
+    margin-bottom: 0;
+  }
+
+  .release-notes :global(li) {
+    margin-bottom: var(--sk-space-xs);
+  }
+
+  .release-notes :global(li:last-child) {
+    margin-bottom: 0;
+  }
+
+  .release-notes :global(code) {
+    font-family: var(--sk-font-mono);
+    font-size: 0.9em;
+    background: rgba(15, 23, 42, 0.06);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
   }
 
   .drop-zone {
