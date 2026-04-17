@@ -109,6 +109,71 @@ test.describe.serial('Custom views', () => {
     await expect(builder).not.toBeVisible();
   });
 
+  test('delete failure surfaces error banner', async ({ page, seeki }) => {
+    // 1. Create a view to delete
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    await page.locator('.view-list .create-btn').click();
+    const builder = page.locator('.builder');
+    await expect(builder).toBeVisible();
+
+    const baseTableSelect = builder.locator('label.field').filter({ hasText: 'Base table' }).locator('select');
+    await baseTableSelect.selectOption('public.vehicle_logs');
+
+    await builder.locator('.panel-subheader button.secondary', { hasText: 'Add column' }).click();
+    const dialog = page.locator('[role="dialog"][aria-label="Choose a view column"]');
+    await expect(dialog).toBeVisible();
+
+    const sourceColumnSelect = dialog.locator('label').filter({ hasText: 'Source column' }).locator('select');
+    await expect(sourceColumnSelect).not.toBeDisabled();
+    await sourceColumnSelect.selectOption('event_type');
+    await dialog.locator('.picker-actions button.primary', { hasText: 'Add column' }).click();
+    await expect(dialog).not.toBeVisible();
+
+    const nameInput = builder.locator('label.field').filter({ hasText: 'Saved view name' }).locator('input');
+    await nameInput.fill('E2E Delete Failure View');
+    await builder.locator('.builder-actions button.primary', { hasText: 'Save view' }).click();
+
+    await expect(async () => {
+      const viewNames = await seeki.getSidebarViewNames();
+      expect(viewNames).toContain('E2E Delete Failure View');
+    }).toPass({ timeout: 10_000 });
+    await seeki.waitForGridLoaded();
+
+    // 2. Intercept the DELETE request and return 500
+    await page.route('**/api/views/**', (route) => {
+      if (route.request().method() === 'DELETE') {
+        route.fulfill({ status: 500, body: JSON.stringify({ error: 'simulated server error' }) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // 3. Attempt delete via toolbar button
+    const viewToolbar = page.locator('.view-toolbar');
+    await expect(viewToolbar).toBeVisible();
+    await viewToolbar.locator('button.view-action.view-action--danger', { hasText: 'Delete view' }).click();
+
+    // 4. Error banner must appear
+    const errorBanner = page.locator('.table-error-banner');
+    await expect(errorBanner).toBeVisible({ timeout: 5_000 });
+
+    // 5. View must remain in sidebar (not removed on failure)
+    const viewNames = await seeki.getSidebarViewNames();
+    expect(viewNames).toContain('E2E Delete Failure View');
+
+    // 6. Clean up: remove the route and delete the view for real
+    await page.unroute('**/api/views/**');
+    await errorBanner.locator('.dismiss-btn').click();
+    await viewToolbar.locator('button.view-action.view-action--danger', { hasText: 'Delete view' }).click();
+    await expect(async () => {
+      const names = await seeki.getSidebarViewNames();
+      expect(names).not.toContain('E2E Delete Failure View');
+    }).toPass({ timeout: 10_000 });
+  });
+
   test('create an aggregate view with SUM', async ({ page, seeki }) => {
     // 1. Navigate and wait for app + grid
     await page.goto('/');
