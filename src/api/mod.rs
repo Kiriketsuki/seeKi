@@ -1,6 +1,7 @@
 pub mod preferences;
 pub mod setup;
 pub mod update;
+pub mod views;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -42,6 +43,7 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
         .route("/update/settings", patch(update::update_settings))
         // The three mutating update endpoints are gated by bearer-token auth.
         .merge(update::protected_update_router())
+        .nest("/views", views::router())
         .nest("/preferences", preferences::router())
         .layer(Extension(store))
         .layer(Extension(mode))
