@@ -138,11 +138,14 @@ fn release_metadata(
     let update_available = match SeekiVersion::from_str(&tag) {
         Ok(version) => {
             // Nightly build suffixes encode `{date}g{sha}`, which do not sort
-            // meaningfully against each other. GitHub's API already returns
-            // releases newest-first, so any different nightly tag is a valid
-            // forward update — fall back to tag identity in that case.
+            // meaningfully against each other. Use the release's published_at
+            // against the currently running binary's build time — a newer
+            // publish time on a different tag is an update; an older one is
+            // a downgrade and must never be offered (it could roll the user
+            // back past schema migrations they've already applied).
             if is_nightly_suffix(&current.suffix) && is_nightly_suffix(&version.suffix) {
                 tag != current.to_string()
+                    && release_is_newer_than_running(&release.published_at)
             } else {
                 version > *current
             }
@@ -157,6 +160,31 @@ fn release_metadata(
 
 fn is_nightly_suffix(suffix: &str) -> bool {
     suffix.starts_with('n')
+}
+
+/// True if `release_published_at` (ISO 8601) is strictly after the running
+/// binary's compile-time `SEEKI_BUILT_AT`. Used to reject downgrade candidates
+/// when comparing nightly tags by identity.
+///
+/// Fails safe: on any parse error we return `false` (treat as not-an-update)
+/// rather than risk offering a downgrade.
+fn release_is_newer_than_running(release_published_at: &str) -> bool {
+    use chrono::DateTime;
+    let Ok(published) = DateTime::parse_from_rfc3339(release_published_at) else {
+        tracing::warn!(
+            published_at = %release_published_at,
+            "Failed to parse release published_at — not offering update"
+        );
+        return false;
+    };
+    let Ok(built) = DateTime::parse_from_rfc3339(env!("SEEKI_BUILT_AT")) else {
+        tracing::warn!(
+            built_at = %env!("SEEKI_BUILT_AT"),
+            "Failed to parse SEEKI_BUILT_AT — not offering update"
+        );
+        return false;
+    };
+    published > built
 }
 
 async fn persist_last_checked(update: &UpdateState) -> Result<(), AppError> {

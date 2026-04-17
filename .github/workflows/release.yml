@@ -109,6 +109,68 @@ jobs:
           TARGET_SHA="$(git rev-parse HEAD)"
           COMMIT_SHORT="$(git rev-parse --short=12 HEAD)"
 
+          # Version component breakdown (for the "Version Components" section).
+          # Format is YY.major.minor.patch[suffix]: YY=year-of-epic, major=epic,
+          # minor=feature, patch=task/bug, suffix=prerelease tag.
+          BASE_FOR_COMPONENTS="${BASE_VERSION:-$VERSION}"
+          YY_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f1)"
+          MAJOR_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f2)"
+          MINOR_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f3)"
+          PATCH_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f4)"
+          YEAR_COMP="20$YY_COMP"
+
+          # Changelog: commits since the previous release tag. Matches stable
+          # semver-ish tags (vNN.N.N.N[suffix]) so we skip nightly g{sha} tags,
+          # which would otherwise turn every prerelease body into a 1-commit diff.
+          PREV_TAG="$(git tag --list 'v[0-9][0-9].*' --sort=-v:refname \
+            | grep -Ev 'n[0-9]{6}g' \
+            | head -n 1 || true)"
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG="$(git rev-list --max-parents=0 HEAD | head -n 1)"
+          fi
+
+          # Group commits by conventional-commit type into markdown sections.
+          # Bullets use `- <subject> (<short-sha>)` so reviewers can click into GitHub.
+          CHANGELOG_FILE="$(mktemp)"
+          declare -A SECTIONS=(
+            [feat]="### Features"
+            [fix]="### Fixes"
+            [perf]="### Performance"
+            [refactor]="### Refactors"
+            [docs]="### Docs"
+            [test]="### Tests"
+            [ci]="### CI / Build"
+            [chore]="### Chores"
+            [hotfix]="### Hotfixes"
+            [saga]="### Sagas"
+            [epic]="### Epics"
+          )
+          ORDER=(feat fix perf refactor docs test ci chore hotfix saga epic)
+          declare -A BUCKETS=()
+          OTHER=""
+          while IFS='|' read -r SHA SUBJECT; do
+            [ -z "$SHA" ] && continue
+            TYPE="$(printf '%s' "$SUBJECT" | sed -nE 's/^([a-z]+)(\([^)]+\))?!?:.*/\1/p')"
+            LINE="- $(printf '%s' "$SUBJECT" | sed -E 's/[[:space:]]*$//') ($SHA)"
+            if [ -n "$TYPE" ] && [ -n "${SECTIONS[$TYPE]:-}" ]; then
+              BUCKETS[$TYPE]="${BUCKETS[$TYPE]:-}"$'\n'"$LINE"
+            else
+              OTHER="$OTHER"$'\n'"$LINE"
+            fi
+          done < <(git log "$PREV_TAG..HEAD" --no-merges --pretty=format:'%h|%s')
+
+          for T in "${ORDER[@]}"; do
+            if [ -n "${BUCKETS[$T]:-}" ]; then
+              printf '%s\n%s\n\n' "${SECTIONS[$T]}" "${BUCKETS[$T]}" >> "$CHANGELOG_FILE"
+            fi
+          done
+          if [ -n "$OTHER" ]; then
+            printf '### Other\n%s\n\n' "$OTHER" >> "$CHANGELOG_FILE"
+          fi
+          if [ ! -s "$CHANGELOG_FILE" ]; then
+            printf -- '- _No commits since %s._\n' "$PREV_TAG" >> "$CHANGELOG_FILE"
+          fi
+
           {
             echo "build_version=$BUILD_VERSION"
             echo "tag_name=$TAG_NAME"
@@ -117,20 +179,34 @@ jobs:
             echo "checkout_ref=$TARGET_SHA"
             echo "target_sha=$TARGET_SHA"
             echo "release_body<<EOF"
-            echo "## $RELEASE_NAME"
+            echo "# $RELEASE_NAME"
             echo
-            echo "- Branch: \`$REF_NAME\`"
-            echo "- Commit: \`$COMMIT_SHORT\`"
-            echo "- Channel: \`$CHANNEL\`"
+            echo "**Version**: \`$BUILD_VERSION\`"
+            echo "**Year**: $YEAR_COMP"
+            echo "**Branch**: \`$REF_NAME\`"
+            echo "**Commit**: \`$COMMIT_SHORT\`"
+            echo "**Channel**: \`$CHANNEL\`"
+            echo "**Previous**: \`$PREV_TAG\`"
             echo
             echo "$PUBLISH_REASON"
             echo
-            echo "Published runtime assets:"
+            echo "## Version Components"
+            echo
+            echo "- **Epics (Major)**: $MAJOR_COMP"
+            echo "- **Features (Minor)**: $MINOR_COMP"
+            echo "- **Tasks/Bugs (Patch)**: $PATCH_COMP"
+            echo
+            echo "## Changes"
+            echo
+            cat "$CHANGELOG_FILE"
+            echo "## Runtime Assets"
+            echo
             echo "- \`seeki-x86_64-linux-musl\` + \`seeki-x86_64-linux-musl.sha256\`"
             echo "- \`seeki-x86_64-darwin\` + \`seeki-x86_64-darwin.sha256\`"
             echo "- \`seeki-aarch64-darwin\` + \`seeki-aarch64-darwin.sha256\`"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+          rm -f "$CHANGELOG_FILE"
 
   build:
     name: Build ${{ matrix.target }}
