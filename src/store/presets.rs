@@ -76,10 +76,10 @@ pub async fn set_last_used(
     check_value_size(&sort_json, "sort_columns")?;
     let filter_json = serde_json::to_string(&state.filters)?;
     check_value_size(&filter_json, "filters")?;
-    if let Some(ref s) = state.search_term {
-        if s.len() > MAX_VALUE_BYTES {
-            anyhow::bail!("preset value for 'search_term' exceeds maximum size of 64 KiB");
-        }
+    if let Some(ref s) = state.search_term
+        && s.len() > MAX_VALUE_BYTES
+    {
+        anyhow::bail!("preset value for 'search_term' exceeds maximum size of 64 KiB");
     }
     sqlx::query(
         "INSERT INTO table_last_used_state
@@ -356,9 +356,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = get_last_used(pool, "conn_b", SCHEMA, TABLE)
-            .await
-            .unwrap();
+        let result = get_last_used(pool, "conn_b", SCHEMA, TABLE).await.unwrap();
         assert!(result.is_none());
     }
 
@@ -375,9 +373,7 @@ mod tests {
             .unwrap();
         assert!(id > 0);
 
-        let presets = list_sort_presets(pool, CONN, SCHEMA, TABLE)
-            .await
-            .unwrap();
+        let presets = list_sort_presets(pool, CONN, SCHEMA, TABLE).await.unwrap();
         assert_eq!(presets.len(), 1);
         assert_eq!(presets[0].name, "By ID");
         assert_eq!(presets[0].columns, cols);
@@ -397,9 +393,7 @@ mod tests {
             .await
             .unwrap();
 
-        let presets = list_sort_presets(pool, CONN, SCHEMA, TABLE)
-            .await
-            .unwrap();
+        let presets = list_sort_presets(pool, CONN, SCHEMA, TABLE).await.unwrap();
         assert_eq!(presets.len(), 1, "upsert should not duplicate");
         assert_eq!(presets[0].columns, cols2);
     }
@@ -419,9 +413,7 @@ mod tests {
             .unwrap();
         assert!(deleted);
 
-        let presets = list_sort_presets(pool, CONN, SCHEMA, TABLE)
-            .await
-            .unwrap();
+        let presets = list_sort_presets(pool, CONN, SCHEMA, TABLE).await.unwrap();
         assert!(presets.is_empty());
     }
 
@@ -502,7 +494,10 @@ mod tests {
         let (store, _dir) = ephemeral_store().await;
         let big = serde_json::Value::String("x".repeat(65 * 1024));
         let result = save_sort_preset(store.pool(), CONN, SCHEMA, TABLE, "Big", &big).await;
-        assert!(result.is_err(), "oversized sort preset columns must be rejected");
+        assert!(
+            result.is_err(),
+            "oversized sort preset columns must be rejected"
+        );
     }
 
     #[tokio::test]
@@ -510,7 +505,10 @@ mod tests {
         let (store, _dir) = ephemeral_store().await;
         let big = serde_json::Value::String("x".repeat(65 * 1024));
         let result = save_filter_preset(store.pool(), CONN, SCHEMA, TABLE, "Big", &big).await;
-        assert!(result.is_err(), "oversized filter preset filters must be rejected");
+        assert!(
+            result.is_err(),
+            "oversized filter preset filters must be rejected"
+        );
     }
 
     // ── Filter presets ─────────────────────────────────────────────────────

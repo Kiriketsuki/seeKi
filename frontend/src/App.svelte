@@ -4,68 +4,100 @@
   import SettingsNav from './components/SettingsNav.svelte';
   import SettingsContent from './components/SettingsContent.svelte';
   import TableList from './components/TableList.svelte';
+  import ViewList from './components/ViewList.svelte';
+  import ViewBuilder from './components/ViewBuilder.svelte';
   import ActionDock from './components/ActionDock.svelte';
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import { fetchTables, fetchColumns, fetchRows, fetchDisplayConfig, fetchStatus, fetchUpdateStatus, fetchSettings, fetchLastUsedState, saveLastUsedState, saveSettings } from './lib/api';
+  import SetupWizard from './components/SetupWizard.svelte';
+  import SettingsPanel from './components/SettingsPanel.svelte';
+  import {
+    buildViewCsvUrl,
+    deleteView,
+    fetchColumns,
+    fetchDisplayConfig,
+    fetchLastUsedState,
+    fetchRows,
+    fetchSettings,
+    fetchStatus,
+    fetchTables,
+    fetchUpdateStatus,
+    fetchView,
+    fetchViewRows,
+    fetchViews,
+    renameView,
+    saveLastUsedState,
+    saveSettings,
+  } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
     AppearanceSettings,
     BrandingSettings,
-    TableInfo,
     ColumnInfo,
-    QueryResult,
     DisplayConfig,
+    FilterState,
+    QueryResult,
+    SavedViewDefinition,
+    SavedViewSummary,
     SettingsEntries,
     SidebarMode,
-    SortState,
-    FilterState,
-    UpdateStatus,
-    SortDirection,
     SortColumn,
+    SortState,
+    TableInfo,
+    TablesSurface,
+    UpdateStatus,
+    ViewDraft,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import { sidebarMode } from './lib/stores';
-
-  function setSidebarMode(mode: SidebarMode) {
-    sidebarMode.set(mode);
-  }
-
-  function clearModeShortcut() {
-    if (modeShortcutId !== null) {
-      clearTimeout(modeShortcutId);
-      modeShortcutId = null;
-    }
-    pendingModeShortcut = null;
-  }
-
-  function armModeShortcut() {
-    clearModeShortcut();
-    pendingModeShortcut = 'g';
-    modeShortcutId = setTimeout(() => {
-      pendingModeShortcut = null;
-      modeShortcutId = null;
-    }, 1000);
-  }
   import {
     buildAppearanceSettingsEntries,
     buildBrandingSettingsEntries,
     parseAppearanceSettings,
     parseBrandingSettings,
   } from './lib/settings';
-  import SetupWizard from './components/SetupWizard.svelte';
-  import SettingsPanel from './components/SettingsPanel.svelte';
+
+  function setSidebarMode(mode: SidebarMode) {
+    sidebarMode.set(mode);
+  }
+
+  function cloneDraft(source: ViewDraft): ViewDraft {
+    return {
+      name: source.name,
+      base_schema: source.base_schema,
+      base_table: source.base_table,
+      columns: source.columns.map((column) => ({ ...column })),
+      filters: { ...source.filters },
+    };
+  }
+
+  function draftFromView(view: SavedViewDefinition, name = `${view.name} copy`): ViewDraft {
+    return {
+      name,
+      base_schema: view.base_schema,
+      base_table: view.base_table,
+      columns: view.columns.map((column) => ({ ...column })),
+      filters: { ...view.filters },
+    };
+  }
 
   let tables: TableInfo[] = $state([]);
+  let savedViews: SavedViewSummary[] = $state([]);
+  let tablesSurface: TablesSurface = $state({ kind: 'table' });
+  let builderDraft: ViewDraft | null = $state(null);
+  let builderSourceLabel = $state('');
+  let builderReturnTarget: TablesSurface = $state({ kind: 'table' });
   let selectedSchema: string = $state('');
   let selectedTable: string = $state('');
+  let selectedView: SavedViewDefinition | null = $state(null);
   let columns: ColumnInfo[] = $state([]);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
   let appSettings: SettingsEntries = $state({});
   let sidebarCollapsed: boolean = $state(
-    typeof localStorage !== 'undefined' && localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+    typeof localStorage !== 'undefined' &&
+      localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   );
   let isSetup: boolean = $state(false);
   let loading: boolean = $state(true);
@@ -94,6 +126,7 @@
   let updateStatusPollId: ReturnType<typeof setInterval> | null = null;
   let pendingModeShortcut: 'g' | null = null;
   let selectRequestId = 0;
+
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
   );
@@ -111,8 +144,38 @@
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
-  let brandingSettings = $derived.by(
-    () => parseBrandingSettings(appSettings, displayConfig)
+  let selectedViewKey = $derived.by(() =>
+    selectedView ? `view:${selectedView.id}` : ''
+  );
+  let selectedSurfaceVisibilityKey = $derived.by(() => {
+    if (tablesSurface.kind === 'view') {
+      return selectedViewKey;
+    }
+    if (tablesSurface.kind === 'table') {
+      return selectedTableKey;
+    }
+    return '';
+  });
+  let selectedSurfaceDisplayName = $derived.by(() => {
+    if (tablesSurface.kind === 'view') {
+      return selectedView?.name ?? 'Saved view';
+    }
+    return selectedTableDisplayName;
+  });
+  let selectedViewId = $derived.by(() =>
+    tablesSurface.kind === 'view' ? tablesSurface.viewId : null
+  );
+  let hasSurfaceSelection = $derived.by(() => {
+    if (tablesSurface.kind === 'view') {
+      return selectedView != null;
+    }
+    if (tablesSurface.kind === 'table') {
+      return Boolean(selectedSchema && selectedTable);
+    }
+    return false;
+  });
+  let brandingSettings = $derived.by(() =>
+    parseBrandingSettings(appSettings, displayConfig)
   );
   let appearanceSettings = $derived.by(() => parseAppearanceSettings(appSettings));
   let densityClass = $derived.by(() =>
@@ -120,6 +183,23 @@
       ? 'sk-density--compact'
       : 'sk-density--comfortable'
   );
+
+  function clearModeShortcut() {
+    if (modeShortcutId !== null) {
+      clearTimeout(modeShortcutId);
+      modeShortcutId = null;
+    }
+    pendingModeShortcut = null;
+  }
+
+  function armModeShortcut() {
+    clearModeShortcut();
+    pendingModeShortcut = 'g';
+    modeShortcutId = setTimeout(() => {
+      pendingModeShortcut = null;
+      modeShortcutId = null;
+    }, 1000);
+  }
 
   function applyUpdateStatus(status: UpdateStatus | null) {
     updateStatus = status;
@@ -134,6 +214,21 @@
     }
   }
 
+  function getCurrentSurfaceSnapshot(): TablesSurface {
+    if (tablesSurface.kind === 'view' && selectedView) {
+      return { kind: 'view', viewId: selectedView.id };
+    }
+    return { kind: 'table' };
+  }
+
+  async function refreshViewsList() {
+    try {
+      savedViews = await fetchViews();
+    } catch {
+      // Leave the current in-memory view list alone if refresh fails.
+    }
+  }
+
   onMount(() => {
     void (async () => {
       try {
@@ -142,12 +237,15 @@
           isSetup = true;
           return;
         }
-        const [fetchedTables, config, settings] = await Promise.all([
+
+        const [fetchedTables, views, config, settings] = await Promise.all([
           fetchTables(),
+          fetchViews(),
           fetchDisplayConfig(),
           fetchSettings(),
         ]);
         tables = fetchedTables;
+        savedViews = views;
         displayConfig = config;
         appSettings = settings;
         if (tables.length > 0) {
@@ -188,14 +286,18 @@
 
       const isSearchField = event.target === searchInputEl;
       if (isShortcut && key === 'k' && (!inTextField || isSearchField)) {
-        event.preventDefault();
-        toggleSearch();
+        if (tablesSurface.kind !== 'builder') {
+          event.preventDefault();
+          toggleSearch();
+        }
         return;
       }
 
       if (isShortcut && key === 'f' && !inTextField) {
-        event.preventDefault();
-        toggleFilters();
+        if (tablesSurface.kind !== 'builder') {
+          event.preventDefault();
+          toggleFilters();
+        }
         return;
       }
 
@@ -287,17 +389,14 @@
   }
 
   function loadColumnVisibility(
-    tableName: string,
+    scopeKey: string,
     tableColumns: ColumnInfo[],
   ): Record<string, boolean> {
     if (typeof localStorage === 'undefined') {
       return normalizeColumnVisibility(tableColumns, {});
     }
 
-    // Key format changed in PR #57: tableName is now "schema.table" (e.g. "reporting.orders"),
-    // not the bare table name used before. A future migration would need to read old bare-name
-    // keys and translate them — no migration code here.
-    const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${tableName}`;
+    const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${scopeKey}`;
     const raw = localStorage.getItem(storageKey);
     if (!raw) {
       return normalizeColumnVisibility(tableColumns, {});
@@ -316,7 +415,7 @@
   }
 
   function persistColumnVisibility(
-    tableName: string,
+    scopeKey: string,
     tableColumns: ColumnInfo[],
     visibility: Record<string, boolean>,
   ) {
@@ -324,7 +423,7 @@
       return;
     }
 
-    const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${tableName}`;
+    const storageKey = `${COLUMN_VISIBILITY_KEY_PREFIX}${scopeKey}`;
     try {
       localStorage.setItem(
         storageKey,
@@ -389,60 +488,6 @@
     filterButtonEl = node;
   }
 
-  async function selectTable(table: TableInfo) {
-    const myRequest = ++selectRequestId;
-    selectedSchema = table.schema;
-    selectedTable = table.name;
-    tableError = null;
-    tableLoading = true;
-    currentPage = 1;
-    filtersVisible = false;
-    columnsOpen = false;
-    clearFilterDebounce();
-    clearLastUsedSaveDebounce();
-    resetSearchState();
-    const storageKey = `${table.schema}.${table.name}`;
-
-    // Fetch columns and last-used state in parallel; rows depend on last-used state.
-    let initialSortState: SortState = [];
-    let initialFilters: FilterState = {};
-    let initialSearch = '';
-
-    try {
-      const [cols, lastUsed] = await Promise.all([
-        fetchColumns(table.schema, table.name),
-        !isSetup ? fetchLastUsedState(table.schema, table.name) : Promise.resolve(null),
-      ]);
-      if (myRequest !== selectRequestId) return;
-
-      if (lastUsed) {
-        // Restore last-used sort: convert SortColumn[] → SortEntry[]
-        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({ column: col, direction: dir }));
-        initialFilters = lastUsed.filters;
-        initialSearch = lastUsed.search_term ?? '';
-      }
-
-      const result = await fetchRows(
-        table.schema,
-        table.name,
-        buildRowsParams(1, initialSortState, initialFilters, initialSearch),
-      );
-      if (myRequest !== selectRequestId) return;
-
-      columns = cols;
-      columnVisibility = loadColumnVisibility(storageKey, cols);
-      queryResult = result;
-      sortState = initialSortState;
-      filters = initialFilters;
-      searchTerm = initialSearch;
-    } catch (e) {
-      if (myRequest !== selectRequestId) return;
-      tableError = e instanceof Error ? e.message : 'Failed to load table';
-    } finally {
-      if (myRequest === selectRequestId) tableLoading = false;
-    }
-  }
-
   function clearLastUsedSaveDebounce() {
     if (lastUsedSaveId !== null) {
       clearTimeout(lastUsedSaveId);
@@ -460,7 +505,10 @@
     clearLastUsedSaveDebounce();
     lastUsedSaveId = setTimeout(() => {
       lastUsedSaveId = null;
-      const sortCols: SortColumn[] = nextSortState.map(({ column, direction }) => ({ col: column, dir: direction }));
+      const sortCols: SortColumn[] = nextSortState.map(({ column, direction }) => ({
+        col: column,
+        dir: direction,
+      }));
       void saveLastUsedState(schema, table, {
         sort_columns: sortCols,
         filters: nextFilters,
@@ -498,25 +546,122 @@
     return params;
   }
 
+  async function selectTable(table: TableInfo) {
+    const myRequest = ++selectRequestId;
+    tablesSurface = { kind: 'table' };
+    selectedSchema = table.schema;
+    selectedTable = table.name;
+    selectedView = null;
+    tableError = null;
+    tableLoading = true;
+    currentPage = 1;
+    filtersVisible = false;
+    columnsOpen = false;
+    clearFilterDebounce();
+    clearLastUsedSaveDebounce();
+    resetSearchState();
+    const visibilityKey = `${table.schema}.${table.name}`;
+
+    let initialSortState: SortState = [];
+    let initialFilters: FilterState = {};
+    let initialSearch = '';
+
+    try {
+      const [cols, lastUsed] = await Promise.all([
+        fetchColumns(table.schema, table.name),
+        !isSetup ? fetchLastUsedState(table.schema, table.name) : Promise.resolve(null),
+      ]);
+      if (myRequest !== selectRequestId) return;
+
+      if (lastUsed) {
+        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
+          column: col,
+          direction: dir,
+        }));
+        initialFilters = lastUsed.filters;
+        initialSearch = lastUsed.search_term ?? '';
+      }
+
+      const result = await fetchRows(
+        table.schema,
+        table.name,
+        buildRowsParams(1, initialSortState, initialFilters, initialSearch),
+      );
+      if (myRequest !== selectRequestId) return;
+
+      columns = cols;
+      columnVisibility = loadColumnVisibility(visibilityKey, cols);
+      queryResult = result;
+      sortState = initialSortState;
+      filters = initialFilters;
+      searchTerm = initialSearch;
+    } catch (e) {
+      if (myRequest !== selectRequestId) return;
+      tableError = e instanceof Error ? e.message : 'Failed to load table';
+    } finally {
+      if (myRequest === selectRequestId) tableLoading = false;
+    }
+  }
+
+  async function openSavedView(view: SavedViewSummary) {
+    const myRequest = ++selectRequestId;
+    tablesSurface = { kind: 'view', viewId: view.id };
+    tableError = null;
+    tableLoading = true;
+    currentPage = 1;
+    filtersVisible = false;
+    columnsOpen = false;
+    clearFilterDebounce();
+    clearLastUsedSaveDebounce();
+    resetSearchState();
+
+    try {
+      const [definition, result] = await Promise.all([
+        fetchView(view.id),
+        fetchViewRows(view.id, buildRowsParams(1, [], {}, '')),
+      ]);
+      if (myRequest !== selectRequestId) return;
+
+      selectedView = definition;
+      columns = result.columns;
+      columnVisibility = loadColumnVisibility(`view:${definition.id}`, result.columns);
+      queryResult = result;
+      sortState = [];
+      filters = {};
+      searchTerm = '';
+    } catch (e) {
+      if (myRequest !== selectRequestId) return;
+      tableError = e instanceof Error ? e.message : 'Failed to load saved view';
+    } finally {
+      if (myRequest === selectRequestId) tableLoading = false;
+    }
+  }
+
   async function loadRows(
     page: number,
     nextSortState: SortState = sortState,
     nextFilters: FilterState = filters,
     nextSearchTerm: string = searchTerm,
   ) {
-    if (!selectedTable || !selectedSchema) return;
     const myRequest = ++selectRequestId;
     tableError = null;
     tableLoading = true;
     try {
-      const result = await fetchRows(
-        selectedSchema,
-        selectedTable,
-        buildRowsParams(page, nextSortState, nextFilters, nextSearchTerm)
-      );
-      if (myRequest !== selectRequestId) return;
+      const params = buildRowsParams(page, nextSortState, nextFilters, nextSearchTerm);
+      const result =
+        tablesSurface.kind === 'view' && selectedView
+          ? await fetchViewRows(selectedView.id, params)
+          : tablesSurface.kind === 'table' && selectedSchema && selectedTable
+            ? await fetchRows(selectedSchema, selectedTable, params)
+            : null;
+
+      if (myRequest !== selectRequestId || result == null) return;
       queryResult = result;
       currentPage = page;
+      if (tablesSurface.kind === 'view' && selectedView) {
+        columns = result.columns;
+        columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
+      }
     } catch (e) {
       if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load rows';
@@ -536,7 +681,7 @@
     clearSearchDebounce();
     sortState = nextSortState;
     void loadRows(1, nextSortState);
-    if (selectedSchema && selectedTable) {
+    if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
       scheduleLastUsedSave(selectedSchema, selectedTable, nextSortState, filters, searchTerm);
     }
   }
@@ -554,7 +699,7 @@
       void loadRows(1, sortState, nextFilters);
       filterDebounceId = null;
     }, 300);
-    if (selectedSchema && selectedTable) {
+    if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
       scheduleLastUsedSave(selectedSchema, selectedTable, sortState, nextFilters, searchTerm);
     }
   }
@@ -562,13 +707,13 @@
   function scheduleSearchReload() {
     clearSearchDebounce();
     clearFilterDebounce();
-    if (!selectedTable) return;
+    if (!hasSurfaceSelection) return;
 
     searchDebounceId = setTimeout(() => {
       void loadRows(1);
       searchDebounceId = null;
     }, 300);
-    if (selectedSchema && selectedTable) {
+    if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
       scheduleLastUsedSave(selectedSchema, selectedTable, sortState, filters, searchTerm);
     }
   }
@@ -581,7 +726,7 @@
   function handleSearchClear() {
     clearFilterDebounce();
     resetSearchState();
-    if (!selectedTable) {
+    if (!hasSurfaceSelection) {
       return;
     }
 
@@ -589,31 +734,39 @@
   }
 
   function handleToggleColumnVisibility(columnName: string, visible: boolean) {
-    if (!selectedTable || !selectedTableKey) return;
+    if (!selectedSurfaceVisibilityKey) return;
 
     const nextVisibility = normalizeColumnVisibility(columns, {
       ...columnVisibility,
       [columnName]: visible,
     });
     columnVisibility = nextVisibility;
-    persistColumnVisibility(selectedTableKey, columns, nextVisibility);
+    persistColumnVisibility(selectedSurfaceVisibilityKey, columns, nextVisibility);
   }
 
   function handleShowAllColumns() {
-    if (!selectedTable || !selectedTableKey) return;
+    if (!selectedSurfaceVisibilityKey) return;
 
     const nextVisibility = normalizeColumnVisibility(
       columns,
-      Object.fromEntries(columns.map((column) => [column.name, true])) as Record<string, boolean>
+      Object.fromEntries(columns.map((column) => [column.name, true])) as Record<
+        string,
+        boolean
+      >
     );
     columnVisibility = nextVisibility;
-    persistColumnVisibility(selectedTableKey, columns, nextVisibility);
+    persistColumnVisibility(selectedSurfaceVisibilityKey, columns, nextVisibility);
   }
 
   function exportCsv() {
+    const params = buildRowsParams(1);
+    if (tablesSurface.kind === 'view' && selectedView) {
+      window.open(buildViewCsvUrl(selectedView.id, params), '_blank');
+      return;
+    }
+
     if (!selectedTable || !selectedSchema) return;
 
-    const params = buildRowsParams(1);
     const searchParams = new URLSearchParams();
     if (params.sort) searchParams.set('sort', params.sort);
     if (params.search) searchParams.set('search', params.search);
@@ -649,6 +802,141 @@
       ...entries,
     };
   }
+
+  function openBuilder(
+    draft: ViewDraft,
+    sourceLabel = '',
+    returnTarget: TablesSurface = getCurrentSurfaceSnapshot(),
+  ) {
+    builderDraft = cloneDraft(draft);
+    builderSourceLabel = sourceLabel;
+    builderReturnTarget = returnTarget;
+    tablesSurface = { kind: 'builder' };
+    columnsOpen = false;
+    searchVisible = false;
+    filtersVisible = false;
+    tableError = null;
+  }
+
+  function handleCreateView() {
+    const baseTable =
+      tables.find((table) => table.schema === selectedSchema && table.name === selectedTable) ??
+      tables[0];
+    if (!baseTable) return;
+
+    openBuilder(
+      {
+        name: '',
+        base_schema: baseTable.schema,
+        base_table: baseTable.name,
+        columns: [],
+        filters: {},
+      },
+      selectedTableDisplayName || `${baseTable.schema}.${baseTable.name}`,
+    );
+  }
+
+  async function handleDuplicateView(view: SavedViewSummary) {
+    const returnTarget = getCurrentSurfaceSnapshot();
+    const definition =
+      selectedView?.id === view.id ? selectedView : await fetchView(view.id);
+    openBuilder(draftFromView(definition), view.name, returnTarget);
+  }
+
+  function handleCopyToEdit() {
+    if (!selectedView) return;
+    openBuilder(
+      draftFromView(selectedView),
+      selectedView.name,
+      { kind: 'view', viewId: selectedView.id },
+    );
+  }
+
+  async function handleBuilderSaved(summary: SavedViewSummary) {
+    savedViews = [...savedViews.filter((view) => view.id !== summary.id), summary].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+    builderDraft = null;
+    builderSourceLabel = '';
+    builderReturnTarget = { kind: 'table' };
+    await refreshViewsList();
+    await openSavedView(summary);
+  }
+
+  async function handleCancelBuilder() {
+    const target = builderReturnTarget;
+    builderDraft = null;
+    builderSourceLabel = '';
+    builderReturnTarget = { kind: 'table' };
+
+    if (target.kind === 'view' && selectedView?.id === target.viewId) {
+      tablesSurface = { kind: 'view', viewId: target.viewId };
+      return;
+    }
+
+    if (target.kind === 'view') {
+      const targetView = savedViews.find((view) => view.id === target.viewId);
+      if (targetView) {
+        await openSavedView(targetView);
+        return;
+      }
+    }
+
+    if (selectedSchema && selectedTable) {
+      tablesSurface = { kind: 'table' };
+      return;
+    }
+
+    if (tables.length > 0) {
+      await selectTable(tables[0]);
+    }
+  }
+
+  async function handleRenameSavedView(view: SavedViewSummary, name: string) {
+    const renamed = await renameView(view.id, name);
+    const nextName = renamed?.name ?? name;
+    savedViews = savedViews
+      .map((candidate) =>
+        candidate.id === view.id ? { ...candidate, name: nextName } : candidate
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (selectedView?.id === view.id) {
+      selectedView = {
+        ...selectedView,
+        name: nextName,
+      };
+    }
+    await refreshViewsList();
+  }
+
+  async function handleDeleteSavedView(view: SavedViewSummary) {
+    try {
+      await deleteView(view.id);
+    } catch (e) {
+      tableError = e instanceof Error ? e.message : 'Failed to delete view';
+      return;
+    }
+    savedViews = savedViews.filter((candidate) => candidate.id !== view.id);
+
+    if (builderReturnTarget.kind === 'view' && builderReturnTarget.viewId === view.id) {
+      builderReturnTarget = { kind: 'table' };
+    }
+
+    if (selectedView?.id === view.id || (tablesSurface.kind === 'view' && tablesSurface.viewId === view.id)) {
+      const fallback =
+        tables.find(
+          (table) => table.schema === view.base_schema && table.name === view.base_table
+        ) ?? tables[0];
+      selectedView = null;
+      if (fallback) {
+        await selectTable(fallback);
+      } else {
+        tablesSurface = { kind: 'table' };
+        queryResult = null;
+        columns = [];
+      }
+    }
+  }
 </script>
 
 {#if isSetup}
@@ -664,12 +952,12 @@
   <div class="layout">
     <Sidebar
       bind:collapsed={sidebarCollapsed}
-      onToggle={() => sidebarCollapsed = !sidebarCollapsed}
+      onToggle={() => (sidebarCollapsed = !sidebarCollapsed)}
       title="SeeKi"
       subtitle=""
       {updateAvailable}
       showSettingsBadge={updateAvailable}
-      onSettingsClick={() => settingsOpen = true}
+      onSettingsClick={() => (settingsOpen = true)}
     >
       {#if !sidebarCollapsed}
         <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
@@ -688,13 +976,15 @@
   <SettingsPanel
     bind:open={settingsOpen}
     initialStatus={updateStatus}
-    onStatusChange={(s) => { applyUpdateStatus(s); }}
+    onStatusChange={(s) => {
+      applyUpdateStatus(s);
+    }}
   />
 {:else}
   <div class={`layout ${densityClass}`}>
     <Sidebar
       bind:collapsed={sidebarCollapsed}
-      onToggle={() => sidebarCollapsed = !sidebarCollapsed}
+      onToggle={() => (sidebarCollapsed = !sidebarCollapsed)}
       onSelectMode={setSidebarMode}
       title={displayConfig?.branding?.title ?? 'SeeKi'}
       subtitle={displayConfig?.branding?.subtitle ?? ''}
@@ -707,7 +997,24 @@
         {#key $sidebarMode}
           <div class="sidebar-panel-enter">
             {#if $sidebarMode === 'tables'}
-              <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+              <div class="tables-sidebar">
+                <TableList
+                  {tables}
+                  selectedSchema={tablesSurface.kind === 'table' ? selectedSchema : ''}
+                  selectedTable={tablesSurface.kind === 'table' ? selectedTable : ''}
+                  onSelect={selectTable}
+                />
+                <ViewList
+                  views={savedViews}
+                  activeViewId={selectedViewId}
+                  disabled={tables.length === 0}
+                  onSelect={openSavedView}
+                  onCreate={handleCreateView}
+                  onRename={(view, name) => void handleRenameSavedView(view, name)}
+                  onDelete={(view) => void handleDeleteSavedView(view)}
+                  onDuplicate={(view) => void handleDuplicateView(view)}
+                />
+              </div>
             {:else}
               <SettingsNav showUpdateBadge={updateAvailable} />
             {/if}
@@ -718,76 +1025,127 @@
     {#key $sidebarMode}
       <div class="main-panel-enter">
         {#if $sidebarMode === 'tables'}
-          <main class="main">
-            <div class="table-panel">
-              <TableHeader tableName={selectedTableDisplayName} rowCount={queryResult?.total_rows ?? 0} />
-            </div>
-            {#if tableError}
-              <div class="table-error-banner">
-                <span>{tableError}</span>
-                <button class="dismiss-btn" onclick={() => tableError = null}>Dismiss</button>
-              </div>
-            {/if}
-            <div class="grid-area">
-              <div class="grid-shell">
-                <div class="grid-content">
-                  <DataGrid
-                    columns={visibleColumns}
-                    rows={queryResult?.rows ?? []}
-                    dateFormat={appearanceSettings.dateFormat}
-                    {sortState}
-                    {filters}
-                    {filtersVisible}
-                    onSortChange={handleSortChange}
-                    onFilterChange={handleFilterChange}
-                  />
-                </div>
-                {#if selectedTable}
-                  <ActionDock
-                    searchVisible={searchVisible}
-                    searchTerm={searchTerm}
-                    searchActive={searchActive}
-                    filtersVisible={filtersVisible}
-                    activeFilterCount={activeFilterCount}
-                    columnsOpen={columnsOpen}
-                    columns={columns}
-                    columnVisibility={columnVisibility}
-                    hiddenColumnCount={hiddenColumnCount}
-                    hasTable={!!selectedTable}
-                    disabled={tableLoading}
-                    sortState={sortState}
-                    onToggleSearch={toggleSearch}
-                    onSearchInput={handleSearchInput}
-                    onSearchClear={handleSearchClear}
-                    onToggleFilters={toggleFilters}
-                    onToggleColumns={toggleColumns}
-                    onToggleColumnVisibility={handleToggleColumnVisibility}
-                    onShowAllColumns={handleShowAllColumns}
-                    onCloseColumns={closeColumns}
-                    onExport={exportCsv}
-                    onSearchInputRef={setSearchInputEl}
-                    onSearchButtonRef={setSearchButtonEl}
-                    onColumnsButtonRef={setColumnsButtonEl}
-                    onFilterButtonRef={setFilterButtonEl}
-                  />
-                {/if}
-                {#if tableLoading}
-                  <div class="grid-loading">
-                    <div class="loading-spinner"></div>
+          {#if tablesSurface.kind === 'builder' && builderDraft}
+            <main class="main">
+              <ViewBuilder
+                tables={tables}
+                initialDraft={builderDraft}
+                sourceLabel={builderSourceLabel}
+                onCancel={handleCancelBuilder}
+                onSaved={handleBuilderSaved}
+              />
+            </main>
+          {:else}
+            <main class="main">
+              <div class="table-panel">
+                <TableHeader
+                  tableName={selectedSurfaceDisplayName}
+                  rowCount={queryResult?.total_rows ?? 0}
+                />
+                {#if tablesSurface.kind === 'view' && selectedView}
+                  <div class="view-toolbar">
+                    <div class="view-meta">
+                      <span class="view-pill">Read-only saved view</span>
+                      <span>Base table: {selectedView.base_schema}.{selectedView.base_table}</span>
+                    </div>
+                    <div class="view-toolbar-actions">
+                      <button type="button" class="view-action" onclick={handleCopyToEdit}>
+                        Copy to edit
+                      </button>
+                      <button
+                        type="button"
+                        class="view-action view-action--danger"
+                        onclick={() => {
+                          if (selectedView) {
+                            void handleDeleteSavedView(selectedView);
+                          }
+                        }}
+                      >
+                        Delete view
+                      </button>
+                    </div>
                   </div>
                 {/if}
               </div>
-            </div>
-            <StatusBar
-              total={queryResult?.total_rows ?? 0}
-              start={queryResult && queryResult.total_rows > 0 ? (queryResult.page - 1) * queryResult.page_size + 1 : 0}
-              end={queryResult && queryResult.total_rows > 0 ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows) : 0}
-              page={queryResult?.page ?? 1}
-              totalPages={queryResult ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size)) : 1}
-              loading={tableLoading}
-              onPageChange={goToPage}
-            />
-          </main>
+              {#if tableError}
+                <div class="table-error-banner">
+                  <span>{tableError}</span>
+                  <button class="dismiss-btn" onclick={() => (tableError = null)}>Dismiss</button>
+                </div>
+              {/if}
+              <div class="grid-area">
+                <div class="grid-shell">
+                  <div class="grid-content">
+                    <DataGrid
+                      columns={visibleColumns}
+                      rows={queryResult?.rows ?? []}
+                      dateFormat={appearanceSettings.dateFormat}
+                      {sortState}
+                      {filters}
+                      {filtersVisible}
+                      onSortChange={handleSortChange}
+                      onFilterChange={handleFilterChange}
+                    />
+                  </div>
+                  {#if hasSurfaceSelection}
+                    <ActionDock
+                      searchVisible={searchVisible}
+                      searchTerm={searchTerm}
+                      searchActive={searchActive}
+                      filtersVisible={filtersVisible}
+                      activeFilterCount={activeFilterCount}
+                      columnsOpen={columnsOpen}
+                      columns={columns}
+                      columnVisibility={columnVisibility}
+                      hiddenColumnCount={hiddenColumnCount}
+                      hasTable={hasSurfaceSelection}
+                      disabled={tableLoading}
+                      sortState={sortState}
+                      onToggleSearch={toggleSearch}
+                      onSearchInput={handleSearchInput}
+                      onSearchClear={handleSearchClear}
+                      onToggleFilters={toggleFilters}
+                      onToggleColumns={toggleColumns}
+                      onToggleColumnVisibility={handleToggleColumnVisibility}
+                      onShowAllColumns={handleShowAllColumns}
+                      onCloseColumns={closeColumns}
+                      onExport={exportCsv}
+                      onSearchInputRef={setSearchInputEl}
+                      onSearchButtonRef={setSearchButtonEl}
+                      onColumnsButtonRef={setColumnsButtonEl}
+                      onFilterButtonRef={setFilterButtonEl}
+                    />
+                  {/if}
+                  {#if tableLoading}
+                    <div class="grid-loading">
+                      <div class="loading-spinner"></div>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+              <StatusBar
+                total={queryResult?.total_rows ?? 0}
+                start={
+                  queryResult && queryResult.total_rows > 0
+                    ? (queryResult.page - 1) * queryResult.page_size + 1
+                    : 0
+                }
+                end={
+                  queryResult && queryResult.total_rows > 0
+                    ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows)
+                    : 0
+                }
+                page={queryResult?.page ?? 1}
+                totalPages={
+                  queryResult
+                    ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size))
+                    : 1
+                }
+                loading={tableLoading}
+                onPageChange={goToPage}
+              />
+            </main>
+          {/if}
         {:else}
           <main class="main settings-main">
             <SettingsContent
@@ -796,7 +1154,9 @@
               {updateStatus}
               onSaveBranding={handleSaveBranding}
               onSaveAppearance={handleSaveAppearance}
-              onUpdateStatusChange={(s) => { applyUpdateStatus(s); }}
+              onUpdateStatusChange={(s) => {
+                applyUpdateStatus(s);
+              }}
             />
           </main>
         {/if}
@@ -806,7 +1166,9 @@
   <SettingsPanel
     bind:open={settingsOpen}
     initialStatus={updateStatus}
-    onStatusChange={(s) => { applyUpdateStatus(s); }}
+    onStatusChange={(s) => {
+      applyUpdateStatus(s);
+    }}
   />
 {/if}
 
@@ -820,6 +1182,13 @@
 
   .sidebar-panel-enter {
     animation: sk-fade-in 180ms ease-out;
+  }
+
+  .tables-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .main-panel-enter {
@@ -847,6 +1216,52 @@
     flex-direction: column;
     gap: var(--sk-space-sm);
     padding: var(--sk-space-lg) var(--sk-space-2xl) 0;
+  }
+
+  .view-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sk-space-md);
+    padding-bottom: var(--sk-space-sm);
+    border-bottom: 1px solid var(--sk-border-light);
+  }
+
+  .view-meta,
+  .view-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sk-space-sm);
+  }
+
+  .view-meta {
+    color: var(--sk-secondary-strong);
+    font-size: var(--sk-font-size-sm);
+  }
+
+  .view-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(0, 169, 165, 0.1);
+    color: var(--sk-accent);
+    padding: 4px 10px;
+    font-weight: 600;
+  }
+
+  .view-action {
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--sk-secondary-strong);
+    padding: 8px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .view-action--danger:hover {
+    color: #b91c1c;
+    border-color: rgba(185, 28, 28, 0.28);
   }
 
   .grid-area {
@@ -973,5 +1388,18 @@
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     cursor: pointer;
+  }
+
+  @media (max-width: 900px) {
+    .table-panel,
+    .grid-area {
+      padding-left: var(--sk-space-lg);
+      padding-right: var(--sk-space-lg);
+    }
+
+    .view-toolbar {
+      flex-direction: column;
+      align-items: flex-start;
+    }
   }
 </style>

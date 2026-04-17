@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
 
 use futures::Stream;
@@ -6,8 +6,9 @@ use serde::Serialize;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 
 use super::{
-    ColumnInfo, ExportQueryParams, QueryResult, RowQueryParams, SortDirection, SortEntry,
-    TableInfo, ValidationError,
+    ColumnInfo, ExportQueryParams, FkHop, QueryResult, RowQueryParams, SortDirection, SortEntry,
+    TableInfo, ValidationError, ViewAggregate, ViewColumn, ViewDraft, ViewExportQueryParams,
+    ViewRowsQueryParams,
 };
 
 /// Result of a connection test — describes a single table visible to the server.
@@ -330,6 +331,254 @@ pub(crate) fn is_valid_identifier(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct TableKey {
+    schema: String,
+    table: String,
+}
+
+impl TableKey {
+    fn new(schema: &str, table: &str) -> Self {
+        Self {
+            schema: schema.to_string(),
+            table: table.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FkEdge {
+    source: TableKey,
+    target: TableKey,
+    source_columns: Vec<String>,
+    target_columns: Vec<String>,
+    constraint_name: String,
+}
+
+#[derive(Debug, Clone)]
+struct PlannedViewColumn {
+    source: TableKey,
+    source_column: ColumnInfo,
+    output_name: String,
+    aggregate: Option<ViewAggregate>,
+}
+
+#[derive(Debug, Clone)]
+struct PlannedViewQuery {
+    inner_sql: String,
+    output_columns: Vec<ColumnInfo>,
+    bind_values: Vec<String>,
+}
+
+fn quote_identifier(name: &str) -> String {
+    format!(r#""{}""#, name.replace('"', "\"\""))
+}
+
+fn qualified_table_sql(table: &TableKey) -> String {
+    format!(
+        "{}.{}",
+        quote_identifier(&table.schema),
+        quote_identifier(&table.table)
+    )
+}
+
+fn is_numeric_type(data_type: &str) -> bool {
+    matches!(
+        data_type,
+        "smallint" | "integer" | "bigint" | "real" | "double precision" | "numeric"
+    )
+}
+
+fn supports_min_max_type(data_type: &str) -> bool {
+    !matches!(data_type, "json" | "jsonb" | "bytea" | "ARRAY")
+}
+
+fn aggregate_result_data_type(source_data_type: &str, aggregate: ViewAggregate) -> String {
+    match aggregate {
+        ViewAggregate::Count => "bigint".to_string(),
+        ViewAggregate::Sum => match source_data_type {
+            "smallint" | "integer" => "bigint".to_string(),
+            "bigint" | "numeric" => "numeric".to_string(),
+            "real" | "double precision" => "double precision".to_string(),
+            other => other.to_string(),
+        },
+        ViewAggregate::Avg => match source_data_type {
+            "real" | "double precision" => "double precision".to_string(),
+            "smallint" | "integer" | "bigint" | "numeric" => "numeric".to_string(),
+            other => other.to_string(),
+        },
+        ViewAggregate::Min | ViewAggregate::Max => source_data_type.to_string(),
+    }
+}
+
+fn build_fk_adjacency(edges: &[FkEdge]) -> HashMap<TableKey, Vec<FkHop>> {
+    let mut adjacency: HashMap<TableKey, Vec<FkHop>> = HashMap::new();
+
+    for edge in edges {
+        adjacency
+            .entry(edge.source.clone())
+            .or_default()
+            .push(FkHop {
+                from_schema: edge.source.schema.clone(),
+                from_table: edge.source.table.clone(),
+                from_columns: edge.source_columns.clone(),
+                to_schema: edge.target.schema.clone(),
+                to_table: edge.target.table.clone(),
+                to_columns: edge.target_columns.clone(),
+                constraint_name: edge.constraint_name.clone(),
+            });
+
+        adjacency
+            .entry(edge.target.clone())
+            .or_default()
+            .push(FkHop {
+                from_schema: edge.target.schema.clone(),
+                from_table: edge.target.table.clone(),
+                from_columns: edge.target_columns.clone(),
+                to_schema: edge.source.schema.clone(),
+                to_table: edge.source.table.clone(),
+                to_columns: edge.source_columns.clone(),
+                constraint_name: edge.constraint_name.clone(),
+            });
+    }
+
+    for hops in adjacency.values_mut() {
+        hops.sort_by(|a, b| {
+            (
+                a.constraint_name.as_str(),
+                a.from_schema.as_str(),
+                a.from_table.as_str(),
+                a.to_schema.as_str(),
+                a.to_table.as_str(),
+                a.from_columns.as_slice(),
+                a.to_columns.as_slice(),
+            )
+                .cmp(&(
+                    b.constraint_name.as_str(),
+                    b.from_schema.as_str(),
+                    b.from_table.as_str(),
+                    b.to_schema.as_str(),
+                    b.to_table.as_str(),
+                    b.from_columns.as_slice(),
+                    b.to_columns.as_slice(),
+                ))
+        });
+    }
+
+    adjacency
+}
+
+fn find_fk_path(edges: &[FkEdge], base: &TableKey, target: &TableKey) -> Vec<FkHop> {
+    if base == target {
+        return Vec::new();
+    }
+
+    let adjacency = build_fk_adjacency(edges);
+    let mut visited: HashSet<TableKey> = HashSet::from([base.clone()]);
+    let mut queue: VecDeque<(TableKey, Vec<FkHop>)> = VecDeque::from([(base.clone(), Vec::new())]);
+
+    while let Some((current, path)) = queue.pop_front() {
+        let Some(hops) = adjacency.get(&current) else {
+            continue;
+        };
+
+        for hop in hops {
+            let next = TableKey::new(&hop.to_schema, &hop.to_table);
+            if visited.contains(&next) {
+                continue;
+            }
+
+            let mut next_path = path.clone();
+            next_path.push(hop.clone());
+
+            if &next == target {
+                return next_path;
+            }
+
+            visited.insert(next.clone());
+            queue.push_back((next, next_path));
+        }
+    }
+
+    Vec::new()
+}
+
+fn resolve_view_output_names(columns: &[ViewColumn]) -> anyhow::Result<Vec<String>> {
+    let mut bare_name_counts: HashMap<&str, usize> = HashMap::new();
+    for column in columns {
+        if column.alias.is_none() && column.aggregate.is_none() {
+            *bare_name_counts
+                .entry(column.column_name.as_str())
+                .or_insert(0) += 1;
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut resolved = Vec::with_capacity(columns.len());
+
+    for column in columns {
+        let output_name = if let Some(alias) = &column.alias {
+            alias.clone()
+        } else if let Some(aggregate) = column.aggregate {
+            format!(
+                "{}_{}__{}",
+                aggregate.as_sql().to_lowercase(),
+                column.source_table,
+                column.column_name
+            )
+        } else if bare_name_counts
+            .get(column.column_name.as_str())
+            .copied()
+            .unwrap_or(0)
+            > 1
+        {
+            format!("{}__{}", column.source_table, column.column_name)
+        } else {
+            column.column_name.clone()
+        };
+
+        if !is_valid_identifier(&output_name) {
+            return Err(
+                ValidationError(format!("Invalid output column name: {output_name}")).into(),
+            );
+        }
+        if !seen.insert(output_name.clone()) {
+            return Err(
+                ValidationError(format!("Duplicate output column name: {output_name}")).into(),
+            );
+        }
+        resolved.push(output_name);
+    }
+
+    Ok(resolved)
+}
+
+fn build_output_column(
+    source: &ColumnInfo,
+    output_name: String,
+    aggregate: Option<ViewAggregate>,
+) -> ColumnInfo {
+    match aggregate {
+        None => ColumnInfo {
+            name: output_name,
+            data_type: source.data_type.clone(),
+            display_type: source.display_type.clone(),
+            is_nullable: source.is_nullable,
+            is_primary_key: source.is_primary_key,
+        },
+        Some(aggregate) => {
+            let data_type = aggregate_result_data_type(&source.data_type, aggregate);
+            ColumnInfo {
+                name: output_name,
+                display_type: humanize_type(&data_type, ""),
+                data_type,
+                is_nullable: !matches!(aggregate, ViewAggregate::Count),
+                is_primary_key: false,
+            }
+        }
+    }
+}
+
 /// Shared WHERE clause and bind values builder for query_rows and export.
 struct QueryBuilder {
     where_clause: String,
@@ -390,6 +639,7 @@ fn build_query_clauses(
     filters: &std::collections::HashMap<String, String>,
     sort: &[SortEntry],
     include_pk_tiebreakers: bool,
+    start_param_idx: u32,
 ) -> anyhow::Result<QueryBuilder> {
     // Validate filter column names against the actual schema
     let valid_column_names: std::collections::HashSet<&str> =
@@ -406,7 +656,7 @@ fn build_query_clauses(
 
     let mut conditions: Vec<String> = Vec::new();
     let mut bind_values: Vec<String> = Vec::new();
-    let mut param_idx: u32 = 1;
+    let mut param_idx: u32 = start_param_idx;
 
     // Search condition (searches across all text columns)
     let has_search = search.is_some_and(|s| !s.is_empty());
@@ -476,6 +726,543 @@ fn build_query_clauses(
     })
 }
 
+async fn load_fk_edges(pool: &PgPool, schema: &str) -> anyhow::Result<Vec<FkEdge>> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name: {schema}");
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            src_ns.nspname AS source_schema,
+            src.relname AS source_table,
+            ARRAY_AGG(src_attr.attname ORDER BY ord.ord) AS source_columns,
+            dst_ns.nspname AS target_schema,
+            dst.relname AS target_table,
+            ARRAY_AGG(dst_attr.attname ORDER BY ord.ord) AS target_columns,
+            c.conname AS constraint_name
+        FROM pg_constraint c
+        JOIN pg_class src ON src.oid = c.conrelid
+        JOIN pg_namespace src_ns ON src_ns.oid = src.relnamespace
+        JOIN pg_class dst ON dst.oid = c.confrelid
+        JOIN pg_namespace dst_ns ON dst_ns.oid = dst.relnamespace
+        JOIN LATERAL generate_subscripts(c.conkey, 1) AS ord(ord) ON true
+        JOIN pg_attribute src_attr
+            ON src_attr.attrelid = src.oid
+           AND src_attr.attnum = c.conkey[ord.ord]
+        JOIN pg_attribute dst_attr
+            ON dst_attr.attrelid = dst.oid
+           AND dst_attr.attnum = c.confkey[ord.ord]
+        WHERE c.contype = 'f'
+          AND src_ns.nspname = $1
+          AND dst_ns.nspname = $1
+        GROUP BY
+            src_ns.nspname,
+            src.relname,
+            dst_ns.nspname,
+            dst.relname,
+            c.conname
+        ORDER BY c.conname, src.relname, dst.relname
+        "#,
+    )
+    .bind(schema)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| FkEdge {
+            source: TableKey::new(
+                row.get::<String, _>("source_schema").as_str(),
+                row.get::<String, _>("source_table").as_str(),
+            ),
+            target: TableKey::new(
+                row.get::<String, _>("target_schema").as_str(),
+                row.get::<String, _>("target_table").as_str(),
+            ),
+            source_columns: row.try_get("source_columns").unwrap_or_default(),
+            target_columns: row.try_get("target_columns").unwrap_or_default(),
+            constraint_name: row.get("constraint_name"),
+        })
+        .collect())
+}
+
+pub async fn lookup_fk_path(
+    pool: &PgPool,
+    base_schema: &str,
+    base_table: &str,
+    target_schema: &str,
+    target_table: &str,
+) -> anyhow::Result<Vec<FkHop>> {
+    if !is_valid_identifier(base_schema) || !is_valid_identifier(target_schema) {
+        anyhow::bail!("Invalid schema name");
+    }
+    if !is_valid_identifier(base_table) || !is_valid_identifier(target_table) {
+        anyhow::bail!("Invalid table name");
+    }
+    if base_schema != target_schema {
+        return Ok(Vec::new());
+    }
+
+    let base = TableKey::new(base_schema, base_table);
+    let target = TableKey::new(target_schema, target_table);
+    let edges = load_fk_edges(pool, base_schema).await?;
+    Ok(find_fk_path(&edges, &base, &target))
+}
+
+fn build_definition_filters(
+    planned_columns: &[PlannedViewColumn],
+    aliases: &HashMap<TableKey, String>,
+    filters: &HashMap<String, String>,
+    start_param_idx: u32,
+) -> anyhow::Result<(Vec<String>, Vec<String>)> {
+    let mut planned_by_output: HashMap<&str, &PlannedViewColumn> = HashMap::new();
+    for planned in planned_columns {
+        planned_by_output.insert(planned.output_name.as_str(), planned);
+    }
+
+    let mut entries: Vec<_> = filters.iter().collect();
+    entries.sort_by_key(|(key, _)| key.as_str());
+
+    let mut conditions = Vec::new();
+    let mut bind_values = Vec::new();
+    let mut param_idx = start_param_idx;
+
+    for (output_name, value) in entries {
+        if !is_valid_identifier(output_name) {
+            return Err(
+                ValidationError(format!("Invalid filter column name: {output_name}")).into(),
+            );
+        }
+        let Some(planned) = planned_by_output.get(output_name.as_str()) else {
+            return Err(ValidationError(format!("Unknown filter column: {output_name}")).into());
+        };
+        if planned.aggregate.is_some() {
+            return Err(ValidationError(format!(
+                "Aggregate columns cannot be used in saved-view definition filters: {output_name}"
+            ))
+            .into());
+        }
+
+        let table_alias = aliases
+            .get(&planned.source)
+            .expect("planned view table alias should exist");
+        let column_expr = format!(
+            r#"{table_alias}.{}"#,
+            quote_identifier(&planned.source_column.name)
+        );
+
+        if planned.source_column.data_type == "boolean" {
+            let normalized = value.trim().to_lowercase();
+            let bool_val = match normalized.as_str() {
+                "yes" | "true" | "t" | "1" => Some(true),
+                "no" | "false" | "f" | "0" => Some(false),
+                _ => None,
+            };
+            if let Some(boolean) = bool_val {
+                conditions.push(format!(
+                    "{column_expr} = {}",
+                    if boolean { "TRUE" } else { "FALSE" }
+                ));
+            } else {
+                conditions.push("FALSE".to_string());
+            }
+        } else {
+            conditions.push(format!(r#"{column_expr}::text ILIKE ${param_idx}"#));
+            bind_values.push(format!("%{value}%"));
+            param_idx += 1;
+        }
+    }
+
+    Ok((conditions, bind_values))
+}
+
+async fn plan_view_query(pool: &PgPool, draft: &ViewDraft<'_>) -> anyhow::Result<PlannedViewQuery> {
+    if !is_valid_identifier(draft.base_schema) {
+        return Err(ValidationError(format!("Invalid schema name: {}", draft.base_schema)).into());
+    }
+    if !is_valid_identifier(draft.base_table) {
+        return Err(ValidationError(format!("Invalid table name: {}", draft.base_table)).into());
+    }
+    if draft.columns.is_empty() {
+        return Err(ValidationError("Saved views must include at least one column".into()).into());
+    }
+
+    let base = TableKey::new(draft.base_schema, draft.base_table);
+    let output_names = resolve_view_output_names(draft.columns)?;
+
+    let mut refs = vec![(draft.base_schema, draft.base_table)];
+    let mut seen_refs = HashSet::from([(base.schema.clone(), base.table.clone())]);
+    for column in draft.columns {
+        if !is_valid_identifier(&column.source_schema) {
+            return Err(
+                ValidationError(format!("Invalid schema name: {}", column.source_schema)).into(),
+            );
+        }
+        if !is_valid_identifier(&column.source_table) {
+            return Err(
+                ValidationError(format!("Invalid table name: {}", column.source_table)).into(),
+            );
+        }
+        if !is_valid_identifier(&column.column_name) {
+            return Err(
+                ValidationError(format!("Invalid column name: {}", column.column_name)).into(),
+            );
+        }
+        if let Some(alias) = &column.alias
+            && !is_valid_identifier(alias)
+        {
+            return Err(ValidationError(format!("Invalid alias: {alias}")).into());
+        }
+        if column.source_schema != draft.base_schema {
+            return Err(ValidationError(
+                "Cross-schema joins are not supported for saved views".into(),
+            )
+            .into());
+        }
+        if seen_refs.insert((column.source_schema.clone(), column.source_table.clone())) {
+            refs.push((column.source_schema.as_str(), column.source_table.as_str()));
+        }
+    }
+
+    let columns_by_table = get_columns_bulk(pool, &refs).await?;
+    let fk_edges = load_fk_edges(pool, draft.base_schema).await?;
+
+    let mut planned_columns = Vec::with_capacity(draft.columns.len());
+    let mut target_order = Vec::new();
+    let mut seen_targets = HashSet::new();
+
+    for (column, output_name) in draft.columns.iter().zip(output_names.into_iter()) {
+        let source = TableKey::new(&column.source_schema, &column.source_table);
+        let table_columns = columns_by_table
+            .get(&(source.schema.clone(), source.table.clone()))
+            .ok_or_else(|| {
+                ValidationError(format!(
+                    "Unknown table in saved view: {}.{}",
+                    column.source_schema, column.source_table
+                ))
+            })?;
+
+        let source_column = table_columns
+            .iter()
+            .find(|candidate| candidate.name == column.column_name)
+            .cloned()
+            .ok_or_else(|| {
+                ValidationError(format!(
+                    "Unknown column in saved view: {}.{}.{}",
+                    column.source_schema, column.source_table, column.column_name
+                ))
+            })?;
+
+        if matches!(
+            column.aggregate,
+            Some(ViewAggregate::Sum | ViewAggregate::Avg)
+        ) && !is_numeric_type(&source_column.data_type)
+        {
+            return Err(ValidationError(format!(
+                "{} is only supported for numeric columns",
+                column.aggregate.expect("checked").as_sql()
+            ))
+            .into());
+        }
+        if matches!(
+            column.aggregate,
+            Some(ViewAggregate::Min | ViewAggregate::Max)
+        ) && !supports_min_max_type(&source_column.data_type)
+        {
+            return Err(ValidationError(format!(
+                "{} is not supported for {} columns",
+                column.aggregate.expect("checked").as_sql(),
+                source_column.data_type
+            ))
+            .into());
+        }
+
+        if source != base && seen_targets.insert(source.clone()) {
+            target_order.push(source.clone());
+        }
+
+        planned_columns.push(PlannedViewColumn {
+            source,
+            source_column,
+            output_name,
+            aggregate: column.aggregate,
+        });
+    }
+
+    let mut aliases = HashMap::from([(base.clone(), "t0".to_string())]);
+    let mut join_clauses = Vec::new();
+
+    for target in &target_order {
+        let path = find_fk_path(&fk_edges, &base, target);
+        if path.is_empty() {
+            return Err(ValidationError(format!(
+                "No foreign-key path found from {}.{} to {}.{}",
+                draft.base_schema, draft.base_table, target.schema, target.table
+            ))
+            .into());
+        }
+
+        for hop in path {
+            let from = TableKey::new(&hop.from_schema, &hop.from_table);
+            let to = TableKey::new(&hop.to_schema, &hop.to_table);
+            if aliases.contains_key(&to) {
+                continue;
+            }
+
+            let from_alias = aliases
+                .get(&from)
+                .expect("join path should build from known aliases")
+                .clone();
+            let to_alias = format!("t{}", aliases.len());
+            let conditions = hop
+                .from_columns
+                .iter()
+                .zip(&hop.to_columns)
+                .map(|(from_col, to_col)| {
+                    format!(
+                        r#"{from_alias}.{} = {to_alias}.{}"#,
+                        quote_identifier(from_col),
+                        quote_identifier(to_col)
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            join_clauses.push(format!(
+                "LEFT JOIN {} {to_alias} ON {}",
+                qualified_table_sql(&to),
+                conditions.join(" AND ")
+            ));
+            aliases.insert(to, to_alias);
+        }
+    }
+
+    let (definition_conditions, bind_values) =
+        build_definition_filters(&planned_columns, &aliases, draft.filters, 1)?;
+
+    let has_aggregate = planned_columns
+        .iter()
+        .any(|column| column.aggregate.is_some());
+    let mut group_by_exprs = Vec::new();
+    let mut select_exprs = Vec::with_capacity(planned_columns.len());
+    let mut output_columns = Vec::with_capacity(planned_columns.len());
+
+    for planned in &planned_columns {
+        let table_alias = aliases
+            .get(&planned.source)
+            .expect("planned view table alias should exist");
+        let source_expr = format!(
+            r#"{table_alias}.{}"#,
+            quote_identifier(&planned.source_column.name)
+        );
+
+        if has_aggregate && planned.aggregate.is_none() && !group_by_exprs.contains(&source_expr) {
+            group_by_exprs.push(source_expr.clone());
+        }
+
+        let select_expr = match planned.aggregate {
+            Some(aggregate) => format!(
+                r#"{}({source_expr}) AS {}"#,
+                aggregate.as_sql(),
+                quote_identifier(&planned.output_name)
+            ),
+            None => format!(
+                r#"{source_expr} AS {}"#,
+                quote_identifier(&planned.output_name)
+            ),
+        };
+        select_exprs.push(select_expr);
+        output_columns.push(build_output_column(
+            &planned.source_column,
+            planned.output_name.clone(),
+            planned.aggregate,
+        ));
+    }
+
+    let where_clause = if definition_conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", definition_conditions.join(" AND "))
+    };
+
+    let group_by_clause = if has_aggregate && !group_by_exprs.is_empty() {
+        format!("GROUP BY {}", group_by_exprs.join(", "))
+    } else {
+        String::new()
+    };
+
+    let inner_sql = [
+        format!("SELECT {}", select_exprs.join(", ")),
+        format!("FROM {} t0", qualified_table_sql(&base)),
+        join_clauses.join(" "),
+        where_clause,
+        group_by_clause,
+    ]
+    .into_iter()
+    .filter(|segment| !segment.is_empty())
+    .collect::<Vec<_>>()
+    .join(" ");
+
+    Ok(PlannedViewQuery {
+        inner_sql,
+        output_columns,
+        bind_values,
+    })
+}
+
+fn rows_to_json(rows: &[sqlx::postgres::PgRow], columns: &[ColumnInfo]) -> Vec<serde_json::Value> {
+    rows.iter()
+        .map(|row| {
+            let mut map = serde_json::Map::new();
+            for col in columns {
+                let val = pg_value_to_json(row, &col.name, &col.data_type);
+                map.insert(col.name.clone(), val);
+            }
+            serde_json::Value::Object(map)
+        })
+        .collect()
+}
+
+async fn query_projected_rows(
+    pool: &PgPool,
+    plan: &PlannedViewQuery,
+    page: u32,
+    page_size: u32,
+    sort: &[SortEntry],
+    search: Option<&str>,
+    filters: &HashMap<String, String>,
+) -> anyhow::Result<QueryResult> {
+    let qb = build_query_clauses(
+        &plan.output_columns,
+        search,
+        filters,
+        sort,
+        true,
+        plan.bind_values.len() as u32 + 1,
+    )?;
+
+    let count_sql = format!(
+        "SELECT COUNT(*) AS cnt FROM ({}) AS saved_view_rows {}",
+        plan.inner_sql, qb.where_clause
+    );
+    let mut count_query = sqlx::query(&count_sql);
+    for value in &plan.bind_values {
+        count_query = count_query.bind(value);
+    }
+    for value in &qb.bind_values {
+        count_query = count_query.bind(value);
+    }
+    let total_rows: i64 = count_query.fetch_one(pool).await?.get("cnt");
+
+    let offset = (page.saturating_sub(1) as u64) * (page_size as u64);
+    let data_sql = format!(
+        "SELECT * FROM ({}) AS saved_view_rows {} {} LIMIT {} OFFSET {offset}",
+        plan.inner_sql, qb.where_clause, qb.order_clause, page_size
+    );
+    let mut data_query = sqlx::query(&data_sql);
+    for value in &plan.bind_values {
+        data_query = data_query.bind(value);
+    }
+    for value in &qb.bind_values {
+        data_query = data_query.bind(value);
+    }
+    let rows = data_query.fetch_all(pool).await?;
+
+    Ok(QueryResult {
+        columns: plan.output_columns.clone(),
+        rows: rows_to_json(&rows, &plan.output_columns),
+        total_rows,
+        page,
+        page_size,
+    })
+}
+
+pub async fn preview_view(
+    pool: &PgPool,
+    draft: &ViewDraft<'_>,
+    page_size: u32,
+) -> anyhow::Result<QueryResult> {
+    if draft.columns.is_empty() {
+        return Ok(QueryResult {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            total_rows: 0,
+            page: 1,
+            page_size: page_size.clamp(1, 100),
+        });
+    }
+
+    let plan = plan_view_query(pool, draft).await?;
+    query_projected_rows(
+        pool,
+        &plan,
+        1,
+        page_size.clamp(1, 100),
+        &[],
+        None,
+        &HashMap::new(),
+    )
+    .await
+}
+
+pub async fn query_view_rows(
+    pool: &PgPool,
+    params: &ViewRowsQueryParams<'_>,
+) -> anyhow::Result<QueryResult> {
+    let plan = plan_view_query(pool, &params.draft).await?;
+    query_projected_rows(
+        pool,
+        &plan,
+        params.page,
+        params.page_size,
+        params.sort,
+        params.search,
+        params.filters,
+    )
+    .await
+}
+
+pub async fn export_view_rows_stream<'a>(
+    pool: &'a PgPool,
+    params: &'a ViewExportQueryParams<'a>,
+) -> anyhow::Result<(
+    Vec<ColumnInfo>,
+    Pin<Box<dyn Stream<Item = Result<sqlx::postgres::PgRow, sqlx::Error>> + Send + 'a>>,
+)> {
+    let plan = plan_view_query(pool, &params.draft).await?;
+    let qb = build_query_clauses(
+        &plan.output_columns,
+        params.search,
+        params.filters,
+        params.sort,
+        false,
+        plan.bind_values.len() as u32 + 1,
+    )?;
+
+    let query_sql = format!(
+        "SELECT * FROM ({}) AS saved_view_rows {} {}",
+        plan.inner_sql, qb.where_clause, qb.order_clause
+    );
+
+    let mut bind_values = plan.bind_values.clone();
+    bind_values.extend(qb.bind_values);
+
+    let columns = plan.output_columns.clone();
+    let stream = async_stream::stream! {
+        let mut query = sqlx::query(&query_sql);
+        for value in &bind_values {
+            query = query.bind(value);
+        }
+        use futures::StreamExt;
+        let mut row_stream = query.fetch(pool);
+        while let Some(row) = row_stream.next().await {
+            yield row;
+        }
+    };
+
+    Ok((columns, Box::pin(stream)))
+}
+
 /// Query paginated rows from a table with optional sort, search, and per-column filters.
 pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
     let schema = params.schema;
@@ -489,7 +1276,14 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
     }
 
     let columns = get_columns(pool, schema, table).await?;
-    let qb = build_query_clauses(&columns, params.search, params.filters, params.sort, true)?;
+    let qb = build_query_clauses(
+        &columns,
+        params.search,
+        params.filters,
+        params.sort,
+        true,
+        1,
+    )?;
 
     // Count total matching rows
     let count_sql = format!(
@@ -555,7 +1349,14 @@ pub async fn export_rows_stream<'a>(
     }
 
     let columns = get_columns(pool, schema, table).await?;
-    let qb = build_query_clauses(&columns, params.search, params.filters, params.sort, false)?;
+    let qb = build_query_clauses(
+        &columns,
+        params.search,
+        params.filters,
+        params.sort,
+        false,
+        1,
+    )?;
 
     let query_sql = format!(
         "SELECT * FROM \"{schema}\".\"{table}\" {} {}",
@@ -829,5 +1630,215 @@ mod tests {
 
         let err = build_order_clause(&columns, &sort, false).unwrap_err();
         assert!(err.to_string().contains("Unknown sort column"));
+    }
+
+    fn sample_view_columns() -> Vec<ViewColumn> {
+        vec![
+            ViewColumn {
+                source_schema: "public".into(),
+                source_table: "orders".into(),
+                column_name: "id".into(),
+                alias: None,
+                aggregate: None,
+            },
+            ViewColumn {
+                source_schema: "public".into(),
+                source_table: "customers".into(),
+                column_name: "id".into(),
+                alias: None,
+                aggregate: None,
+            },
+            ViewColumn {
+                source_schema: "public".into(),
+                source_table: "orders".into(),
+                column_name: "total".into(),
+                alias: None,
+                aggregate: Some(ViewAggregate::Sum),
+            },
+        ]
+    }
+
+    fn fk_edge(
+        source_table: &str,
+        target_table: &str,
+        source_columns: &[&str],
+        target_columns: &[&str],
+        constraint_name: &str,
+    ) -> FkEdge {
+        FkEdge {
+            source: TableKey::new("public", source_table),
+            target: TableKey::new("public", target_table),
+            source_columns: source_columns
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            target_columns: target_columns
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            constraint_name: constraint_name.to_string(),
+        }
+    }
+
+    #[test]
+    fn resolve_view_output_names_prefixes_duplicate_non_aggregate_columns() {
+        let output_names = resolve_view_output_names(&sample_view_columns()).unwrap();
+        assert_eq!(
+            output_names,
+            vec![
+                "orders__id".to_string(),
+                "customers__id".to_string(),
+                "sum_orders__total".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_view_output_names_rejects_duplicate_aliases() {
+        let columns = vec![
+            ViewColumn {
+                source_schema: "public".into(),
+                source_table: "orders".into(),
+                column_name: "id".into(),
+                alias: Some("duplicate".into()),
+                aggregate: None,
+            },
+            ViewColumn {
+                source_schema: "public".into(),
+                source_table: "orders".into(),
+                column_name: "total".into(),
+                alias: Some("duplicate".into()),
+                aggregate: Some(ViewAggregate::Sum),
+            },
+        ];
+
+        let err = resolve_view_output_names(&columns).unwrap_err();
+        assert!(err.to_string().contains("Duplicate output column name"));
+    }
+
+    #[test]
+    fn find_fk_path_prefers_shortest_path_then_lexical_constraint_order() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "b_orders_customers",
+            ),
+            fk_edge(
+                "orders",
+                "accounts",
+                &["account_id"],
+                &["id"],
+                "a_orders_accounts",
+            ),
+            fk_edge(
+                "accounts",
+                "regions",
+                &["region_id"],
+                &["id"],
+                "z_accounts_regions",
+            ),
+            fk_edge(
+                "customers",
+                "regions",
+                &["region_id"],
+                &["id"],
+                "a_customers_regions",
+            ),
+        ];
+
+        let path = find_fk_path(
+            &edges,
+            &TableKey::new("public", "orders"),
+            &TableKey::new("public", "regions"),
+        );
+
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0].constraint_name, "a_orders_accounts");
+        assert_eq!(path[0].to_table, "accounts");
+        assert_eq!(path[1].constraint_name, "z_accounts_regions");
+    }
+
+    #[test]
+    fn build_output_column_uses_postgres_aggregate_return_types() {
+        let integer_source = ColumnInfo {
+            name: "total".into(),
+            data_type: "integer".into(),
+            display_type: "Number".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        };
+        let double_source = ColumnInfo {
+            name: "ratio".into(),
+            data_type: "double precision".into(),
+            display_type: "Decimal".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        };
+
+        let sum_integer = build_output_column(
+            &integer_source,
+            "sum_orders__total".into(),
+            Some(ViewAggregate::Sum),
+        );
+        let avg_double = build_output_column(
+            &double_source,
+            "avg_orders__ratio".into(),
+            Some(ViewAggregate::Avg),
+        );
+
+        assert_eq!(sum_integer.data_type, "bigint");
+        assert_eq!(sum_integer.display_type, "Number");
+        assert_eq!(avg_double.data_type, "double precision");
+        assert_eq!(avg_double.display_type, "Decimal");
+    }
+
+    #[test]
+    fn build_definition_filters_rejects_aggregate_columns() {
+        let source_column = ColumnInfo {
+            name: "total".into(),
+            data_type: "numeric".into(),
+            display_type: "Decimal".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        };
+        let planned_columns = vec![PlannedViewColumn {
+            source: TableKey::new("public", "orders"),
+            source_column,
+            output_name: "sum_orders__total".into(),
+            aggregate: Some(ViewAggregate::Sum),
+        }];
+        let aliases = HashMap::from([(TableKey::new("public", "orders"), "t0".to_string())]);
+        let filters = HashMap::from([("sum_orders__total".to_string(), "100".to_string())]);
+
+        let err = build_definition_filters(&planned_columns, &aliases, &filters, 1).unwrap_err();
+        assert!(err.to_string().contains("Aggregate columns cannot be used"));
+    }
+
+    #[test]
+    fn build_definition_filters_supports_boolean_exact_match() {
+        let source_column = ColumnInfo {
+            name: "is_active".into(),
+            data_type: "boolean".into(),
+            display_type: "Yes/No".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        };
+        let planned_columns = vec![PlannedViewColumn {
+            source: TableKey::new("public", "orders"),
+            source_column,
+            output_name: "is_active".into(),
+            aggregate: None,
+        }];
+        let aliases = HashMap::from([(TableKey::new("public", "orders"), "t0".to_string())]);
+        let filters = HashMap::from([("is_active".to_string(), "yes".to_string())]);
+
+        let (conditions, bind_values) =
+            build_definition_filters(&planned_columns, &aliases, &filters, 1).unwrap();
+
+        assert_eq!(conditions, vec!["t0.\"is_active\" = TRUE".to_string()]);
+        assert!(bind_values.is_empty());
     }
 }

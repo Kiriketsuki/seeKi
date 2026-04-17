@@ -45,6 +45,11 @@
 </script>
 
 <nav class="table-list">
+  <div class="section-header">
+    <div class="section-title">Tables</div>
+    <div class="section-subtitle">{tables.length} available</div>
+  </div>
+
   <div class="table-search">
     <Search size={14} />
     <input
@@ -83,6 +88,24 @@
     flex-direction: column;
     gap: 2px;
     padding: var(--sk-space-xs) 0;
+  }
+
+  .section-header {
+    padding: 0 var(--sk-space-md) var(--sk-space-xs);
+  }
+
+  .section-title {
+    font-size: var(--sk-font-size-sm);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sk-secondary-strong);
+  }
+
+  .section-subtitle {
+    margin-top: 2px;
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-muted);
   }
 
   .table-search {

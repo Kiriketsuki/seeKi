@@ -21,6 +21,10 @@ import type {
   FilterPreset,
   LastUsedTableState,
   UpdatePollIntervalHours,
+  SavedViewSummary,
+  SavedViewDefinition,
+  ViewDraft,
+  FkHop,
 } from './types';
 import {
   mockFetchTables,
@@ -175,12 +179,29 @@ export interface FetchRowsParams {
   filters?: Record<string, string>;
 }
 
+export interface ViewRowsParams extends FetchRowsParams {}
+
 export async function fetchRows(
   schema: string,
   table: string,
   params?: FetchRowsParams,
 ): Promise<QueryResult> {
   if (USE_MOCK) return mockFetchRows(schema, table, params);
+  const base = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/rows`;
+  const path = `${base}${buildRowsQueryString(params)}`;
+  const result = await apiFetch<QueryResult>(path);
+  assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], base);
+  return result;
+}
+
+export async function fetchDisplayConfig(): Promise<DisplayConfig> {
+  if (USE_MOCK) return mockFetchDisplayConfig();
+  const data = await apiFetch<DisplayConfig>('/api/config/display');
+  assertShape(data, ['branding', 'tables'], '/api/config/display');
+  return data;
+}
+
+function buildRowsQueryString(params?: FetchRowsParams): string {
   const searchParams = new URLSearchParams();
   if (params?.page != null) searchParams.set('page', String(params.page));
   if (params?.page_size != null)
@@ -193,18 +214,133 @@ export async function fetchRows(
     }
   }
   const qs = searchParams.toString();
-  const base = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/rows`;
-  const path = `${base}${qs ? `?${qs}` : ''}`;
-  const result = await apiFetch<QueryResult>(path);
+  return qs ? `?${qs}` : '';
+}
+
+export async function fetchViews(): Promise<SavedViewSummary[]> {
+  if (USE_MOCK) return [];
+  try {
+    const data = await apiFetch<{ views: SavedViewSummary[] }>('/api/views');
+    assertShape(data, ['views'], '/api/views');
+    return data.views;
+  } catch (error) {
+    if (isApiStatusError(error, 404)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function createView(draft: ViewDraft): Promise<SavedViewSummary> {
+  if (USE_MOCK) {
+    throw new Error('Saved views are not supported in mock mode');
+  }
+  const data = await apiPost<{ view: SavedViewSummary }>('/api/views', {
+    name: draft.name,
+    base_schema: draft.base_schema,
+    base_table: draft.base_table,
+    columns: draft.columns,
+    filters: draft.filters,
+  });
+  assertShape(data, ['view'], '/api/views');
+  return data.view;
+}
+
+export async function fetchView(viewId: number): Promise<SavedViewDefinition> {
+  if (USE_MOCK) {
+    throw new Error('Saved views are not supported in mock mode');
+  }
+  const path = `/api/views/${viewId}`;
+  const data = await apiFetch<{ view: SavedViewDefinition }>(path);
+  assertShape(data, ['view'], path);
+  return data.view;
+}
+
+export async function renameView(
+  viewId: number,
+  name: string,
+): Promise<SavedViewSummary | null> {
+  if (USE_MOCK) {
+    throw new Error('Saved views are not supported in mock mode');
+  }
+  const path = `/api/views/${viewId}`;
+  const data = await apiPatch<{ view?: SavedViewSummary } | void>(path, { name });
+  if (data && typeof data === 'object' && 'view' in data && data.view) {
+    return data.view;
+  }
+  return null;
+}
+
+export async function deleteView(viewId: number): Promise<void> {
+  if (USE_MOCK) return;
+  await apiFetch(`/api/views/${viewId}`, 'DELETE');
+}
+
+export async function previewView(
+  draft: Omit<ViewDraft, 'name'> | ViewDraft,
+): Promise<QueryResult> {
+  if (USE_MOCK) {
+    return { columns: [], rows: [], total_rows: 0, page: 1, page_size: 100 };
+  }
+  const data = await apiPost<QueryResult>('/api/views/preview', {
+    base_schema: draft.base_schema,
+    base_table: draft.base_table,
+    columns: draft.columns,
+    filters: draft.filters,
+  });
+  assertShape(data, ['rows', 'total_rows', 'page', 'page_size'], '/api/views/preview');
+  return data;
+}
+
+export async function fetchViewRows(
+  viewId: number,
+  params?: ViewRowsParams,
+): Promise<QueryResult> {
+  if (USE_MOCK) {
+    return { columns: [], rows: [], total_rows: 0, page: 1, page_size: 50 };
+  }
+  const base = `/api/views/${viewId}/rows`;
+  const result = await apiFetch<QueryResult>(`${base}${buildRowsQueryString(params)}`);
   assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], base);
   return result;
 }
 
-export async function fetchDisplayConfig(): Promise<DisplayConfig> {
-  if (USE_MOCK) return mockFetchDisplayConfig();
-  const data = await apiFetch<DisplayConfig>('/api/config/display');
-  assertShape(data, ['branding', 'tables'], '/api/config/display');
-  return data;
+export function exportViewCsv(viewId: number, params?: ViewRowsParams): void {
+  if (USE_MOCK) return;
+  window.open(buildViewCsvUrl(viewId, params), '_blank');
+}
+
+export function buildViewCsvUrl(
+  viewId: number,
+  params?: ViewRowsParams,
+): string {
+  return `/api/views/${viewId}/csv${buildRowsQueryString(params)}`;
+}
+
+export async function fetchFkPath(
+  baseSchema: string,
+  baseTable: string,
+  targetSchema: string,
+  targetTable: string,
+): Promise<FkHop[]> {
+  if (USE_MOCK) return [];
+  const searchParams = new URLSearchParams({
+    base_schema: baseSchema,
+    base_table: baseTable,
+    target_schema: targetSchema,
+    target_table: targetTable,
+  });
+  const path = `/api/views/fk-path?${searchParams.toString()}`;
+  try {
+    const data = await apiFetch<{ path: FkHop[] }>(path);
+    assertShape(data, ['path'], '/api/views/fk-path');
+    return data.path;
+  } catch (error) {
+    if (isApiStatusError(error, 404)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function fetchConnectionStatus(): Promise<ConnectionStatusResponse> {

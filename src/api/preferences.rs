@@ -51,7 +51,9 @@ pub fn router() -> Router {
 async fn get_settings(
     Extension(store): Extension<Store>,
 ) -> Result<Json<HashMap<String, Value>>, Err> {
-    let pairs = settings::get_all(store.pool()).await.map_err(Err::internal)?;
+    let pairs = settings::get_all(store.pool())
+        .await
+        .map_err(Err::internal)?;
     Ok(Json(pairs.into_iter().collect()))
 }
 
@@ -63,17 +65,13 @@ async fn set_settings(
         if k.len() > MAX_UI_STATE_KEY_LEN {
             return Err(Err::bad_request("setting key exceeds maximum length"));
         }
-        let json = serde_json::to_string(v)
-            .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+        let json = serde_json::to_string(v).map_err(|e| Err::internal(anyhow::Error::from(e)))?;
         if json.len() > MAX_VALUE_BYTES {
             return Err(Err::bad_request("value exceeds maximum size"));
         }
         validate_known_setting(k, v)?;
     }
-    let pairs: Vec<(&str, &Value)> = entries
-        .iter()
-        .map(|(k, v)| (k.as_str(), v))
-        .collect();
+    let pairs: Vec<(&str, &Value)> = entries.iter().map(|(k, v)| (k.as_str(), v)).collect();
     settings::set_many(store.pool(), &pairs)
         .await
         .map_err(Err::internal)?;
@@ -147,8 +145,8 @@ async fn set_last_used(
     if sort_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
-    let filter_json = serde_json::to_string(&body.filters)
-        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    let filter_json =
+        serde_json::to_string(&body.filters).map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if filter_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
@@ -186,7 +184,9 @@ async fn list_sort_presets(
 ) -> Result<Json<Value>, Err> {
     let conn_id = require_conn_id(&mode).await?;
     let items = presets::list_sort_presets(store.pool(), &conn_id, &schema, &table).await?;
-    Ok(Json(serde_json::to_value(items).map_err(|e| Err::internal(anyhow::Error::from(e)))?))
+    Ok(Json(
+        serde_json::to_value(items).map_err(|e| Err::internal(anyhow::Error::from(e)))?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -204,16 +204,22 @@ async fn save_sort_preset(
     if body.name.len() > MAX_PRESET_NAME_LEN {
         return Err(Err::bad_request("preset name exceeds maximum length"));
     }
-    let columns_json = serde_json::to_string(&body.columns)
-        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    let columns_json =
+        serde_json::to_string(&body.columns).map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if columns_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
     let conn_id = require_conn_id(&mode).await?;
-    let id =
-        presets::save_sort_preset(store.pool(), &conn_id, &schema, &table, &body.name, &body.columns)
-            .await
-            .map_err(Err::internal)?;
+    let id = presets::save_sort_preset(
+        store.pool(),
+        &conn_id,
+        &schema,
+        &table,
+        &body.name,
+        &body.columns,
+    )
+    .await
+    .map_err(Err::internal)?;
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
@@ -242,7 +248,9 @@ async fn list_filter_presets(
 ) -> Result<Json<Value>, Err> {
     let conn_id = require_conn_id(&mode).await?;
     let items = presets::list_filter_presets(store.pool(), &conn_id, &schema, &table).await?;
-    Ok(Json(serde_json::to_value(items).map_err(|e| Err::internal(anyhow::Error::from(e)))?))
+    Ok(Json(
+        serde_json::to_value(items).map_err(|e| Err::internal(anyhow::Error::from(e)))?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -260,8 +268,8 @@ async fn save_filter_preset(
     if body.name.len() > MAX_PRESET_NAME_LEN {
         return Err(Err::bad_request("preset name exceeds maximum length"));
     }
-    let filters_json = serde_json::to_string(&body.filters)
-        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    let filters_json =
+        serde_json::to_string(&body.filters).map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if filters_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
@@ -330,8 +338,8 @@ async fn set_ui_state(
     if key.len() > MAX_UI_STATE_KEY_LEN {
         return Err(Err::bad_request("ui state key exceeds maximum length"));
     }
-    let value_json = serde_json::to_string(&body.value)
-        .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
+    let value_json =
+        serde_json::to_string(&body.value).map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if value_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
@@ -399,7 +407,11 @@ impl From<anyhow::Error> for Err {
 
 impl IntoResponse for Err {
     fn into_response(self) -> axum::response::Response {
-        (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+        (
+            self.status,
+            Json(serde_json::json!({ "error": self.message })),
+        )
+            .into_response()
     }
 }
 
@@ -622,8 +634,7 @@ mod tests {
         let app = setup_router(mode, store);
 
         let body =
-            serde_json::json!({ "sort_columns": "x".repeat(65 * 1024), "filters": {} })
-                .to_string();
+            serde_json::json!({ "sort_columns": "x".repeat(65 * 1024), "filters": {} }).to_string();
 
         let req = Request::builder()
             .method("POST")
@@ -661,8 +672,7 @@ mod tests {
         let app = setup_router(mode, store);
 
         let body =
-            serde_json::json!({ "sort_columns": [], "filters": "x".repeat(65 * 1024) })
-                .to_string();
+            serde_json::json!({ "sort_columns": [], "filters": "x".repeat(65 * 1024) }).to_string();
 
         let req = Request::builder()
             .method("POST")
@@ -721,8 +731,7 @@ mod tests {
         let app = setup_router(mode, store);
 
         let big_filters = "x".repeat(65 * 1024);
-        let body =
-            serde_json::json!({ "name": "my_preset", "filters": big_filters }).to_string();
+        let body = serde_json::json!({ "name": "my_preset", "filters": big_filters }).to_string();
 
         let req = Request::builder()
             .method("POST")
