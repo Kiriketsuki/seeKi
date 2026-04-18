@@ -144,8 +144,7 @@ fn release_metadata(
             // a downgrade and must never be offered (it could roll the user
             // back past schema migrations they've already applied).
             if is_nightly_suffix(&current.suffix) && is_nightly_suffix(&version.suffix) {
-                tag != current.to_string()
-                    && release_is_newer_than_running(&release.published_at)
+                tag != current.to_string() && release_is_newer_than_running(&release.published_at)
             } else {
                 version > *current
             }
@@ -316,9 +315,7 @@ pub async fn apply_update(
             let release = if let Some(requested_tag) = req.release_tag.as_deref() {
                 let normalized = requested_tag.trim_start_matches('v');
                 let list = update.cache.prerelease_list().await.ok_or_else(|| {
-                    AppError::bad_request(
-                        "No build list cached — run check for updates first",
-                    )
+                    AppError::bad_request("No build list cached — run check for updates first")
                 })?;
                 list.into_iter()
                     .find(|r| r.tag_name.trim_start_matches('v') == normalized)
