@@ -1,275 +1,393 @@
-import { test, expect } from './fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect, type SeekiHelpers } from './fixtures';
+
+type TableSummary = {
+  schema: string;
+  name: string;
+  display_name: string;
+};
+
+type ColumnSummary = {
+  name: string;
+  display_name: string;
+  data_type: string;
+  is_primary_key: boolean;
+};
+
+type TableCatalogEntry = {
+  table: TableSummary;
+  columns: ColumnSummary[];
+};
+
+const NUMERIC_TYPES = new Set([
+  'smallint',
+  'integer',
+  'bigint',
+  'numeric',
+  'real',
+  'double precision',
+]);
+
+const TEMPORAL_TYPES = new Set([
+  'date',
+  'timestamp',
+  'timestamp without time zone',
+  'timestamp with time zone',
+  'timestamptz',
+]);
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function uniqueViewName(prefix: string): string {
+  return `${prefix} ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isNumericColumn(column: ColumnSummary): boolean {
+  return NUMERIC_TYPES.has(column.data_type);
+}
+
+function isTemporalColumn(column: ColumnSummary): boolean {
+  return TEMPORAL_TYPES.has(column.data_type);
+}
+
+function isEntityColumn(column: ColumnSummary): boolean {
+  return column.name.endsWith('_id') && !column.is_primary_key;
+}
+
+function isBasicCandidateColumn(column: ColumnSummary): boolean {
+  return !column.is_primary_key && column.name !== 'id';
+}
+
+function tableValue(table: TableSummary): string {
+  return `${table.schema}.${table.name}`;
+}
+
+function tableLabel(allTables: TableSummary[], table: TableSummary): string {
+  const collisions = allTables.filter((candidate) => candidate.name === table.name).length > 1;
+  if (collisions || table.schema !== 'public') {
+    return `${table.schema}.${table.name}`;
+  }
+
+  return table.name;
+}
+
+async function loadTableCatalog(page: Page): Promise<TableCatalogEntry[]> {
+  const tablesResponse = await page.request.get('/api/tables');
+  expect(tablesResponse.ok()).toBeTruthy();
+  const tablesPayload = (await tablesResponse.json()) as { tables: TableSummary[] };
+
+  const catalog = await Promise.all(
+    tablesPayload.tables.map(async (table) => {
+      const columnsResponse = await page.request.get(
+        `/api/tables/${encodeURIComponent(table.schema)}/${encodeURIComponent(table.name)}/columns`,
+      );
+      expect(columnsResponse.ok()).toBeTruthy();
+      const columnsPayload = (await columnsResponse.json()) as { columns: ColumnSummary[] };
+
+      return {
+        table,
+        columns: columnsPayload.columns,
+      };
+    }),
+  );
+
+  return catalog;
+}
+
+function findScratchCandidate(catalog: TableCatalogEntry[]): {
+  table: TableSummary;
+  column: ColumnSummary;
+} | null {
+  for (const entry of catalog) {
+    const column =
+      entry.columns.find((candidate) => isBasicCandidateColumn(candidate) && !isTemporalColumn(candidate)) ??
+      entry.columns.find(isBasicCandidateColumn);
+    if (column) {
+      return {
+        table: entry.table,
+        column,
+      };
+    }
+  }
+
+  return null;
+}
+
+function findAdvancedTemplateCandidate(catalog: TableCatalogEntry[]): {
+  table: TableSummary;
+  templateId: 'previous-row-delta' | 'most-recent-per-group';
+} | null {
+  for (const entry of catalog) {
+    const hasEntity = entry.columns.some(isEntityColumn);
+    const hasTimestamp = entry.columns.some(isTemporalColumn);
+    const hasNumericMeasure = entry.columns.some(
+      (candidate) => isNumericColumn(candidate) && !candidate.is_primary_key && !isEntityColumn(candidate),
+    );
+
+    if (hasEntity && hasTimestamp && hasNumericMeasure) {
+      return {
+        table: entry.table,
+        templateId: 'previous-row-delta',
+      };
+    }
+  }
+
+  for (const entry of catalog) {
+    const hasEntity = entry.columns.some(isEntityColumn);
+    const hasTimestamp = entry.columns.some(isTemporalColumn);
+    const hasValueColumn = entry.columns.some(
+      (candidate) =>
+        !candidate.is_primary_key &&
+        candidate.name !== 'id' &&
+        (isNumericColumn(candidate) || !isTemporalColumn(candidate)),
+    );
+
+    if (hasEntity && hasTimestamp && hasValueColumn) {
+      return {
+        table: entry.table,
+        templateId: 'most-recent-per-group',
+      };
+    }
+  }
+
+  return null;
+}
+
+async function openTemplateGallery(page: Page, seeki: SeekiHelpers) {
+  await seeki.openTables();
+  const createButton = page.getByTestId('data-panel-create-view');
+  if (!(await createButton.isVisible().catch(() => false))) {
+    await seeki.toggleSidebar();
+  }
+  await expect(createButton).toBeVisible();
+  await createButton.click();
+  await expect(page.getByTestId('view-template-gallery')).toBeVisible();
+}
+
+async function selectBuilderBaseTable(
+  page: Page,
+  table: TableSummary,
+) {
+  await page
+    .getByTestId('view-template-gallery')
+    .getByLabel('Starting from')
+    .selectOption(tableValue(table));
+}
+
+async function chooseTemplate(
+  page: Page,
+  templateId: string,
+) {
+  await page.getByTestId(`view-template-${templateId}`).click();
+  await expect(page.getByTestId('view-builder-topbar')).toBeVisible();
+}
+
+async function addRawColumnFromScratch(
+  page: Page,
+  columnName: string,
+) {
+  await page.getByTestId('view-builder-add-slot').click();
+  const picker = page.getByTestId('view-column-picker');
+  await expect(picker).toBeVisible();
+
+  await picker.locator('.picker__footer-right button.primary').click();
+
+  const sourceColumnSelect = picker.getByLabel('Source column');
+  await expect(sourceColumnSelect).toBeEnabled();
+  await sourceColumnSelect.selectOption(columnName);
+
+  await picker.locator('.picker__footer-right button.primary').click();
+  await picker.locator('.picker__footer-right button.primary').click();
+  await picker.getByTestId('view-column-picker-save').click();
+
+  await expect(picker).not.toBeVisible();
+}
+
+async function saveViewFromBuilder(
+  page: Page,
+  name: string,
+) {
+  await page.getByTestId('view-builder-name').fill(name);
+  await page.getByTestId('view-builder-save').click();
+}
+
+async function waitForViewInSidebar(
+  seeki: SeekiHelpers,
+  name: string,
+) {
+  await expect.poll(async () => await seeki.getSidebarViewNames()).toContain(name);
+}
+
+async function waitForViewToDisappear(
+  seeki: SeekiHelpers,
+  name: string,
+) {
+  await expect.poll(async () => await seeki.getSidebarViewNames()).not.toContain(name);
+}
+
+function viewButton(
+  page: Page,
+  name: string,
+) {
+  return page
+    .getByTestId('data-panel-body-views')
+    .getByRole('button', { name: new RegExp(`^${escapeRegex(name)}\\b`) })
+    .first();
+}
+
+async function openSavedViewFromSidebar(
+  page: Page,
+  seeki: SeekiHelpers,
+  name: string,
+) {
+  await viewButton(page, name).click();
+  await seeki.waitForGridLoaded();
+}
+
+async function openTableFromSidebar(
+  page: Page,
+  seeki: SeekiHelpers,
+  label: string,
+) {
+  await page
+    .getByTestId('data-panel-body-tables')
+    .getByRole('button', { name: new RegExp(`^${escapeRegex(label)}(?:\\s|$)`) })
+    .click();
+  await seeki.waitForGridLoaded();
+}
+
+async function createScratchView(
+  page: Page,
+  seeki: SeekiHelpers,
+  candidate: { table: TableSummary; column: ColumnSummary },
+  name: string,
+) {
+  await openTemplateGallery(page, seeki);
+  await selectBuilderBaseTable(page, candidate.table);
+  await chooseTemplate(page, 'scratch');
+  await expect(page.getByTestId('view-builder-topbar')).toContainText('Start from scratch');
+
+  await addRawColumnFromScratch(page, candidate.column.name);
+  await expect(page.getByTestId('view-builder-grid-slots')).toContainText(candidate.column.name);
+
+  await saveViewFromBuilder(page, name);
+  await waitForViewInSidebar(seeki, name);
+  await seeki.waitForGridLoaded();
+  await expect(page.getByText('Read-only saved view')).toBeVisible();
+}
 
 test.describe.serial('Custom views', () => {
-  test('create a joined view, save, open, and delete it', async ({ page, seeki }) => {
-    // 1. Navigate and wait for app + grid
+  test('create, reopen, and delete a saved view from the data panels scratch flow', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const candidate = findScratchCandidate(catalog);
+    if (!candidate) {
+      test.skip(true, 'No table with a usable source column is available for scratch-builder coverage.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Scratch View');
+
     await page.goto('/');
     await seeki.waitForAppReady();
     await seeki.waitForGridLoaded();
 
-    // 2. Click "Create" in the Views section
-    await page.locator('.view-list .create-btn').click();
+    await seeki.openTables();
+    await expect(page.getByTestId('data-panel-header-tables')).toBeVisible();
+    await expect(page.getByTestId('data-panel-header-views')).toBeVisible();
 
-    // 3. Wait for builder
-    const builder = page.locator('.builder');
-    await expect(builder).toBeVisible();
-    await expect(builder.locator('.builder-header h2')).toHaveText('Custom view builder');
+    await createScratchView(page, seeki, candidate, viewName);
 
-    // 4. Set base table to public.vehicle_logs
-    const baseTableSelect = builder.locator('label.field').filter({ hasText: 'Base table' }).locator('select');
-    await baseTableSelect.selectOption('public.vehicle_logs');
+    const firstTable = catalog[0];
+    expect(firstTable).toBeTruthy();
 
-    // 5. Click "Add column" — column picker opens
-    await builder.locator('.panel-subheader button.secondary', { hasText: 'Add column' }).click();
-    const dialog = page.locator('[role="dialog"][aria-label="Choose a view column"]');
-    await expect(dialog).toBeVisible();
+    await openTableFromSidebar(page, seeki, tableLabel(catalog.map((entry) => entry.table), firstTable.table));
+    await openSavedViewFromSidebar(page, seeki, viewName);
 
-    // 6. Source table defaults to public.vehicle_logs. Select column "event_type".
-    const sourceTableSelect = dialog.locator('label').filter({ hasText: 'Source table' }).locator('select');
-    await expect(sourceTableSelect).toHaveValue('public.vehicle_logs');
+    await expect(page.getByText('Read-only saved view')).toBeVisible();
+    await page.getByRole('button', { name: 'Delete view' }).click();
 
-    // Wait for columns to load
-    const sourceColumnSelect = dialog.locator('label').filter({ hasText: 'Source column' }).locator('select');
-    await expect(sourceColumnSelect).not.toBeDisabled();
-    await sourceColumnSelect.selectOption('event_type');
-
-    // Click "Add column" submit
-    await dialog.locator('.picker-actions button.primary', { hasText: 'Add column' }).click();
-    await expect(dialog).not.toBeVisible();
-
-    // 7. Add second column from FK-reachable table: public.vehicles → label
-    await builder.locator('.panel-subheader button.secondary', { hasText: 'Add column' }).click();
-    await expect(dialog).toBeVisible();
-
-    // Change source table to public.vehicles
-    await sourceTableSelect.selectOption('public.vehicles');
-
-    // Wait for columns to load (select becomes enabled with options)
-    await expect(sourceColumnSelect).not.toBeDisabled();
-    await page.waitForFunction(() => {
-      const dlg = document.querySelector('[role="dialog"][aria-label="Choose a view column"]');
-      if (!dlg) return false;
-      const selects = dlg.querySelectorAll('select');
-      // Source column is the second select
-      const colSelect = selects[1];
-      return colSelect && colSelect.options.length > 0 && !colSelect.disabled;
-    });
-
-    await sourceColumnSelect.selectOption('label');
-    await dialog.locator('.picker-actions button.primary', { hasText: 'Add column' }).click();
-    await expect(dialog).not.toBeVisible();
-
-    // 8. Wait for preview table to appear with rows
-    const previewRows = page.locator('table.preview-table tbody tr');
-    await previewRows.first().waitFor({ state: 'visible', timeout: 15_000 });
-    const previewRowCount = await previewRows.count();
-    expect(previewRowCount).toBeGreaterThan(0);
-
-    // 9. Enter view name
-    const nameInput = builder.locator('label.field').filter({ hasText: 'Saved view name' }).locator('input');
-    await nameInput.fill('E2E Test View');
-
-    // 10. Click "Save view"
-    await builder.locator('.builder-actions button.primary', { hasText: 'Save view' }).click();
-
-    // 11. Wait for view to appear in sidebar
-    await expect(async () => {
-      const viewNames = await seeki.getSidebarViewNames();
-      expect(viewNames).toContain('E2E Test View');
-    }).toPass({ timeout: 10_000 });
-
-    // 12. App should auto-navigate to the saved view. Wait for grid loaded.
+    await waitForViewToDisappear(seeki, viewName);
     await seeki.waitForGridLoaded();
-
-    // 13. Verify the view toolbar shows "Read-only saved view" pill
-    const viewToolbar = page.locator('.view-toolbar');
-    await expect(viewToolbar).toBeVisible();
-    await expect(viewToolbar.locator('.view-pill')).toHaveText('Read-only saved view');
-
-    // 14. Verify column headers include expected columns
-    const headers = await seeki.getVisibleColumnHeaders();
-    expect(headers.length).toBeGreaterThanOrEqual(2);
-    // Headers should include the columns we selected (event_type and label)
-    const lowerHeaders = headers.map((h) => h.toLowerCase());
-    expect(lowerHeaders.some((h) => h.includes('event_type'))).toBe(true);
-    expect(lowerHeaders.some((h) => h.includes('label'))).toBe(true);
-
-    // 15. Delete the view via toolbar "Delete view" button
-    // The toolbar Delete button calls handleDeleteSavedView directly (no window.confirm)
-    await viewToolbar.locator('button.view-action.view-action--danger', { hasText: 'Delete view' }).click();
-
-    // 16. Verify the view disappears from sidebar
-    await expect(async () => {
-      const viewNames = await seeki.getSidebarViewNames();
-      expect(viewNames).not.toContain('E2E Test View');
-    }).toPass({ timeout: 10_000 });
-
-    // 17. Verify the app falls back (grid still loaded, no builder visible)
-    await seeki.waitForGridLoaded();
-    await expect(builder).not.toBeVisible();
   });
 
-  test('delete failure surfaces error banner', async ({ page, seeki }) => {
-    // 1. Create a view to delete
+  test('delete failure surfaces the table error banner', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const candidate = findScratchCandidate(catalog);
+    if (!candidate) {
+      test.skip(true, 'No table with a usable source column is available for delete-failure coverage.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Delete Failure View');
+
     await page.goto('/');
     await seeki.waitForAppReady();
     await seeki.waitForGridLoaded();
 
-    await page.locator('.view-list .create-btn').click();
-    const builder = page.locator('.builder');
-    await expect(builder).toBeVisible();
+    await createScratchView(page, seeki, candidate, viewName);
 
-    const baseTableSelect = builder.locator('label.field').filter({ hasText: 'Base table' }).locator('select');
-    await baseTableSelect.selectOption('public.vehicle_logs');
-
-    await builder.locator('.panel-subheader button.secondary', { hasText: 'Add column' }).click();
-    const dialog = page.locator('[role="dialog"][aria-label="Choose a view column"]');
-    await expect(dialog).toBeVisible();
-
-    const sourceColumnSelect = dialog.locator('label').filter({ hasText: 'Source column' }).locator('select');
-    await expect(sourceColumnSelect).not.toBeDisabled();
-    await sourceColumnSelect.selectOption('event_type');
-    await dialog.locator('.picker-actions button.primary', { hasText: 'Add column' }).click();
-    await expect(dialog).not.toBeVisible();
-
-    const nameInput = builder.locator('label.field').filter({ hasText: 'Saved view name' }).locator('input');
-    await nameInput.fill('E2E Delete Failure View');
-    await builder.locator('.builder-actions button.primary', { hasText: 'Save view' }).click();
-
-    await expect(async () => {
-      const viewNames = await seeki.getSidebarViewNames();
-      expect(viewNames).toContain('E2E Delete Failure View');
-    }).toPass({ timeout: 10_000 });
-    await seeki.waitForGridLoaded();
-
-    // 2. Intercept the DELETE request and return 500
-    await page.route('**/api/views/**', (route) => {
+    await page.route('**/api/views/*', async (route) => {
       if (route.request().method() === 'DELETE') {
-        route.fulfill({ status: 500, body: JSON.stringify({ error: 'simulated server error' }) });
-      } else {
-        route.continue();
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'simulated server error' }),
+        });
+        return;
       }
+
+      await route.continue();
     });
 
-    // 3. Attempt delete via toolbar button
-    const viewToolbar = page.locator('.view-toolbar');
-    await expect(viewToolbar).toBeVisible();
-    await viewToolbar.locator('button.view-action.view-action--danger', { hasText: 'Delete view' }).click();
+    await page.getByRole('button', { name: 'Delete view' }).click();
 
-    // 4. Error banner must appear
-    const errorBanner = page.locator('.table-error-banner');
-    await expect(errorBanner).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/simulated server error/i)).toBeVisible();
+    await waitForViewInSidebar(seeki, viewName);
 
-    // 5. View must remain in sidebar (not removed on failure)
-    const viewNames = await seeki.getSidebarViewNames();
-    expect(viewNames).toContain('E2E Delete Failure View');
-
-    // 6. Clean up: remove the route and delete the view for real
-    await page.unroute('**/api/views/**');
-    await errorBanner.locator('.dismiss-btn').click();
-    await viewToolbar.locator('button.view-action.view-action--danger', { hasText: 'Delete view' }).click();
-    await expect(async () => {
-      const names = await seeki.getSidebarViewNames();
-      expect(names).not.toContain('E2E Delete Failure View');
-    }).toPass({ timeout: 10_000 });
+    await page.unroute('**/api/views/*');
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
   });
 
-  test('create an aggregate view with SUM', async ({ page, seeki }) => {
-    // 1. Navigate and wait for app + grid
+  test('builds and saves an advanced v2 template flow from the template gallery', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const candidate = findAdvancedTemplateCandidate(catalog);
+    if (!candidate) {
+      test.skip(true, 'No table with the columns needed for an advanced template flow is available.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Advanced Template View');
+
     await page.goto('/');
     await seeki.waitForAppReady();
     await seeki.waitForGridLoaded();
 
-    // 2. Click "Create" in the Views section
-    await page.locator('.view-list .create-btn').click();
+    await openTemplateGallery(page, seeki);
+    await selectBuilderBaseTable(page, candidate.table);
+    await chooseTemplate(page, candidate.templateId);
 
-    // 3. Wait for builder
-    const builder = page.locator('.builder');
-    await expect(builder).toBeVisible();
+    if (candidate.templateId === 'previous-row-delta') {
+      await expect(page.getByTestId('view-builder-topbar')).toContainText('Previous-row delta');
+      await expect(page.getByTestId('view-builder-grid-slots')).toContainText(/delta/i);
+    } else {
+      await expect(page.getByTestId('view-builder-topbar')).toContainText('Most recent per group');
+      await expect(page.getByTestId('view-builder-grouping')).not.toHaveValue('');
+      await expect(page.getByTestId('view-builder-latest-by')).not.toHaveValue('');
+    }
 
-    // 4. Set base table to public.vehicle_logs
-    const baseTableSelect = builder.locator('label.field').filter({ hasText: 'Base table' }).locator('select');
-    await baseTableSelect.selectOption('public.vehicle_logs');
-
-    const dialog = page.locator('[role="dialog"][aria-label="Choose a view column"]');
-    const sourceTableSelect = dialog.locator('label').filter({ hasText: 'Source table' }).locator('select');
-    const sourceColumnSelect = dialog.locator('label').filter({ hasText: 'Source column' }).locator('select');
-    const aggregateSelect = dialog.locator('label').filter({ hasText: 'Aggregate' }).locator('select');
-
-    // 5. Add column: public.vehicles → label (non-aggregate, used as group-by key)
-    await builder.locator('.panel-subheader button.secondary', { hasText: 'Add column' }).click();
-    await expect(dialog).toBeVisible();
-
-    await sourceTableSelect.selectOption('public.vehicles');
-
-    // Wait for columns to load
-    await expect(sourceColumnSelect).not.toBeDisabled();
-    await page.waitForFunction(() => {
-      const dlg = document.querySelector('[role="dialog"][aria-label="Choose a view column"]');
-      if (!dlg) return false;
-      const selects = dlg.querySelectorAll('select');
-      const colSelect = selects[1];
-      return colSelect && colSelect.options.length > 0 && !colSelect.disabled;
-    });
-
-    await sourceColumnSelect.selectOption('label');
-    await dialog.locator('.picker-actions button.primary', { hasText: 'Add column' }).click();
-    await expect(dialog).not.toBeVisible();
-
-    // 6. Add column: public.vehicle_logs → speed_kmh with SUM aggregate
-    await builder.locator('.panel-subheader button.secondary', { hasText: 'Add column' }).click();
-    await expect(dialog).toBeVisible();
-
-    // Source table should default to base table (vehicle_logs)
-    await expect(sourceTableSelect).toHaveValue('public.vehicle_logs');
-
-    // Wait for columns to load
-    await expect(sourceColumnSelect).not.toBeDisabled();
-    await page.waitForFunction(() => {
-      const dlg = document.querySelector('[role="dialog"][aria-label="Choose a view column"]');
-      if (!dlg) return false;
-      const selects = dlg.querySelectorAll('select');
-      const colSelect = selects[1];
-      return colSelect && colSelect.options.length > 0 && !colSelect.disabled;
-    });
-
-    await sourceColumnSelect.selectOption('speed_kmh');
-    await aggregateSelect.selectOption('SUM');
-    await dialog.locator('.picker-actions button.primary', { hasText: 'Add column' }).click();
-    await expect(dialog).not.toBeVisible();
-
-    // 7. Wait for preview — should show grouped results (fewer than 200 rows)
-    const previewRows = page.locator('table.preview-table tbody tr');
-    await previewRows.first().waitFor({ state: 'visible', timeout: 15_000 });
-
-    // 8. Verify preview has rows and they are grouped (fewer than the full 200 vehicle_logs)
-    const previewRowCount = await previewRows.count();
-    expect(previewRowCount).toBeGreaterThan(0);
-    // There are 5 vehicles, so grouped results should have at most 5 rows
-    expect(previewRowCount).toBeLessThanOrEqual(5);
-
-    // 9. Enter name, save
-    const nameInput = builder.locator('label.field').filter({ hasText: 'Saved view name' }).locator('input');
-    await nameInput.fill('E2E Aggregate View');
-    await builder.locator('.builder-actions button.primary', { hasText: 'Save view' }).click();
-
-    // 10. Verify it appears in sidebar
-    await expect(async () => {
-      const viewNames = await seeki.getSidebarViewNames();
-      expect(viewNames).toContain('E2E Aggregate View');
-    }).toPass({ timeout: 10_000 });
-
-    // 11. Open it and verify grid loads
+    await saveViewFromBuilder(page, viewName);
+    await waitForViewInSidebar(seeki, viewName);
     await seeki.waitForGridLoaded();
-    const viewToolbar = page.locator('.view-toolbar');
-    await expect(viewToolbar).toBeVisible();
+    await expect(page.getByText('Read-only saved view')).toBeVisible();
 
-    // 12. Clean up: delete the view
-    await viewToolbar.locator('button.view-action.view-action--danger', { hasText: 'Delete view' }).click();
+    const headers = await seeki.getVisibleColumnHeaders();
+    expect(headers.length).toBeGreaterThan(0);
 
-    await expect(async () => {
-      const viewNames = await seeki.getSidebarViewNames();
-      expect(viewNames).not.toContain('E2E Aggregate View');
-    }).toPass({ timeout: 10_000 });
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
   });
 });

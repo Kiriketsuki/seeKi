@@ -198,15 +198,15 @@ export class SeekiHelpers {
     await this.page.locator('.collapsed-modes button[aria-label="Show settings workspace"]').click();
   }
 
-  /** Switch the sidebar workspace back to Tables. */
+  /** Switch the sidebar workspace back to the Data workspace. */
   async openTables(): Promise<void> {
-    const tablesButton = this.page.locator('button', { hasText: 'Tables' }).first();
+    const tablesButton = this.page.locator('button', { hasText: 'Data' }).first();
     if (await tablesButton.isVisible()) {
       await tablesButton.click();
       return;
     }
 
-    await this.page.locator('.collapsed-modes button[aria-label="Show tables workspace"]').click();
+    await this.page.locator('.collapsed-modes button[aria-label="Show data workspace"]').click();
   }
 
   /** Check if sidebar is collapsed. */

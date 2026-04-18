@@ -1,15 +1,8 @@
 <script lang="ts">
   import { type Snippet } from 'svelte';
-  import {
-    ChevronLeft,
-    ChevronRight,
-    LayoutGrid,
-    Settings,
-  } from 'lucide-svelte';
+  import { ChevronLeft, ChevronRight, LayoutGrid, Settings } from 'lucide-svelte';
   import { SIDEBAR_COLLAPSED_KEY } from '../lib/constants';
-  import SettingsGear from './SettingsGear.svelte';
   import type { SidebarMode } from '../lib/types';
-
 
   let {
     collapsed = $bindable(false),
@@ -48,7 +41,7 @@
   }
 </script>
 
-<aside class="sidebar" class:collapsed>
+<aside class="sidebar" class:collapsed data-testid="app-sidebar">
   <div class="header">
     {#if !collapsed}
       <div class="branding">
@@ -64,7 +57,12 @@
       <img class="mark mark-collapsed" src="/logo-mark.svg" alt="SeeKi" width="20" height="20" />
     {/if}
 
-    <button class="toggle" onclick={handleToggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+    <button
+      class="toggle"
+      onclick={handleToggle}
+      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      data-testid="sidebar-toggle"
+    >
       {#if collapsed}
         <ChevronRight size={16} />
       {:else}
@@ -80,10 +78,11 @@
           type="button"
           class="mode-icon"
           class:active={mode === 'tables'}
-          aria-label="Show tables workspace"
+          aria-label="Show data workspace"
           aria-selected={mode === 'tables'}
           role="tab"
           onclick={() => selectMode('tables')}
+          data-testid="sidebar-mode-data"
         >
           <LayoutGrid size={16} />
         </button>
@@ -95,6 +94,7 @@
           aria-selected={mode === 'settings'}
           role="tab"
           onclick={() => selectMode('settings')}
+          data-testid="sidebar-mode-settings"
         >
           <span class="badge-wrapper">
             <Settings size={16} />
@@ -113,8 +113,9 @@
           role="tab"
           aria-selected={mode === 'tables'}
           onclick={() => selectMode('tables')}
+          data-testid="sidebar-mode-data"
         >
-          Tables
+          Data
         </button>
         <button
           type="button"
@@ -123,6 +124,7 @@
           role="tab"
           aria-selected={mode === 'settings'}
           onclick={() => selectMode('settings')}
+          data-testid="sidebar-mode-settings"
         >
           <span class="badge-wrapper">
             Settings
@@ -144,11 +146,6 @@
   {#if !collapsed}
     <div class="footer">
       <span class="footer-text">Powered by SeeKi</span>
-      <SettingsGear {updateAvailable} onclick={onSettingsClick} />
-    </div>
-  {:else}
-    <div class="footer footer-collapsed">
-      <SettingsGear {updateAvailable} onclick={onSettingsClick} />
     </div>
   {/if}
 </aside>
@@ -364,29 +361,22 @@
 
   .content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: var(--sk-space-sm);
   }
 
   .footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     padding: var(--sk-space-md) var(--sk-space-lg);
     font-size: var(--sk-font-size-xs);
     color: var(--sk-faded);
     border-top: 1px solid var(--sk-border-lighter);
-    white-space: nowrap;
-    gap: var(--sk-space-sm);
   }
 
   .footer-text {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .footer-collapsed {
-    justify-content: center;
-    padding: var(--sk-space-md);
+    white-space: nowrap;
   }
 </style>

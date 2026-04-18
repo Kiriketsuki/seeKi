@@ -1,14 +1,43 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, X } from 'lucide-svelte';
-  import { createView, fetchFkPath, previewView } from '../lib/api';
-  import ColumnPickerPopover from './ColumnPickerPopover.svelte';
+  import { createView, fetchColumns, fetchFkPath, previewView } from '../lib/api';
   import type {
+    ColumnInfo,
     QueryResult,
     SavedViewSummary,
     TableInfo,
     ViewColumn,
+    ViewColumnRef,
+    ViewDefinitionFilters,
     ViewDraft,
+    ViewFilterValue,
+    ViewGrouping,
+    ViewOrderBy,
+    ViewRanking,
+    ViewSourceRef,
+    ViewTemplateId,
   } from '../lib/types';
+  import ColumnPicker from './ColumnPicker.svelte';
+  import ViewBuilderGrid from './ViewBuilderGrid.svelte';
+  import ViewBuilderTemplates from './ViewBuilderTemplates.svelte';
+  import ViewBuilderTopBar, { type BuilderOption } from './ViewBuilderTopBar.svelte';
+
+  type PickerPayload = {
+    column: ViewColumn;
+    source: ViewSourceRef | null;
+  };
+
+  type FilterRow = {
+    key: string;
+    label: string;
+    filter: ViewFilterValue | null;
+  };
+
+  type BuilderGridItem = {
+    id: string;
+    label: string;
+    detail: string;
+    kind: 'source' | 'derived';
+  };
 
   let {
     tables = [],
@@ -24,62 +53,145 @@
     onSaved: (view: SavedViewSummary) => Promise<void> | void;
   } = $props();
 
+  const templateLabels: Record<ViewTemplateId, string> = {
+    scratch: 'Start from scratch',
+    'most-recent-per-group': 'Most recent per group',
+    'counts-per-day': 'Counts per day',
+    'top-n-per-group': 'Top N per group',
+    'totals-by-week': 'Totals by week',
+    'previous-row-delta': 'Previous-row delta',
+  };
+
   let name = $state('');
   let baseSchema = $state('');
   let baseTable = $state('');
   let columns = $state<ViewColumn[]>([]);
-  let filters = $state<Record<string, string>>({});
+  let filters = $state<ViewDefinitionFilters>({});
+  let sources = $state<ViewSourceRef[]>([]);
+  let grouping = $state<ViewGrouping | null>(null);
+  let ranking = $state<ViewRanking | null>(null);
+  let template = $state<ViewTemplateId | null>(null);
   let preview = $state<QueryResult | null>(null);
   let previewLoading = $state(false);
   let reachableTables = $state<TableInfo[]>([]);
-  let reachableLoading = $state(false);
   let pickerOpen = $state(false);
   let pickerIndex = $state<number | null>(null);
   let pickerValue = $state<ViewColumn | null>(null);
   let error = $state('');
   let saving = $state(false);
+  let showFilters = $state(false);
   let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let previewRequestId = 0;
   let reachabilityRequestId = 0;
   let seedKey = $state('');
+  let loadedColumns = $state<Record<string, ColumnInfo[]>>({});
+  let templateStage = $state(true);
 
-  function computeOutputNames(items: ViewColumn[]): string[] {
-    const bareCounts = new Map<string, number>();
-    for (const item of items) {
-      if (!item.alias && !item.aggregate) {
-        bareCounts.set(item.column_name, (bareCounts.get(item.column_name) ?? 0) + 1);
-      }
-    }
-
-    return items.map((item) => {
-      if (item.alias?.trim()) return item.alias.trim();
-      if (item.aggregate) {
-        return `${item.aggregate.toLowerCase()}_${item.source_table}__${item.column_name}`;
-      }
-      if ((bareCounts.get(item.column_name) ?? 0) > 1) {
-        return `${item.source_table}__${item.column_name}`;
-      }
-      return item.column_name;
-    });
+  function tableKey(schema: string, table: string): string {
+    return `${schema}.${table}`;
   }
 
-  function describeColumn(item: ViewColumn, outputName: string): string {
-    const aggregate = item.aggregate ? `${item.aggregate}(` : '';
-    const suffix = item.aggregate ? ')' : '';
-    return `${aggregate}${item.source_table}.${item.column_name}${suffix} → ${outputName}`;
+  function encodeColumnRef(ref: ViewColumnRef | ViewOrderBy | null | undefined): string {
+    if (!ref) return '';
+    return [ref.source_id ?? '', ref.source_schema, ref.source_table, ref.column_name].join('|');
+  }
+
+  function decodeColumnRef(value: string): ViewColumnRef | null {
+    if (!value) return null;
+    const [sourceId, sourceSchema, sourceTable, columnName] = value.split('|');
+    if (!sourceSchema || !sourceTable || !columnName) return null;
+    return {
+      source_id: sourceId || null,
+      source_schema: sourceSchema,
+      source_table: sourceTable,
+      column_name: columnName,
+    };
+  }
+
+  function toOrderBy(value: string, direction: 'asc' | 'desc'): ViewOrderBy | null {
+    const ref = decodeColumnRef(value);
+    if (!ref) return null;
+    return {
+      ...ref,
+      direction,
+    };
+  }
+
+  function isNumeric(dataType: string): boolean {
+    return ['smallint', 'integer', 'bigint', 'numeric', 'real', 'double precision'].includes(dataType);
+  }
+
+  function isTemporal(dataType: string): boolean {
+    return ['date', 'timestamp', 'timestamp without time zone', 'timestamp with time zone', 'timestamptz'].includes(dataType);
+  }
+
+  function prettyFieldLabel(ref: ViewColumnRef, info: ColumnInfo | null): string {
+    const sourcePrefix = ref.source_id ? `${ref.source_id} → ` : `${ref.source_table} → `;
+    return `${sourcePrefix}${info?.display_name ?? ref.column_name}`;
+  }
+
+  function cloneColumn(column: ViewColumn): ViewColumn {
+    return {
+      ...column,
+      derived: column.derived
+        ? {
+            ...column.derived,
+            inputs: column.derived.inputs.map((input) => ({ ...input })),
+            options: column.derived.options ? { ...column.derived.options } : column.derived.options,
+          }
+        : column.derived,
+    };
+  }
+
+  function cloneDraft(source: ViewDraft | null): ViewDraft {
+    if (!source) {
+      const firstTable = tables[0];
+      return {
+        name: '',
+        base_schema: firstTable?.schema ?? '',
+        base_table: firstTable?.name ?? '',
+        definition_version: 2,
+        columns: [],
+        filters: {},
+        sources: [],
+        grouping: null,
+        ranking: null,
+        template: null,
+      };
+    }
+
+    return {
+      name: source.name,
+      base_schema: source.base_schema,
+      base_table: source.base_table,
+      definition_version: source.definition_version,
+      columns: source.columns.map(cloneColumn),
+      filters: structuredClone(source.filters ?? {}),
+      sources: source.sources?.map((item) => structuredClone(item)) ?? [],
+      grouping: source.grouping ? structuredClone(source.grouping) : null,
+      ranking: source.ranking ? structuredClone(source.ranking) : null,
+      template: source.template ?? null,
+    };
   }
 
   function resetToDraft(nextDraft: ViewDraft | null) {
-    name = nextDraft?.name ?? '';
-    baseSchema = nextDraft?.base_schema ?? tables[0]?.schema ?? '';
-    baseTable = nextDraft?.base_table ?? tables[0]?.name ?? '';
-    columns = nextDraft?.columns ? nextDraft.columns.map((column) => ({ ...column })) : [];
-    filters = nextDraft?.filters ? { ...nextDraft.filters } : {};
+    const draft = cloneDraft(nextDraft);
+    name = draft.name;
+    baseSchema = draft.base_schema;
+    baseTable = draft.base_table;
+    columns = draft.columns;
+    filters = draft.filters;
+    sources = draft.sources ?? [];
+    grouping = draft.grouping ?? null;
+    ranking = draft.ranking ?? null;
+    template = draft.template ?? null;
     preview = null;
     error = '';
+    showFilters = false;
     pickerOpen = false;
     pickerIndex = null;
     pickerValue = null;
+    templateStage = draft.columns.length === 0 && !draft.template;
   }
 
   $effect(() => {
@@ -89,25 +201,25 @@
     resetToDraft(initialDraft);
   });
 
-  const outputNames = $derived.by(() => computeOutputNames(columns));
-  const columnRows = $derived.by(() =>
-    columns.map((column, index) => ({
-      column,
-      index,
-      outputName: outputNames[index],
-    })),
-  );
-  const filterableColumns = $derived.by(() =>
-    columnRows.filter(({ column }) => !column.aggregate),
-  );
+  async function ensureColumns(schema: string, table: string) {
+    const key = tableKey(schema, table);
+    if (loadedColumns[key]) return loadedColumns[key];
+    const nextColumns = await fetchColumns(schema, table);
+    loadedColumns = {
+      ...loadedColumns,
+      [key]: nextColumns,
+    };
+    return nextColumns;
+  }
 
   $effect(() => {
-    const allowedKeys = new Set(filterableColumns.map(({ outputName }) => outputName));
-    const nextFilters = Object.fromEntries(
-      Object.entries(filters).filter(([key, value]) => allowedKeys.has(key) && value.trim().length > 0),
-    );
-    if (JSON.stringify(nextFilters) !== JSON.stringify(filters)) {
-      filters = nextFilters;
+    if (!baseSchema || !baseTable) return;
+    void ensureColumns(baseSchema, baseTable);
+  });
+
+  $effect(() => {
+    for (const source of sources) {
+      void ensureColumns(source.schema, source.table);
     }
   });
 
@@ -117,7 +229,6 @@
       return;
     }
     const myRequest = ++reachabilityRequestId;
-    reachableLoading = true;
     try {
       const sameSchemaTables = tables.filter((candidate) => candidate.schema === schema);
       const reachable = await Promise.all(
@@ -135,7 +246,7 @@
       reachableTables = sameSchemaTables.filter((_, index) => reachable[index]);
     } finally {
       if (myRequest === reachabilityRequestId) {
-        reachableLoading = false;
+        // no-op
       }
     }
   }
@@ -145,9 +256,120 @@
     void computeReachableTables(baseSchema, baseTable);
   });
 
+  function outputNameForColumn(column: ViewColumn): string {
+    if (column.derived?.alias?.trim()) return column.derived.alias.trim();
+    if (column.alias?.trim()) return column.alias.trim();
+    if (column.aggregate) {
+      const prefix = column.source_id ?? column.source_table;
+      return `${column.aggregate.toLowerCase()}_${prefix}__${column.column_name}`;
+    }
+    if (column.kind === 'derived') {
+      return `${column.column_name}_derived`;
+    }
+    const baseName = column.column_name;
+    const duplicates = columns.filter((candidate) => candidate.column_name === baseName).length;
+    if (duplicates > 1) {
+      return `${column.source_id ?? column.source_table}__${baseName}`;
+    }
+    return baseName;
+  }
+
+  const filterRows = $derived.by<FilterRow[]>(() =>
+    columns
+      .filter((column) => column.aggregate == null)
+      .map((column) => {
+        const key = outputNameForColumn(column);
+        return {
+          key,
+          label: key,
+          filter: filters[key] ?? null,
+        };
+      }),
+  );
+
+  const baseColumns = $derived.by(() => loadedColumns[tableKey(baseSchema, baseTable)] ?? []);
+
+  const fieldOptions = $derived.by(() => {
+    const refs: BuilderOption[] = [];
+    const refColumns = [{ id: null, schema: baseSchema, table: baseTable }, ...sources.map((source) => ({
+      id: source.id,
+      schema: source.schema,
+      table: source.table,
+    }))];
+
+    for (const ref of refColumns) {
+      const infoList = loadedColumns[tableKey(ref.schema, ref.table)] ?? [];
+      for (const info of infoList) {
+        const value = encodeColumnRef({
+          source_id: ref.id,
+          source_schema: ref.schema,
+          source_table: ref.table,
+          column_name: info.name,
+        });
+        refs.push({
+          value,
+          label: prettyFieldLabel(
+            {
+              source_id: ref.id,
+              source_schema: ref.schema,
+              source_table: ref.table,
+              column_name: info.name,
+            },
+            info,
+          ),
+        });
+      }
+    }
+
+    return refs;
+  });
+
+  const latestOptions = $derived.by(() =>
+    fieldOptions.filter((option) => {
+      const ref = decodeColumnRef(option.value);
+      if (!ref) return false;
+      const info = (loadedColumns[tableKey(ref.source_schema, ref.source_table)] ?? []).find(
+        (candidate) => candidate.name === ref.column_name,
+      );
+      return info ? isTemporal(info.data_type) || isNumeric(info.data_type) : false;
+    }),
+  );
+
+  const currentGroupingValue = $derived.by(() => encodeColumnRef(grouping?.keys[0]));
+  const currentLatestValue = $derived.by(() => encodeColumnRef(grouping?.latest_by));
+  const currentRankValue = $derived.by(() => encodeColumnRef(ranking?.order_by));
+  const currentFilterCount = $derived.by(() => Object.keys(filters).length);
+  const builderItems = $derived.by<BuilderGridItem[]>(() =>
+    columns.map((column, index) => ({
+      id: `${outputNameForColumn(column)}-${index}`,
+      label: outputNameForColumn(column),
+      detail: column.derived
+        ? column.derived.operation.replaceAll('_', ' ')
+        : `${column.source_id ?? column.source_table}.${column.column_name}${column.aggregate ? ` • ${column.aggregate}` : ''}`,
+      kind: column.kind === 'derived' ? 'derived' : 'source',
+    })),
+  );
+
+  const templateLabel = $derived.by(() => (template ? templateLabels[template] : ''));
+
+  function buildDraft(): ViewDraft {
+    return {
+      name,
+      base_schema: baseSchema,
+      base_table: baseTable,
+      definition_version: initialDraft?.definition_version ?? 2,
+      columns,
+      filters,
+      sources,
+      grouping,
+      ranking,
+      template,
+    };
+  }
+
   $effect(() => {
     if (previewTimer) clearTimeout(previewTimer);
-    if (!baseSchema || !baseTable || columns.length === 0) {
+    if (!baseSchema || !baseTable || columns.length === 0 || templateStage) {
       preview = null;
       previewLoading = false;
       return;
@@ -157,12 +379,7 @@
     previewLoading = true;
     previewTimer = setTimeout(async () => {
       try {
-        const result = await previewView({
-          base_schema: baseSchema,
-          base_table: baseTable,
-          columns,
-          filters,
-        });
+        const result = await previewView(buildDraft());
         if (myRequest !== previewRequestId) return;
         preview = result;
         error = '';
@@ -182,43 +399,365 @@
     };
   });
 
-  function handleBaseTableChange(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
+  function chooseLikelyColumn(
+    list: ColumnInfo[],
+    matcher: (column: ColumnInfo) => boolean,
+    fallback?: (column: ColumnInfo) => boolean,
+  ): ColumnInfo | null {
+    return list.find(matcher) ?? (fallback ? list.find(fallback) ?? null : list[0] ?? null);
+  }
+
+  function chooseEntityColumn(list: ColumnInfo[]): ColumnInfo | null {
+    return (
+      list.find((column) => column.name.endsWith('_id') && !column.is_primary_key) ??
+      list.find(
+        (column) =>
+          !column.is_primary_key &&
+          !isTemporal(column.data_type) &&
+          !isNumeric(column.data_type),
+      ) ??
+      list.find((column) => column.name === 'id' && !column.is_primary_key) ??
+      list.find((column) => !column.is_primary_key && !isTemporal(column.data_type)) ??
+      list[0] ??
+      null
+    );
+  }
+
+  function chooseTimestampColumn(list: ColumnInfo[]): ColumnInfo | null {
+    return chooseLikelyColumn(
+      list,
+      (column) => isTemporal(column.data_type) && (column.name.includes('time') || column.name.includes('at')),
+      (column) => isTemporal(column.data_type),
+    );
+  }
+
+  function chooseNumericColumn(list: ColumnInfo[]): ColumnInfo | null {
+    return chooseLikelyColumn(
+      list,
+      (column) =>
+        isNumeric(column.data_type) &&
+        !column.is_primary_key &&
+        column.name !== 'id' &&
+        !column.name.endsWith('_id'),
+      (column) =>
+        isNumeric(column.data_type) &&
+        !column.is_primary_key &&
+        column.name !== 'id',
+    );
+  }
+
+  function chooseLabelColumn(list: ColumnInfo[]): ColumnInfo | null {
+    return chooseLikelyColumn(
+      list,
+      (column) => ['label', 'name', 'title', 'event_type'].includes(column.name),
+      (column) => !isNumeric(column.data_type) && !isTemporal(column.data_type),
+    );
+  }
+
+  async function seedTemplate(nextTemplate: ViewTemplateId) {
+    const currentColumns = await ensureColumns(baseSchema, baseTable);
+    const entityColumn = chooseEntityColumn(currentColumns);
+    const timestampColumn = chooseTimestampColumn(currentColumns);
+    const numericColumn = chooseNumericColumn(currentColumns);
+    const labelColumn = chooseLabelColumn(currentColumns);
+
+    template = nextTemplate;
+    filters = {};
+    sources = [];
+    grouping = null;
+    ranking = null;
+    columns = [];
+    error = '';
+
+    if (nextTemplate === 'scratch') {
+      templateStage = false;
+      return;
+    }
+
+    if (nextTemplate === 'most-recent-per-group' && entityColumn && timestampColumn) {
+      columns = [
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: entityColumn.name,
+          alias: entityColumn.name,
+          aggregate: null,
+        },
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: (numericColumn ?? labelColumn ?? timestampColumn).name,
+          alias: numericColumn?.name ?? labelColumn?.name ?? timestampColumn.name,
+          aggregate: 'LATEST',
+        },
+      ];
+      grouping = {
+        keys: [
+          {
+            source_id: null,
+            source_schema: baseSchema,
+            source_table: baseTable,
+            column_name: entityColumn.name,
+          },
+        ],
+        latest_by: {
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: timestampColumn.name,
+          direction: 'desc',
+        },
+      };
+    } else if (nextTemplate === 'counts-per-day' && timestampColumn) {
+      const countTarget = entityColumn ?? timestampColumn;
+      columns = [
+        {
+          kind: 'derived',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: timestampColumn.name,
+          alias: `${timestampColumn.name}_day`,
+          aggregate: null,
+          derived: {
+            alias: `${timestampColumn.name}_day`,
+            operation: 'date_bucket',
+            inputs: [
+              {
+                kind: 'column',
+                source_id: null,
+                source_schema: baseSchema,
+                source_table: baseTable,
+                column_name: timestampColumn.name,
+              },
+            ],
+            options: { bucket: 'day' },
+          },
+        },
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: countTarget.name,
+          alias: 'row_count',
+          aggregate: 'COUNT',
+        },
+      ];
+    } else if (nextTemplate === 'top-n-per-group' && entityColumn && numericColumn) {
+      columns = [
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: entityColumn.name,
+          alias: entityColumn.name,
+          aggregate: null,
+        },
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: (labelColumn ?? numericColumn).name,
+          alias: labelColumn?.name ?? numericColumn.name,
+          aggregate: null,
+        },
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: numericColumn.name,
+          alias: numericColumn.name,
+          aggregate: null,
+        },
+      ];
+      ranking = {
+        partition_by: [
+          {
+            source_id: null,
+            source_schema: baseSchema,
+            source_table: baseTable,
+            column_name: entityColumn.name,
+          },
+        ],
+        order_by: {
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: numericColumn.name,
+          direction: 'desc',
+        },
+        limit: 3,
+      };
+    } else if (nextTemplate === 'totals-by-week' && timestampColumn && numericColumn) {
+      columns = [
+        {
+          kind: 'derived',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: timestampColumn.name,
+          alias: `${timestampColumn.name}_week`,
+          aggregate: null,
+          derived: {
+            alias: `${timestampColumn.name}_week`,
+            operation: 'date_bucket',
+            inputs: [
+              {
+                kind: 'column',
+                source_id: null,
+                source_schema: baseSchema,
+                source_table: baseTable,
+                column_name: timestampColumn.name,
+              },
+            ],
+            options: { bucket: 'week' },
+          },
+        },
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: numericColumn.name,
+          alias: `${numericColumn.name}_total`,
+          aggregate: 'SUM',
+        },
+      ];
+    } else if (nextTemplate === 'previous-row-delta' && entityColumn && timestampColumn && numericColumn) {
+      const prevSource: ViewSourceRef = {
+        id: 'self-previous',
+        kind: 'self',
+        schema: baseSchema,
+        table: baseTable,
+        label: 'This table again (previous row)',
+        self: {
+          entity_column: entityColumn.name,
+          order_column: timestampColumn.name,
+          direction: 'previous',
+        },
+      };
+      sources = [prevSource];
+      columns = [
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: entityColumn.name,
+          alias: entityColumn.name,
+          aggregate: null,
+        },
+        {
+          kind: 'source',
+          source_id: null,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: numericColumn.name,
+          alias: numericColumn.name,
+          aggregate: null,
+        },
+        {
+          kind: 'derived',
+          source_id: prevSource.id,
+          source_schema: baseSchema,
+          source_table: baseTable,
+          column_name: numericColumn.name,
+          alias: `${numericColumn.name}_delta`,
+          aggregate: null,
+          derived: {
+            alias: `${numericColumn.name}_delta`,
+            operation: 'difference',
+            inputs: [
+              {
+                kind: 'column',
+                source_id: null,
+                source_schema: baseSchema,
+                source_table: baseTable,
+                column_name: numericColumn.name,
+              },
+              {
+                kind: 'column',
+                source_id: prevSource.id,
+                source_schema: baseSchema,
+                source_table: baseTable,
+                column_name: numericColumn.name,
+              },
+            ],
+            options: null,
+          },
+        },
+      ];
+    }
+
+    templateStage = false;
+  }
+
+  function handleBaseTableChange(value: string) {
     const [schema, table] = value.split('.');
     baseSchema = schema ?? '';
     baseTable = table ?? '';
     columns = [];
     filters = {};
-    preview = null;
+    sources = [];
+    grouping = null;
+    ranking = null;
+    template = templateStage ? template : null;
+    error = '';
   }
 
   function openPicker(index: number | null) {
     pickerIndex = index;
-    pickerValue = index == null
-      ? {
-          source_schema: baseSchema,
-          source_table: baseTable,
-          column_name: '',
-          alias: null,
-          aggregate: null,
-        }
-      : { ...columns[index] };
+    pickerValue = index == null ? null : cloneColumn(columns[index]);
     pickerOpen = true;
   }
 
-  function handlePickerSave(nextColumn: ViewColumn) {
-    if (pickerIndex == null) {
-      columns = [...columns, nextColumn];
-    } else {
-      columns = columns.map((column, index) => (index === pickerIndex ? nextColumn : column));
+  function pruneUnusedSources(nextColumns: ViewColumn[]) {
+    const referenced = new Set<string>();
+    for (const column of nextColumns) {
+      if (column.source_id) referenced.add(column.source_id);
+      for (const input of column.derived?.inputs ?? []) {
+        if (input.source_id) referenced.add(input.source_id);
+      }
     }
+    sources = sources.filter((source) => referenced.has(source.id));
+  }
+
+  function handlePickerSave(payload: PickerPayload) {
+    let nextColumns = [...columns];
+    if (pickerIndex == null) {
+      nextColumns = [...nextColumns, payload.column];
+    } else {
+      nextColumns[pickerIndex] = payload.column;
+    }
+
+    if (payload.source) {
+      const existingIndex = sources.findIndex((source) => source.id === payload.source?.id);
+      if (existingIndex >= 0) {
+        sources = sources.map((source, index) => (index === existingIndex ? payload.source! : source));
+      } else {
+        sources = [...sources, payload.source];
+      }
+    }
+
+    columns = nextColumns;
+    pruneUnusedSources(nextColumns);
     pickerOpen = false;
     pickerIndex = null;
     pickerValue = null;
   }
 
   function removeColumn(index: number) {
-    columns = columns.filter((_, currentIndex) => currentIndex !== index);
+    const nextColumns = columns.filter((_, currentIndex) => currentIndex !== index);
+    columns = nextColumns;
+    pruneUnusedSources(nextColumns);
   }
 
   function moveColumn(index: number, direction: -1 | 1) {
@@ -230,14 +769,123 @@
     columns = nextColumns;
   }
 
-  function updateFilter(outputName: string, value: string) {
+  function updateFilter(key: string, nextValue: ViewFilterValue | null) {
+    if (!nextValue) {
+      const nextFilters = { ...filters };
+      delete nextFilters[key];
+      filters = nextFilters;
+      return;
+    }
     filters = {
       ...filters,
-      [outputName]: value,
+      [key]: nextValue,
+    };
+  }
+
+  function setFilterOperator(key: string, operator: ViewFilterValue['op']) {
+    if (operator === 'between') {
+      updateFilter(key, { op: 'between', value: ['', ''] });
+      return;
+    }
+    if (operator === 'is_empty') {
+      updateFilter(key, { op: 'is_empty' });
+      return;
+    }
+    if (operator === 'in_list') {
+      updateFilter(key, { op: 'in_list', value: [] });
+      return;
+    }
+    updateFilter(key, { op: operator, value: '' });
+  }
+
+  function setFilterPrimaryValue(key: string, value: string) {
+    const current = filters[key];
+    if (!current) return;
+    if (current.op === 'between') {
+      updateFilter(key, { ...current, value: [value, current.value[1]] });
+      return;
+    }
+    if (current.op === 'in_list') {
+      updateFilter(key, {
+        ...current,
+        value: value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      });
+      return;
+    }
+    if (current.op === 'is_empty') return;
+    updateFilter(key, { ...current, value });
+  }
+
+  function setFilterSecondaryValue(key: string, value: string) {
+    const current = filters[key];
+    if (!current || current.op !== 'between') return;
+    updateFilter(key, { ...current, value: [current.value[0], value] });
+  }
+
+  function handleGroupingChange(value: string) {
+    const ref = decodeColumnRef(value);
+    if (!ref) {
+      grouping = null;
+      return;
+    }
+    grouping = {
+      keys: [ref],
+      latest_by: grouping?.latest_by ?? null,
+    };
+  }
+
+  function handleLatestByChange(value: string) {
+    const latestBy = toOrderBy(value, 'desc');
+    if (!latestBy) {
+      grouping = grouping ? { ...grouping, latest_by: null } : null;
+      return;
+    }
+    grouping = {
+      keys: grouping?.keys?.length ? grouping.keys : [latestBy],
+      latest_by: latestBy,
+    };
+  }
+
+  function handleToggleRanking() {
+    if (ranking) {
+      ranking = null;
+      return;
+    }
+    const fallback = decodeColumnRef(currentGroupingValue) ?? decodeColumnRef(fieldOptions[0]?.value ?? '');
+    ranking = fallback
+      ? {
+          partition_by: [fallback],
+          order_by: toOrderBy(currentRankValue || fieldOptions[0]?.value || '', 'desc'),
+          limit: 3,
+        }
+      : null;
+  }
+
+  function handleRankLimitChange(value: number) {
+    if (!ranking) return;
+    ranking = {
+      ...ranking,
+      limit: Number.isFinite(value) && value > 0 ? value : ranking.limit,
+    };
+  }
+
+  function handleRankByChange(value: string) {
+    if (!ranking) return;
+    ranking = {
+      ...ranking,
+      order_by: toOrderBy(value, 'desc'),
     };
   }
 
   async function handleSave() {
+    if ((initialDraft?.definition_version ?? 2) < 2) {
+      const proceed = window.confirm('Saving this draft upgrades the saved-view definition to version 2. Continue?');
+      if (!proceed) return;
+    }
+
     const trimmedName = name.trim();
     if (!trimmedName) {
       error = 'Saved view name must not be empty';
@@ -248,7 +896,7 @@
       return;
     }
     if (columns.length === 0) {
-      error = 'Select at least one output column';
+      error = 'Add at least one output column';
       return;
     }
 
@@ -256,13 +904,10 @@
     error = '';
     try {
       const saved = await createView({
+        ...buildDraft(),
         name: trimmedName,
-        base_schema: baseSchema,
-        base_table: baseTable,
-        columns,
-        filters,
       });
-      onSaved(saved);
+      await onSaved(saved);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to save view';
     } finally {
@@ -271,176 +916,148 @@
   }
 </script>
 
-<div class="builder">
-  <div class="builder-header">
-    <div>
-      <h2>Custom view builder</h2>
-      <p>Choose a base table, add joined columns, and preview the result without writing SQL.</p>
-      {#if sourceLabel}
-        <span class="source-pill">Started from {sourceLabel}</span>
-      {/if}
-    </div>
-    <button type="button" class="icon-btn" aria-label="Close builder" onclick={onCancel}>
-      <X size={16} />
-    </button>
-  </div>
-
-  <div class="builder-grid">
-    <section class="panel">
-      <div class="panel-heading">
-        <h3>Definition</h3>
-      </div>
-
-      <label class="field">
-        <span>Saved view name</span>
-        <input bind:value={name} type="text" placeholder="Orders with customers" />
-      </label>
-
-      <label class="field">
-        <span>Base table</span>
-        <select value={`${baseSchema}.${baseTable}`} onchange={handleBaseTableChange}>
-          {#each tables as table (`${table.schema}.${table.name}`)}
-            <option value={`${table.schema}.${table.name}`}>{table.schema}.{table.name}</option>
-          {/each}
-        </select>
-      </label>
-
-      <div class="panel-subheader">
-        <div>
-          <h4>Output columns</h4>
-          <p>{reachableLoading ? 'Finding FK-reachable tables…' : 'Each selection becomes an exposed output column.'}</p>
-        </div>
-        <button type="button" class="secondary" disabled={!baseSchema || !baseTable || reachableLoading} onclick={() => openPicker(null)}>
-          <Plus size={14} />
-          <span>Add column</span>
-        </button>
-      </div>
-
-      {#if columnRows.length > 0}
-        <div class="column-list">
-          {#each columnRows as { column, index, outputName } (index)}
-            <div class="column-row">
-              <div class="column-copy">
-                <strong>{outputName}</strong>
-                <span>{describeColumn(column, outputName)}</span>
-              </div>
-              <div class="column-actions">
-                <button type="button" class="icon-btn" aria-label={`Move ${outputName} up`} onclick={() => moveColumn(index, -1)} disabled={index === 0}>
-                  <ArrowUp size={14} />
-                </button>
-                <button type="button" class="icon-btn" aria-label={`Move ${outputName} down`} onclick={() => moveColumn(index, 1)} disabled={index === columnRows.length - 1}>
-                  <ArrowDown size={14} />
-                </button>
-                <button type="button" class="icon-btn" aria-label={`Edit ${outputName}`} onclick={() => openPicker(index)}>
-                  <Pencil size={14} />
-                </button>
-                <button type="button" class="icon-btn" aria-label={`Remove ${outputName}`} onclick={() => removeColumn(index)}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <div class="empty-card">No columns selected yet. Add at least one column to preview and save the view.</div>
-      {/if}
-
-      <div class="panel-subheader">
-        <div>
-          <h4>Definition filters</h4>
-          <p>These filters are stored with the view and applied before preview and browsing.</p>
-        </div>
-      </div>
-
-      {#if filterableColumns.length > 0}
-        <div class="filter-list">
-          {#each filterableColumns as { outputName }}
-            <label class="field" for={`filter-${outputName}`}>
-              <span>{outputName}</span>
-              <input
-                id={`filter-${outputName}`}
-                type="text"
-                value={filters[outputName] ?? ''}
-                oninput={(event) => updateFilter(outputName, (event.currentTarget as HTMLInputElement).value)}
-                placeholder={`Filter ${outputName}`}
-              />
-            </label>
-          {/each}
-        </div>
-      {:else}
-        <div class="empty-card">Definition filters are available for non-aggregate output columns.</div>
-      {/if}
-
-      {#if error}
-        <p class="error">{error}</p>
-      {/if}
-
-      <div class="builder-actions">
-        <button type="button" class="secondary" onclick={onCancel}>Cancel</button>
-        <button type="button" class="primary" disabled={saving} onclick={handleSave}>
-          {saving ? 'Saving…' : 'Save view'}
-        </button>
-      </div>
-    </section>
-
-    <section class="panel preview-panel">
-      <div class="panel-heading">
-        <div>
-          <h3>Live preview</h3>
-          <p>Preview requests are debounced and capped at 100 rows.</p>
-        </div>
-        {#if previewLoading}
-          <span class="loading-chip">Refreshing…</span>
-        {/if}
-      </div>
-
-      {#if preview && preview.columns.length > 0}
-        <div class="preview-table-wrap">
-          <table class="preview-table">
-            <thead>
-              <tr>
-                {#each preview.columns as column (column.name)}
-                  <th>{column.display_name}</th>
-                {/each}
-              </tr>
-            </thead>
-            <tbody>
-              {#each preview.rows as row, rowIndex (rowIndex)}
-                <tr>
-                  {#each preview.columns as column (column.name)}
-                    <td>{String(row[column.name] ?? '')}</td>
-                  {/each}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <div class="empty-card preview-empty">
-          {#if columns.length === 0}
-            Add columns to preview the custom view.
-          {:else if previewLoading}
-            Running preview…
-          {:else}
-            No preview rows yet.
-          {/if}
-        </div>
-      {/if}
-    </section>
-  </div>
-
-  <ColumnPickerPopover
-    open={pickerOpen}
-    reachableTables={reachableTables}
-    value={pickerValue}
-    onSave={handlePickerSave}
-    onClose={() => {
-      pickerOpen = false;
-      pickerIndex = null;
-      pickerValue = null;
-    }}
+{#if templateStage}
+  <ViewBuilderTemplates
+    {tables}
+    baseValue={`${baseSchema}.${baseTable}`}
+    onBaseChange={handleBaseTableChange}
+    onSelect={(nextTemplate) => void seedTemplate(nextTemplate)}
+    onCancel={onCancel}
   />
-</div>
+{:else}
+  <div class="builder">
+    <ViewBuilderTopBar
+      {tables}
+      {sourceLabel}
+      {templateLabel}
+      {saving}
+      name={name}
+      baseValue={`${baseSchema}.${baseTable}`}
+      groupingKey={currentGroupingValue}
+      groupingOptions={fieldOptions}
+      latestBy={currentLatestValue}
+      latestOptions={latestOptions}
+      rankBy={currentRankValue}
+      rankingEnabled={ranking != null}
+      rankLimit={ranking?.limit ?? 3}
+      filterCount={currentFilterCount}
+      onNameChange={(value) => (name = value)}
+      onBaseChange={handleBaseTableChange}
+      onGroupingChange={handleGroupingChange}
+      onLatestByChange={handleLatestByChange}
+      onRankByChange={handleRankByChange}
+      onToggleRanking={handleToggleRanking}
+      onRankLimitChange={handleRankLimitChange}
+      onToggleFilters={() => (showFilters = !showFilters)}
+      onSave={() => void handleSave()}
+      onCancel={onCancel}
+    />
+
+    {#if showFilters}
+      <section class="filter-panel" data-testid="view-builder-filter-panel">
+        <div class="filter-panel__header">
+          <div>
+            <p class="eyebrow">Definition filters</p>
+            <h3>Store these rules with the view</h3>
+          </div>
+        </div>
+
+        {#if filterRows.length > 0}
+          <div class="filter-panel__rows">
+            {#each filterRows as row (row.key)}
+              <div class="filter-row">
+                <strong>{row.label}</strong>
+                <select
+                  value={row.filter?.op ?? ''}
+                  onchange={(event) => {
+                    const operator = (event.currentTarget as HTMLSelectElement).value as ViewFilterValue['op'];
+                    if (!operator) {
+                      updateFilter(row.key, null);
+                    } else {
+                      setFilterOperator(row.key, operator);
+                    }
+                  }}
+                >
+                  <option value="">No filter</option>
+                  <option value="eq">Equals</option>
+                  <option value="contains">Contains</option>
+                  <option value="starts_with">Starts with</option>
+                  <option value="gt">Greater than</option>
+                  <option value="gte">Greater than or equal</option>
+                  <option value="lt">Less than</option>
+                  <option value="lte">Less than or equal</option>
+                  <option value="between">Between</option>
+                  <option value="is_empty">Is empty</option>
+                  <option value="in_list">In list</option>
+                </select>
+
+                {#if row.filter?.op === 'between'}
+                  <input
+                    type="text"
+                    value={row.filter.value[0]}
+                    placeholder="Start"
+                    oninput={(event) => setFilterPrimaryValue(row.key, (event.currentTarget as HTMLInputElement).value)}
+                  />
+                  <input
+                    type="text"
+                    value={row.filter.value[1]}
+                    placeholder="End"
+                    oninput={(event) => setFilterSecondaryValue(row.key, (event.currentTarget as HTMLInputElement).value)}
+                  />
+                {:else if row.filter?.op === 'in_list'}
+                  <input
+                    type="text"
+                    value={row.filter.value.join(', ')}
+                    placeholder="one, two, three"
+                    oninput={(event) => setFilterPrimaryValue(row.key, (event.currentTarget as HTMLInputElement).value)}
+                  />
+                {:else if row.filter?.op !== 'is_empty'}
+                  <input
+                    type="text"
+                    value={'value' in (row.filter ?? {}) ? row.filter?.value ?? '' : ''}
+                    placeholder="Value"
+                    oninput={(event) => setFilterPrimaryValue(row.key, (event.currentTarget as HTMLInputElement).value)}
+                  />
+                {:else}
+                  <span class="filter-row__hint">Rows with no value in this output.</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="filter-panel__empty">Add a column first, then store filters against its output name.</div>
+        {/if}
+      </section>
+    {/if}
+
+    <ViewBuilderGrid
+      items={builderItems}
+      {preview}
+      {previewLoading}
+      {error}
+      onAdd={() => openPicker(null)}
+      onEdit={openPicker}
+      onRemove={removeColumn}
+      onMove={moveColumn}
+    />
+
+    <ColumnPicker
+      open={pickerOpen}
+      {tables}
+      {reachableTables}
+      {sources}
+      baseSchema={baseSchema}
+      baseTable={baseTable}
+      value={pickerValue}
+      onSave={handlePickerSave}
+      onClose={() => {
+        pickerOpen = false;
+        pickerIndex = null;
+        pickerValue = null;
+      }}
+    />
+  </div>
+{/if}
 
 <style>
   .builder {
@@ -448,209 +1065,69 @@
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-lg);
+    min-height: 0;
     padding: var(--sk-space-lg) var(--sk-space-2xl);
     overflow: auto;
   }
 
-  .builder-header,
-  .panel-heading,
-  .panel-subheader {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--sk-space-md);
-  }
-
-  .builder-header h2,
-  .panel-heading h3,
-  .panel-subheader h4 {
-    margin: 0 0 var(--sk-space-xs);
-  }
-
-  .builder-header p,
-  .panel-heading p,
-  .panel-subheader p {
-    margin: 0;
-    color: var(--sk-secondary-strong);
-  }
-
-  .source-pill {
-    margin-top: var(--sk-space-sm);
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    background: rgba(0, 169, 165, 0.08);
-    color: var(--sk-accent);
-    padding: 4px 10px;
-    font-size: var(--sk-font-size-xs);
-    font-weight: 600;
-  }
-
-  .builder-grid {
-    display: grid;
-    grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
-    gap: var(--sk-space-lg);
-    min-height: 0;
-  }
-
-  .panel {
+  .filter-panel {
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-md);
-    min-height: 0;
     border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-lg);
-    background: rgba(255, 255, 255, 0.68);
-    box-shadow: var(--sk-shadow-card);
-    padding: var(--sk-space-xl);
-  }
-
-  .preview-panel {
-    min-width: 0;
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sk-space-xs);
-    font-size: var(--sk-font-size-sm);
-    color: var(--sk-secondary-strong);
-  }
-
-  input,
-  select {
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.85);
-    color: var(--sk-text);
-    font: inherit;
-    padding: var(--sk-space-sm) var(--sk-space-md);
-  }
-
-  .column-list,
-  .filter-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sk-space-sm);
-  }
-
-  .column-row {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--sk-space-md);
-    padding: var(--sk-space-sm);
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-md);
+    border-radius: var(--sk-radius-xl);
     background: rgba(255, 255, 255, 0.78);
-  }
-
-  .column-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .column-copy span {
-    color: var(--sk-muted);
-    font-size: var(--sk-font-size-sm);
-  }
-
-  .column-actions,
-  .builder-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--sk-space-xs);
-  }
-
-  .builder-actions {
-    justify-content: flex-end;
-    margin-top: auto;
-  }
-
-  .primary,
-  .secondary,
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border-radius: var(--sk-radius-md);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .primary {
-    border: none;
-    background: var(--sk-accent);
-    color: white;
-    padding: var(--sk-space-sm) var(--sk-space-lg);
-  }
-
-  .secondary {
-    border: 1px solid var(--sk-border-light);
-    background: transparent;
-    color: var(--sk-text);
-    padding: var(--sk-space-sm) var(--sk-space-lg);
-  }
-
-  .icon-btn {
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--sk-border-light);
-    background: rgba(255, 255, 255, 0.7);
-    color: var(--sk-secondary-strong);
-    flex-shrink: 0;
-  }
-
-  .empty-card {
-    border: 1px dashed var(--sk-border-light);
-    border-radius: var(--sk-radius-md);
+    box-shadow: var(--sk-shadow-card);
     padding: var(--sk-space-lg);
-    color: var(--sk-muted);
-    background: rgba(255, 255, 255, 0.48);
   }
 
-  .preview-table-wrap {
-    overflow: auto;
+  .filter-panel__header h3 {
+    margin: 0;
+  }
+
+  .eyebrow {
+    margin: 0 0 var(--sk-space-xs);
+    color: var(--sk-accent);
+    font-size: var(--sk-font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .filter-panel__rows {
+    display: grid;
+    gap: var(--sk-space-md);
+  }
+
+  .filter-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(0, 1fr));
+    gap: var(--sk-space-sm);
+    align-items: center;
+  }
+
+  .filter-row select,
+  .filter-row input {
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.84);
+    color: var(--sk-text);
+    font: inherit;
+    padding: 8px 12px;
   }
 
-  .preview-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--sk-font-size-sm);
+  .filter-row__hint,
+  .filter-panel__empty {
+    color: var(--sk-secondary-strong);
   }
 
-  .preview-table th,
-  .preview-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--sk-border-light);
-    text-align: left;
-    white-space: nowrap;
-  }
+  @media (max-width: 1100px) {
+    .builder {
+      padding-inline: var(--sk-space-lg);
+    }
 
-  .preview-table th {
-    position: sticky;
-    top: 0;
-    background: rgba(245, 240, 235, 0.92);
-  }
-
-  .loading-chip {
-    font-size: var(--sk-font-size-xs);
-    color: var(--sk-muted);
-  }
-
-  .error {
-    margin: 0;
-    color: #b91c1c;
-  }
-
-  @media (max-width: 980px) {
-    .builder-grid {
-      grid-template-columns: 1fr;
+    .filter-row {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

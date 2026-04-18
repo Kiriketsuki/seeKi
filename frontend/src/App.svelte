@@ -4,11 +4,13 @@
   import SettingsNav from './components/SettingsNav.svelte';
   import SettingsContent from './components/SettingsContent.svelte';
   import TableList from './components/TableList.svelte';
-  import ViewList from './components/ViewList.svelte';
+  import DataPanels from './components/DataPanels.svelte';
   import ViewBuilder from './components/ViewBuilder.svelte';
   import ActionDock from './components/ActionDock.svelte';
   import TableHeader from './components/TableHeader.svelte';
   import DataGrid from './components/DataGrid.svelte';
+  import GridRefreshToolbar from './components/GridRefreshToolbar.svelte';
+  import QuickStatsBar from './components/QuickStatsBar.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
@@ -48,9 +50,14 @@
     TablesSurface,
     UpdateStatus,
     ViewDraft,
+    ViewDefinitionFilters,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
-  import { sidebarMode } from './lib/stores';
+  import {
+    createGridRefreshController,
+    sidebarMode,
+    type GridRefreshSnapshot,
+  } from './lib/stores';
   import {
     buildAppearanceSettingsEntries,
     buildBrandingSettingsEntries,
@@ -62,13 +69,30 @@
     sidebarMode.set(mode);
   }
 
+  function normalizeViewFilters(
+    source: Record<string, unknown> | undefined,
+  ): ViewDefinitionFilters {
+    const entries = Object.entries(source ?? {}).map(([key, value]) => {
+      if (typeof value === 'string') {
+        return [key, { op: 'contains', value }] as const;
+      }
+      return [key, structuredClone(value)] as const;
+    });
+    return Object.fromEntries(entries) as ViewDefinitionFilters;
+  }
+
   function cloneDraft(source: ViewDraft): ViewDraft {
     return {
       name: source.name,
       base_schema: source.base_schema,
       base_table: source.base_table,
+      definition_version: source.definition_version,
       columns: source.columns.map((column) => ({ ...column })),
-      filters: { ...source.filters },
+      filters: normalizeViewFilters(source.filters),
+      sources: source.sources?.map((sourceRef) => structuredClone(sourceRef)) ?? [],
+      grouping: source.grouping ? structuredClone(source.grouping) : null,
+      ranking: source.ranking ? structuredClone(source.ranking) : null,
+      template: source.template ?? null,
     };
   }
 
@@ -77,8 +101,13 @@
       name,
       base_schema: view.base_schema,
       base_table: view.base_table,
+      definition_version: view.definition_version,
       columns: view.columns.map((column) => ({ ...column })),
-      filters: { ...view.filters },
+      filters: normalizeViewFilters(view.filters),
+      sources: view.sources?.map((sourceRef) => structuredClone(sourceRef)) ?? [],
+      grouping: view.grouping ? structuredClone(view.grouping) : null,
+      ranking: view.ranking ? structuredClone(view.ranking) : null,
+      template: view.template ?? null,
     };
   }
 
@@ -126,6 +155,16 @@
   let updateStatusPollId: ReturnType<typeof setInterval> | null = null;
   let pendingModeShortcut: 'g' | null = null;
   let selectRequestId = 0;
+  let refreshSnapshot: GridRefreshSnapshot = $state({
+    surfaceKey: null,
+    intervalMs: 0,
+    lastRefreshedAt: null,
+    inFlight: false,
+  });
+
+  const refreshController = createGridRefreshController(async () => {
+    await loadRows(currentPage, sortState, filters, searchTerm);
+  });
 
   let activeFilterCount = $derived(
     Object.values(filters).filter((value) => value.trim().length > 0).length
@@ -138,9 +177,24 @@
   let visibleColumns = $derived.by(
     () => columns.filter((column) => columnVisibility[column.name] !== false)
   );
+  let focusedTextColumnName = $derived.by(() => {
+    const preferred = visibleColumns.find((column) =>
+      !['smallint', 'integer', 'bigint', 'real', 'double precision', 'numeric', 'boolean'].includes(column.data_type)
+    );
+    return preferred?.name ?? null;
+  });
   let selectedTableKey = $derived.by(() =>
     selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : ''
   );
+  let selectedRefreshSurfaceKey = $derived.by(() => {
+    if (tablesSurface.kind === 'view' && selectedView) {
+      return `view:${selectedView.id}`;
+    }
+    if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
+      return `table:${selectedSchema}.${selectedTable}`;
+    }
+    return null;
+  });
   let selectedTableDisplayName = $derived.by(
     () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
   );
@@ -183,6 +237,10 @@
       ? 'sk-density--compact'
       : 'sk-density--comfortable'
   );
+
+  $effect(() => {
+    refreshController.setSurface(selectedRefreshSurfaceKey);
+  });
 
   function clearModeShortcut() {
     if (modeShortcutId !== null) {
@@ -228,6 +286,17 @@
       // Leave the current in-memory view list alone if refresh fails.
     }
   }
+
+  onMount(() => {
+    const unsubscribe = refreshController.subscribe((value) => {
+      refreshSnapshot = value;
+    });
+
+    return () => {
+      unsubscribe();
+      refreshController.destroy();
+    };
+  });
 
   onMount(() => {
     void (async () => {
@@ -595,6 +664,7 @@
       sortState = initialSortState;
       filters = initialFilters;
       searchTerm = initialSearch;
+      refreshController.markRefreshed();
     } catch (e) {
       if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load table';
@@ -629,6 +699,7 @@
       sortState = [];
       filters = {};
       searchTerm = '';
+      refreshController.markRefreshed();
     } catch (e) {
       if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load saved view';
@@ -662,6 +733,7 @@
         columns = result.columns;
         columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
       }
+      refreshController.markRefreshed();
     } catch (e) {
       if (myRequest !== selectRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load rows';
@@ -780,6 +852,14 @@
     window.open(`${base}${qs ? `?${qs}` : ''}`, '_blank');
   }
 
+  async function handleRefreshNow() {
+    try {
+      await refreshController.refreshNow();
+    } catch (e) {
+      tableError = e instanceof Error ? e.message : 'Failed to refresh rows';
+    }
+  }
+
   async function handleSaveBranding(nextBranding: BrandingSettings) {
     const entries = buildBrandingSettingsEntries(nextBranding);
     await saveSettings(entries);
@@ -829,8 +909,13 @@
         name: '',
         base_schema: baseTable.schema,
         base_table: baseTable.name,
+        definition_version: 2,
         columns: [],
         filters: {},
+        sources: [],
+        grouping: null,
+        ranking: null,
+        template: null,
       },
       selectedTableDisplayName || `${baseTable.schema}.${baseTable.name}`,
     );
@@ -997,24 +1082,20 @@
         {#key $sidebarMode}
           <div class="sidebar-panel-enter">
             {#if $sidebarMode === 'tables'}
-              <div class="tables-sidebar">
-                <TableList
-                  {tables}
-                  selectedSchema={tablesSurface.kind === 'table' ? selectedSchema : ''}
-                  selectedTable={tablesSurface.kind === 'table' ? selectedTable : ''}
-                  onSelect={selectTable}
-                />
-                <ViewList
-                  views={savedViews}
-                  activeViewId={selectedViewId}
-                  disabled={tables.length === 0}
-                  onSelect={openSavedView}
-                  onCreate={handleCreateView}
-                  onRename={(view, name) => void handleRenameSavedView(view, name)}
-                  onDelete={(view) => void handleDeleteSavedView(view)}
-                  onDuplicate={(view) => void handleDuplicateView(view)}
-                />
-              </div>
+              <DataPanels
+                {tables}
+                selectedSchema={tablesSurface.kind === 'table' ? selectedSchema : ''}
+                selectedTable={tablesSurface.kind === 'table' ? selectedTable : ''}
+                onSelectTable={selectTable}
+                views={savedViews}
+                activeViewId={selectedViewId}
+                viewsDisabled={tables.length === 0}
+                onSelectView={openSavedView}
+                onCreateView={handleCreateView}
+                onRenameView={(view, name) => void handleRenameSavedView(view, name)}
+                onDeleteView={(view) => void handleDeleteSavedView(view)}
+                onDuplicateView={(view) => void handleDuplicateView(view)}
+              />
             {:else}
               <SettingsNav showUpdateBadge={updateAvailable} />
             {/if}
@@ -1067,12 +1148,27 @@
                   </div>
                 {/if}
               </div>
+              <GridRefreshToolbar
+                surfaceKey={selectedRefreshSurfaceKey ?? ''}
+                intervalMs={refreshSnapshot.intervalMs}
+                lastRefreshedAt={refreshSnapshot.lastRefreshedAt}
+                refreshing={refreshSnapshot.inFlight || tableLoading}
+                disabled={!hasSurfaceSelection || tablesSurface.kind === 'builder' || tableLoading}
+                onRefreshNow={() => void handleRefreshNow()}
+                onIntervalChange={(intervalMs) => refreshController.setIntervalMs(intervalMs)}
+              />
               {#if tableError}
                 <div class="table-error-banner">
                   <span>{tableError}</span>
                   <button class="dismiss-btn" onclick={() => (tableError = null)}>Dismiss</button>
                 </div>
               {/if}
+              <QuickStatsBar
+                totalRows={queryResult?.total_rows ?? 0}
+                rows={queryResult?.rows ?? []}
+                {visibleColumns}
+                {focusedTextColumnName}
+              />
               <div class="grid-area">
                 <div class="grid-shell">
                   <div class="grid-content">

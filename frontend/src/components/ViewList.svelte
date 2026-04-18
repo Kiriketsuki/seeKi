@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Pencil, Plus, Trash2 } from 'lucide-svelte';
+  import { Copy, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-svelte';
   import type { SavedViewSummary } from '../lib/types';
 
   let {
@@ -11,6 +11,7 @@
     onRename,
     onDelete,
     onDuplicate,
+    showHeader = true,
   }: {
     views: SavedViewSummary[];
     activeViewId: number | null;
@@ -20,72 +21,182 @@
     onRename: (view: SavedViewSummary, name: string) => void;
     onDelete: (view: SavedViewSummary) => void;
     onDuplicate: (view: SavedViewSummary) => void;
+    showHeader?: boolean;
   } = $props();
 
   let search = $state('');
+  let openMenuFor = $state<number | null>(null);
 
   const filteredViews = $derived.by(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return views;
+    if (!query) {
+      return views;
+    }
+
     return views.filter((view) => view.name.toLowerCase().includes(query));
   });
+
   function handleRename(view: SavedViewSummary) {
     const nextName = window.prompt('Rename saved view', view.name)?.trim();
-    if (!nextName || nextName === view.name) return;
+    openMenuFor = null;
+    if (!nextName || nextName === view.name) {
+      return;
+    }
+
     onRename(view, nextName);
   }
 
   function handleDelete(view: SavedViewSummary) {
-    if (!window.confirm(`Delete saved view "${view.name}"?`)) return;
+    const confirmed = window.confirm(`Delete saved view "${view.name}"?`);
+    openMenuFor = null;
+    if (!confirmed) {
+      return;
+    }
+
     onDelete(view);
+  }
+
+  function handleWindowClick(event: MouseEvent) {
+    if (!(event.target instanceof HTMLElement)) {
+      openMenuFor = null;
+      return;
+    }
+
+    if (!event.target.closest('[data-view-actions-root="true"]')) {
+      openMenuFor = null;
+    }
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      openMenuFor = null;
+    }
   }
 </script>
 
-<section class="view-list">
-  <div class="section-header">
-    <div>
-      <h3>Views</h3>
-      <p>Saved joined and aggregated views</p>
-    </div>
-    <button type="button" class="create-btn" onclick={onCreate} disabled={disabled}>
-      <Plus size={14} />
-      <span>Create</span>
-    </button>
-  </div>
+<svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
-  <input
-    bind:value={search}
-    class="view-search"
-    type="search"
-    placeholder="Search views"
-    aria-label="Search saved views"
-    spellcheck="false"
-  />
+<section class="view-list" class:headerless={!showHeader} data-testid="view-list">
+  {#if showHeader}
+    <div class="section-header">
+      <div>
+        <h3>Views</h3>
+        <p>Saved joined and aggregated views</p>
+      </div>
+      <button
+        type="button"
+        class="create-btn"
+        onclick={onCreate}
+        disabled={disabled}
+        data-testid="view-list-create"
+      >
+        <Plus size={14} />
+        <span>Create</span>
+      </button>
+    </div>
+  {/if}
+
+  <label class="panel-search view-search" data-testid="view-list-search">
+    <Search size={14} />
+    <input
+      bind:value={search}
+      class="panel-search-input view-search-input"
+      type="search"
+      placeholder="Search views"
+      aria-label="Search saved views"
+      spellcheck="false"
+      data-testid="view-search-input"
+    />
+  </label>
 
   {#if filteredViews.length > 0}
-    <div class="items">
+    <div class="items" data-testid="view-list-items">
       {#each filteredViews as view (view.id)}
         <div class="view-row" class:active={activeViewId === view.id}>
-          <button type="button" class="view-item" onclick={() => onSelect(view)} disabled={disabled}>
+          <button
+            type="button"
+            class="view-item"
+            onclick={() => onSelect(view)}
+            disabled={disabled}
+            data-testid={`view-item-${view.id}`}
+          >
             <span class="view-item-name">{view.name}</span>
             <span class="view-item-meta">{view.base_schema}.{view.base_table}</span>
           </button>
-          <div class="view-actions">
-            <button type="button" class="icon-btn" aria-label={`Duplicate ${view.name}`} onclick={() => onDuplicate(view)} disabled={disabled}>
-              <Plus size={14} />
+          <div
+            class="view-actions"
+            data-view-actions-root="true"
+            class:menu-open={openMenuFor === view.id}
+          >
+            <button
+              type="button"
+              class="icon-btn actions-trigger"
+              aria-label={`Open actions for ${view.name}`}
+              aria-expanded={openMenuFor === view.id}
+              onclick={(event) => {
+                event.stopPropagation();
+                openMenuFor = openMenuFor === view.id ? null : view.id;
+              }}
+              disabled={disabled}
+              data-testid={`view-actions-trigger-${view.id}`}
+            >
+              <MoreHorizontal size={14} />
             </button>
-            <button type="button" class="icon-btn" aria-label={`Rename ${view.name}`} onclick={() => handleRename(view)} disabled={disabled}>
-              <Pencil size={14} />
-            </button>
-            <button type="button" class="icon-btn" aria-label={`Delete ${view.name}`} onclick={() => handleDelete(view)} disabled={disabled}>
-              <Trash2 size={14} />
-            </button>
+            {#if openMenuFor === view.id}
+              <div class="actions-menu" role="menu" data-testid={`view-actions-menu-${view.id}`}>
+                <button
+                  type="button"
+                  class="actions-menu-item"
+                  role="menuitem"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    openMenuFor = null;
+                    onDuplicate(view);
+                  }}
+                  disabled={disabled}
+                  data-testid={`view-actions-copy-${view.id}`}
+                >
+                  <Copy size={14} />
+                  <span>Copy to edit</span>
+                </button>
+                <button
+                  type="button"
+                  class="actions-menu-item"
+                  role="menuitem"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    handleRename(view);
+                  }}
+                  disabled={disabled}
+                  data-testid={`view-actions-rename-${view.id}`}
+                >
+                  <Pencil size={14} />
+                  <span>Rename</span>
+                </button>
+                <button
+                  type="button"
+                  class="actions-menu-item actions-menu-item--danger"
+                  role="menuitem"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    handleDelete(view);
+                  }}
+                  disabled={disabled}
+                  data-testid={`view-actions-delete-${view.id}`}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete</span>
+                </button>
+              </div>
+            {/if}
           </div>
         </div>
       {/each}
     </div>
   {:else}
-    <div class="empty-state">No saved views match “{search.trim()}”.</div>
+    <div class="empty-state" data-testid="view-list-empty">
+      No saved views match “{search.trim()}”.
+    </div>
   {/if}
 </section>
 
@@ -95,7 +206,10 @@
     flex-direction: column;
     gap: var(--sk-space-sm);
     padding: var(--sk-space-sm) var(--sk-space-md) var(--sk-space-md);
-    border-top: 1px solid var(--sk-border-light);
+  }
+
+  .view-list.headerless {
+    padding-top: 0;
   }
 
   .section-header {
@@ -122,25 +236,14 @@
     color: var(--sk-muted);
   }
 
-  .create-btn,
-  .icon-btn {
-    display: inline-flex;
+  .panel-search {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border-radius: var(--sk-radius-md);
-    font: inherit;
-    cursor: pointer;
+    gap: var(--sk-space-sm);
+    color: var(--sk-muted);
   }
 
-  .create-btn {
-    border: 1px solid rgba(0, 169, 165, 0.24);
-    background: rgba(0, 169, 165, 0.08);
-    color: var(--sk-accent);
-    padding: 6px 10px;
-  }
-
-  .view-search {
+  .panel-search-input {
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
@@ -148,6 +251,12 @@
     color: var(--sk-text);
     padding: 6px 10px;
     font: inherit;
+  }
+
+  .panel-search-input:focus {
+    border-color: rgba(0, 169, 165, 0.4);
+    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+    outline: none;
   }
 
   .items {
@@ -197,9 +306,59 @@
   }
 
   .view-actions {
+    position: relative;
     display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 4px;
+  }
+
+  .actions-trigger {
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+
+  .view-row:hover .actions-trigger,
+  .view-row:focus-within .actions-trigger,
+  .view-actions.menu-open .actions-trigger {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .actions-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 10;
+    min-width: 168px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: var(--sk-shadow-card);
+  }
+
+  .create-btn,
+  .icon-btn,
+  .actions-menu-item {
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--sk-radius-md);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .create-btn {
+    border: 1px solid rgba(0, 169, 165, 0.24);
+    background: rgba(0, 169, 165, 0.08);
+    color: var(--sk-accent);
+    padding: 6px 10px;
   }
 
   .icon-btn {
@@ -215,9 +374,27 @@
     background: rgba(255, 255, 255, 0.7);
   }
 
+  .actions-menu-item {
+    justify-content: flex-start;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--sk-text);
+    padding: 7px 8px;
+  }
+
+  .actions-menu-item:hover {
+    background: rgba(0, 169, 165, 0.08);
+  }
+
+  .actions-menu-item--danger {
+    color: #b54747;
+  }
+
   .create-btn:disabled,
   .view-item:disabled,
-  .icon-btn:disabled {
+  .icon-btn:disabled,
+  .actions-menu-item:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
