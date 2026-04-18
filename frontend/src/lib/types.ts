@@ -22,14 +22,122 @@ export interface QueryResult {
   page_size: number;
 }
 
-export type ViewAggregate = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
+export type ViewAggregate = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'LATEST';
+
+export type ViewTemplateId =
+  | 'scratch'
+  | 'most-recent-per-group'
+  | 'counts-per-day'
+  | 'top-n-per-group'
+  | 'totals-by-week'
+  | 'previous-row-delta';
+
+export type ViewFilterValue =
+  | {
+      op:
+        | 'eq'
+        | 'gt'
+        | 'gte'
+        | 'lt'
+        | 'lte'
+        | 'contains'
+        | 'starts_with';
+      value: string;
+    }
+  | {
+      op: 'between';
+      value: [string, string];
+    }
+  | {
+      op: 'is_empty';
+    }
+  | {
+      op: 'in_list';
+      value: string[];
+    };
+
+export type ViewDefinitionFilters = Record<string, ViewFilterValue>;
+
+export type ViewSourceKind = 'fk' | 'match' | 'self';
+
+export interface ViewSourceRef {
+  id: string;
+  kind: ViewSourceKind;
+  schema: string;
+  table: string;
+  label?: string | null;
+  match?: {
+    base_column: string;
+    source_column: string;
+  } | null;
+  self?: {
+    entity_column: string;
+    order_column: string;
+    direction: 'previous' | 'next';
+  } | null;
+}
+
+export interface ViewColumnRef {
+  source_id?: string | null;
+  source_schema: string;
+  source_table: string;
+  column_name: string;
+}
+
+export interface ViewOrderBy {
+  source_id?: string | null;
+  source_schema: string;
+  source_table: string;
+  column_name: string;
+  direction: 'asc' | 'desc';
+}
+
+export interface ViewGrouping {
+  keys: ViewColumnRef[];
+  latest_by?: ViewOrderBy | null;
+}
+
+export interface ViewRanking {
+  partition_by: ViewColumnRef[];
+  order_by?: ViewOrderBy | null;
+  limit: number;
+}
+
+export type ViewDerivedOperation =
+  | 'difference'
+  | 'ratio_percent'
+  | 'age_of_timestamp'
+  | 'date_bucket'
+  | 'date_part'
+  | 'text_concat'
+  | 'text_length'
+  | 'if_then';
+
+export interface ViewDerivedInput {
+  kind: 'column' | 'literal';
+  source_id?: string | null;
+  source_schema?: string | null;
+  source_table?: string | null;
+  column_name?: string | null;
+  value?: string | null;
+}
+
+export interface ViewDerivedColumn {
+  alias?: string | null;
+  operation: ViewDerivedOperation;
+  inputs: ViewDerivedInput[];
+  options?: Record<string, unknown> | null;
+}
 
 export interface ViewColumn {
+  kind?: 'source' | 'derived';
+  source_id?: string | null;
   source_schema: string;
   source_table: string;
   column_name: string;
   alias?: string | null;
   aggregate?: ViewAggregate | null;
+  derived?: ViewDerivedColumn | null;
 }
 
 export interface FkHop {
@@ -47,22 +155,27 @@ export interface SavedViewSummary {
   name: string;
   base_schema: string;
   base_table: string;
+  definition_version: number;
   created_at: string;
   updated_at: string;
 }
 
-export interface SavedViewDefinition extends SavedViewSummary {
-  definition_version: number;
+export interface ViewDefinitionShape {
   columns: ViewColumn[];
-  filters: FilterState;
+  filters: ViewDefinitionFilters;
+  sources?: ViewSourceRef[];
+  grouping?: ViewGrouping | null;
+  ranking?: ViewRanking | null;
+  template?: ViewTemplateId | null;
 }
 
-export interface ViewDraft {
+export interface SavedViewDefinition extends SavedViewSummary, ViewDefinitionShape {}
+
+export interface ViewDraft extends ViewDefinitionShape {
   name: string;
   base_schema: string;
   base_table: string;
-  columns: ViewColumn[];
-  filters: FilterState;
+  definition_version?: number;
 }
 
 export type SortDirection = 'asc' | 'desc';
@@ -94,6 +207,10 @@ export interface SavedViewResponse {
 
 export interface FkPathResponse {
   path: FkHop[];
+}
+
+export interface ColumnSamplesResponse {
+  samples: string[];
 }
 
 export interface StatusResponse {

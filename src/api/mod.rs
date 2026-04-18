@@ -29,6 +29,7 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
     Router::new()
         .route("/tables", get(list_tables))
         .route("/tables/{schema}/{table}/columns", get(get_columns))
+        .route("/tables/{schema}/{table}/samples", get(get_column_samples))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
         .route("/connection-status", get(get_connection_status))
@@ -275,6 +276,45 @@ async fn get_columns(
         })
         .collect();
     Ok(Json(serde_json::json!({ "columns": columns })))
+}
+
+#[derive(Deserialize)]
+struct ColumnSamplesQuery {
+    column: String,
+}
+
+async fn get_column_samples(
+    Extension(mode): Extension<SharedAppMode>,
+    Path((schema, table)): Path<(String, String)>,
+    Query(query): Query<ColumnSamplesQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
+    }
+    if !is_valid_identifier(&query.column) {
+        return Err(AppError::bad_request(format!(
+            "Invalid column name: {}",
+            truncate_for_error(&query.column)
+        )));
+    }
+
+    let columns = load_table_columns(&state, &schema, &table).await?;
+    if !columns.iter().any(|column| column.name == query.column) {
+        return Err(AppError::bad_request(format!(
+            "Unknown column '{}' on table '{schema}.{table}'",
+            truncate_for_error(&query.column)
+        )));
+    }
+
+    let samples = state
+        .db
+        .sample_column_values(&schema, &table, &query.column, 5)
+        .await
+        .map_err(|e| map_table_query_error(e, &table))?;
+    Ok(Json(serde_json::json!({ "samples": samples })))
 }
 
 #[derive(Deserialize)]
@@ -765,6 +805,37 @@ mod tests {
     use crate::config::{AppConfig, DatabaseConfig, ServerConfig, TablesConfig};
     use crate::store::testutil::ephemeral_store;
 
+    fn test_app_config() -> AppConfig {
+        AppConfig {
+            server: ServerConfig {
+                host: "127.0.0.1".into(),
+                port: 3141,
+            },
+            database: DatabaseConfig {
+                url: "postgres://user:pass@localhost:5432/seeki".into(),
+                kind: crate::config::DatabaseKind::Postgres,
+                max_connections: 5,
+                schemas: Some(vec!["public".into()]),
+            },
+            tables: TablesConfig::default(),
+            display: crate::config::DisplayConfig::default(),
+            branding: crate::config::BrandingConfig::default(),
+            ssh: None,
+        }
+    }
+
+    async fn test_api_router(config: AppConfig) -> Router {
+        let (store, _dir) = ephemeral_store().await;
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://user:pass@localhost:5432/seeki")
+            .unwrap();
+        let mode = initial_mode(Some(crate::AppState {
+            db: crate::db::DatabasePool::Postgres(pool, None),
+            config,
+        }));
+        Router::new().nest("/api", router(mode, store))
+    }
+
     fn test_columns() -> Vec<ColumnInfo> {
         vec![
             ColumnInfo {
@@ -860,6 +931,53 @@ mod tests {
         assert_eq!(vl["display_name"], "Fleet Log");
         assert_eq!(vl["columns"]["posn_lat"]["display_name"], "Latitude");
         assert_eq!(vl["columns"]["supervisor_id"]["display_name"], "Supervisor");
+    }
+
+    #[tokio::test]
+    async fn column_samples_route_rejects_invalid_identifier_before_querying_postgres() {
+        let app = test_api_router(test_app_config()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tables/public/orders/samples?column=id;drop")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("Invalid column name")
+        );
+    }
+
+    #[tokio::test]
+    async fn column_samples_route_hides_non_exposed_tables() {
+        let mut config = test_app_config();
+        config.tables = TablesConfig {
+            include: Some(vec!["public.visible_table".into()]),
+            exclude: None,
+        };
+        let app = test_api_router(config).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tables/public/orders/samples?column=id")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
     #[test]
