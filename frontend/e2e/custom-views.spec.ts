@@ -155,6 +155,35 @@ function findAdvancedTemplateCandidate(catalog: TableCatalogEntry[]): {
   return null;
 }
 
+function findCountsPerDayCandidate(catalog: TableCatalogEntry[]): TableSummary | null {
+  for (const entry of catalog) {
+    if (entry.columns.some(isTemporalColumn)) return entry.table;
+  }
+  return null;
+}
+
+function findTopNPerGroupCandidate(catalog: TableCatalogEntry[]): TableSummary | null {
+  for (const entry of catalog) {
+    const hasEntity = entry.columns.some(isEntityColumn);
+    const hasNumeric = entry.columns.some(
+      (c) => isNumericColumn(c) && !c.is_primary_key && !isEntityColumn(c),
+    );
+    if (hasEntity && hasNumeric) return entry.table;
+  }
+  return null;
+}
+
+function findTotalsByWeekCandidate(catalog: TableCatalogEntry[]): TableSummary | null {
+  for (const entry of catalog) {
+    const hasTimestamp = entry.columns.some(isTemporalColumn);
+    const hasNumeric = entry.columns.some(
+      (c) => isNumericColumn(c) && !c.is_primary_key,
+    );
+    if (hasTimestamp && hasNumeric) return entry.table;
+  }
+  return null;
+}
+
 async function openTemplateGallery(page: Page, seeki: SeekiHelpers) {
   await seeki.openTables();
   const createButton = page.getByTestId('data-panel-create-view');
@@ -378,6 +407,105 @@ test.describe.serial('Custom views', () => {
       await expect(page.getByTestId('view-builder-grouping')).not.toHaveValue('');
       await expect(page.getByTestId('view-builder-latest-by')).not.toHaveValue('');
     }
+
+    await saveViewFromBuilder(page, viewName);
+    await waitForViewInSidebar(seeki, viewName);
+    await seeki.waitForGridLoaded();
+    await expect(page.getByText('Read-only saved view')).toBeVisible();
+
+    const headers = await seeki.getVisibleColumnHeaders();
+    expect(headers.length).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
+  });
+
+  test('counts-per-day template: creates a day-bucketed count view', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const table = findCountsPerDayCandidate(catalog);
+    if (!table) {
+      test.skip(true, 'No table with a timestamp column available for counts-per-day.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Counts Per Day');
+
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    await openTemplateGallery(page, seeki);
+    await selectBuilderBaseTable(page, table);
+    await chooseTemplate(page, 'counts-per-day');
+
+    await expect(page.getByTestId('view-builder-topbar')).toContainText('Counts per day');
+    await expect(page.getByTestId('view-builder-grid-slots')).toContainText(/day/i);
+
+    await saveViewFromBuilder(page, viewName);
+    await waitForViewInSidebar(seeki, viewName);
+    await seeki.waitForGridLoaded();
+    await expect(page.getByText('Read-only saved view')).toBeVisible();
+
+    const headers = await seeki.getVisibleColumnHeaders();
+    expect(headers.length).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
+  });
+
+  test('top-n-per-group template: creates a ranked view', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const table = findTopNPerGroupCandidate(catalog);
+    if (!table) {
+      test.skip(true, 'No table with entity + numeric columns available for top-n-per-group.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Top N Per Group');
+
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    await openTemplateGallery(page, seeki);
+    await selectBuilderBaseTable(page, table);
+    await chooseTemplate(page, 'top-n-per-group');
+
+    await expect(page.getByTestId('view-builder-topbar')).toContainText('Top N per group');
+    await expect(page.getByTestId('view-builder-grid-slots')).toContainText(/.+/);
+
+    await saveViewFromBuilder(page, viewName);
+    await waitForViewInSidebar(seeki, viewName);
+    await seeki.waitForGridLoaded();
+    await expect(page.getByText('Read-only saved view')).toBeVisible();
+
+    const headers = await seeki.getVisibleColumnHeaders();
+    expect(headers.length).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
+  });
+
+  test('totals-by-week template: creates a weekly-summed view', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const table = findTotalsByWeekCandidate(catalog);
+    if (!table) {
+      test.skip(true, 'No table with timestamp + numeric columns available for totals-by-week.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Totals By Week');
+
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    await openTemplateGallery(page, seeki);
+    await selectBuilderBaseTable(page, table);
+    await chooseTemplate(page, 'totals-by-week');
+
+    await expect(page.getByTestId('view-builder-topbar')).toContainText('Totals by week');
+    await expect(page.getByTestId('view-builder-grid-slots')).toContainText(/week/i);
 
     await saveViewFromBuilder(page, viewName);
     await waitForViewInSidebar(seeki, viewName);

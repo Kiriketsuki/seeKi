@@ -117,6 +117,7 @@
   let builderDraft: ViewDraft | null = $state(null);
   let builderSourceLabel = $state('');
   let builderReturnTarget: TablesSurface = $state({ kind: 'table' });
+  let pendingCreateView = $state(false);
   let selectedSchema: string = $state('');
   let selectedTable: string = $state('');
   let selectedView: SavedViewDefinition | null = $state(null);
@@ -898,7 +899,8 @@
     tableError = null;
   }
 
-  function handleCreateView() {
+  function forceCreateView() {
+    pendingCreateView = false;
     const baseTable =
       tables.find((table) => table.schema === selectedSchema && table.name === selectedTable) ??
       tables[0];
@@ -919,6 +921,14 @@
       },
       selectedTableDisplayName || `${baseTable.schema}.${baseTable.name}`,
     );
+  }
+
+  function handleCreateView() {
+    if (builderDraft && builderDraft.columns.length > 0) {
+      pendingCreateView = true;
+      return;
+    }
+    forceCreateView();
   }
 
   async function handleDuplicateView(view: SavedViewSummary) {
@@ -1268,6 +1278,23 @@
   />
 {/if}
 
+{#if pendingCreateView}
+  <div
+    class="draft-guard-backdrop"
+    role="presentation"
+    onclick={(e) => { if (e.target === e.currentTarget) pendingCreateView = false; }}
+  >
+    <div class="draft-guard-card" role="dialog" aria-modal="true" aria-label="Unsaved draft">
+      <p class="draft-guard-title">You have an unsaved view draft</p>
+      <p class="draft-guard-detail">Creating a new view will discard your current draft with {builderDraft?.columns.length ?? 0} column{(builderDraft?.columns.length ?? 0) === 1 ? '' : 's'}. Continue?</p>
+      <div class="draft-guard-actions">
+        <button type="button" class="draft-guard-btn draft-guard-btn-secondary" onclick={() => pendingCreateView = false}>Keep editing</button>
+        <button type="button" class="draft-guard-btn draft-guard-btn-danger" onclick={forceCreateView}>Discard &amp; create new</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .layout {
     display: flex;
@@ -1497,5 +1524,82 @@
       flex-direction: column;
       align-items: flex-start;
     }
+  }
+
+  .draft-guard-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sk-space-lg);
+    z-index: 1000;
+    animation: dg-fade 120ms ease-out;
+  }
+
+  .draft-guard-card {
+    max-width: 420px;
+    width: 100%;
+    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    border-radius: var(--sk-radius-md);
+    padding: var(--sk-space-lg);
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    animation: dg-pop 140ms ease-out;
+  }
+
+  .draft-guard-title {
+    margin: 0 0 var(--sk-space-sm);
+    font-weight: 600;
+    color: var(--sk-text);
+  }
+
+  .draft-guard-detail {
+    margin: 0 0 var(--sk-space-md);
+    font-size: var(--sk-font-size-body);
+    color: var(--sk-muted);
+  }
+
+  .draft-guard-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sk-space-sm);
+  }
+
+  .draft-guard-btn {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--sk-radius-md);
+    font: inherit;
+    cursor: pointer;
+    padding: 7px 14px;
+    font-size: var(--sk-font-size-body);
+  }
+
+  .draft-guard-btn-secondary {
+    border: 1px solid var(--sk-border-light);
+    background: transparent;
+    color: var(--sk-text);
+  }
+
+  .draft-guard-btn-secondary:hover { background: rgba(47, 72, 88, 0.04); }
+
+  .draft-guard-btn-danger {
+    border: 1px solid rgba(181, 71, 71, 0.3);
+    background: rgba(181, 71, 71, 0.08);
+    color: #b54747;
+  }
+
+  .draft-guard-btn-danger:hover { background: rgba(181, 71, 71, 0.16); }
+
+  @keyframes dg-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes dg-pop {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
   }
 </style>

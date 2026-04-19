@@ -251,9 +251,15 @@
     }
   }
 
+  let reachabilityTimer: ReturnType<typeof setTimeout> | undefined;
+
   $effect(() => {
     if (!baseSchema || !baseTable) return;
-    void computeReachableTables(baseSchema, baseTable);
+    const schema = baseSchema;
+    const table = baseTable;
+    clearTimeout(reachabilityTimer);
+    reachabilityTimer = setTimeout(() => void computeReachableTables(schema, table), 300);
+    return () => clearTimeout(reachabilityTimer);
   });
 
   function outputNameForColumn(column: ViewColumn): string {

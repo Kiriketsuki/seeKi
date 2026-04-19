@@ -201,23 +201,24 @@ fn parse_sort_without_validation(sort: Option<&str>) -> anyhow::Result<Vec<SortE
             return Err(ValidationError("Malformed sort segment: empty segment".into()).into());
         }
 
+        let safe = super::truncate_for_error(trimmed);
         let (column_raw, direction_raw) = trimmed
             .split_once(':')
-            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {trimmed}")))?;
+            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {safe}")))?;
         let column = column_raw.trim();
         let direction = direction_raw.trim();
 
         if column.is_empty() || direction.is_empty() {
-            return Err(ValidationError(format!("Malformed sort segment: {trimmed}")).into());
+            return Err(ValidationError(format!("Malformed sort segment: {safe}")).into());
         }
         if !crate::db::postgres::is_valid_identifier(column) {
             return Err(
-                ValidationError(format!("Invalid sort column name in segment: {trimmed}")).into(),
+                ValidationError(format!("Invalid sort column name in segment: {safe}")).into(),
             );
         }
         if !seen.insert(column.to_string()) {
             return Err(
-                ValidationError(format!("Duplicate sort column in segment: {trimmed}")).into(),
+                ValidationError(format!("Duplicate sort column in segment: {safe}")).into(),
             );
         }
 
@@ -227,7 +228,7 @@ fn parse_sort_without_validation(sort: Option<&str>) -> anyhow::Result<Vec<SortE
             SortDirection::Desc
         } else {
             return Err(
-                ValidationError(format!("Invalid sort direction in segment: {trimmed}")).into(),
+                ValidationError(format!("Invalid sort direction in segment: {safe}")).into(),
             );
         };
 
@@ -276,19 +277,36 @@ async fn create_saved_view(
     }
     validate_view_definition(&state, &body.base_schema, &body.base_table, &body.shape)?;
 
-    if let PlannerCompatibility::Legacy(legacy) = planner_compatibility_for_shape(&body.shape)? {
-        state
-            .db
-            .preview_view(
-                &ViewDraft {
-                    base_schema: &body.base_schema,
-                    base_table: &body.base_table,
-                    columns: &legacy.columns,
-                    filters: &legacy.filters,
-                },
+    match planner_compatibility_for_shape(&body.shape)? {
+        PlannerCompatibility::Legacy(legacy) => {
+            state
+                .db
+                .preview_view(
+                    &ViewDraft {
+                        base_schema: &body.base_schema,
+                        base_table: &body.base_table,
+                        columns: &legacy.columns,
+                        filters: &legacy.filters,
+                    },
+                    1,
+                )
+                .await?;
+        }
+        PlannerCompatibility::RequiresPlannerV2(_) => {
+            let pg_pool = state.db.pg_pool().ok_or_else(|| {
+                super::AppError::bad_request(
+                    "Advanced saved-view planning is not supported for this database type",
+                )
+            })?;
+            crate::db::postgres::preview_view_shape(
+                pg_pool,
+                &body.base_schema,
+                &body.base_table,
+                &body.shape,
                 1,
             )
             .await?;
+        }
     }
 
     let created = views::create_view(
@@ -907,7 +925,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_saved_view_persists_v2_shape_without_legacy_preview() {
+    async fn create_saved_view_validates_v2_shape_before_persisting() {
+        // V2 shapes must be validated via preview_view_shape before being stored.
+        // With a lazy (non-connected) pool the validation correctly fails at the
+        // DB layer, proving the validation path is exercised.
         let (app, _dir) = test_router(test_app_config()).await;
 
         let response = app
@@ -943,10 +964,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["view"]["name"], "Latest SOC");
-        assert_eq!(json["view"]["definition_version"], 2);
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "V2 shape should be validated against the database before persisting"
+        );
     }
 }

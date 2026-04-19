@@ -256,11 +256,14 @@
       { id: 'text_length', label: 'Text length', detail: 'Count the characters in the text.', disabled: !textual },
     ];
 
-    if (options.every((option) => option.id !== selectedOperation || !option.disabled)) {
-      return options;
-    }
-    selectedOperation = 'raw';
     return options;
+  });
+
+  $effect(() => {
+    const opt = operationOptions.find((o) => o.id === selectedOperation);
+    if (opt?.disabled) {
+      selectedOperation = 'raw';
+    }
   });
 
   function buildSourceDefinition(): ViewSourceRef | null {

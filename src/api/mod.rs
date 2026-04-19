@@ -367,7 +367,7 @@ fn trim_ascii_whitespace(value: &str) -> &str {
 
 /// Cap user-controlled strings before echoing them in 400 error messages.
 /// Prevents unbounded payload reflection in error responses and log lines.
-fn truncate_for_error(value: &str) -> String {
+pub(crate) fn truncate_for_error(value: &str) -> String {
     const MAX: usize = 64;
     if value.chars().count() <= MAX {
         return value.to_string();

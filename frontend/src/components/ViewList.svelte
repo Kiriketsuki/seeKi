@@ -26,6 +26,9 @@
 
   let search = $state('');
   let openMenuFor = $state<number | null>(null);
+  let renameTarget = $state<SavedViewSummary | null>(null);
+  let renameValue = $state('');
+  let deleteTarget = $state<SavedViewSummary | null>(null);
 
   const filteredViews = $derived.by(() => {
     const query = search.trim().toLowerCase();
@@ -37,23 +40,29 @@
   });
 
   function handleRename(view: SavedViewSummary) {
-    const nextName = window.prompt('Rename saved view', view.name)?.trim();
     openMenuFor = null;
-    if (!nextName || nextName === view.name) {
-      return;
-    }
+    renameValue = view.name;
+    renameTarget = view;
+  }
 
-    onRename(view, nextName);
+  function confirmRename() {
+    const target = renameTarget;
+    const next = renameValue.trim();
+    renameTarget = null;
+    if (!target || !next || next === target.name) return;
+    onRename(target, next);
   }
 
   function handleDelete(view: SavedViewSummary) {
-    const confirmed = window.confirm(`Delete saved view "${view.name}"?`);
     openMenuFor = null;
-    if (!confirmed) {
-      return;
-    }
+    deleteTarget = view;
+  }
 
-    onDelete(view);
+  function confirmDelete() {
+    const target = deleteTarget;
+    deleteTarget = null;
+    if (!target) return;
+    onDelete(target);
   }
 
   function handleWindowClick(event: MouseEvent) {
@@ -195,10 +204,50 @@
     </div>
   {:else}
     <div class="empty-state" data-testid="view-list-empty">
-      No saved views match “{search.trim()}”.
+      No saved views match "{search.trim()}".
     </div>
   {/if}
 </section>
+
+{#if renameTarget}
+  <div
+    class="dialog-backdrop"
+    role="presentation"
+    onclick={(e) => { if (e.target === e.currentTarget) renameTarget = null; }}
+  >
+    <div class="dialog-card" role="dialog" aria-modal="true" aria-label="Rename view">
+      <p class="dialog-title">Rename saved view</p>
+      <input
+        class="dialog-input"
+        type="text"
+        bind:value={renameValue}
+        onkeydown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') renameTarget = null; }}
+        data-testid="rename-dialog-input"
+      />
+      <div class="dialog-actions">
+        <button type="button" class="dialog-btn dialog-btn-secondary" onclick={() => renameTarget = null}>Cancel</button>
+        <button type="button" class="dialog-btn dialog-btn-primary" onclick={confirmRename} disabled={!renameValue.trim() || renameValue.trim() === renameTarget.name} data-testid="rename-dialog-confirm">Rename</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if deleteTarget}
+  <div
+    class="dialog-backdrop"
+    role="presentation"
+    onclick={(e) => { if (e.target === e.currentTarget) deleteTarget = null; }}
+  >
+    <div class="dialog-card" role="dialog" aria-modal="true" aria-label="Delete view">
+      <p class="dialog-title">Delete saved view "{deleteTarget.name}"?</p>
+      <p class="dialog-detail">This action cannot be undone.</p>
+      <div class="dialog-actions">
+        <button type="button" class="dialog-btn dialog-btn-secondary" onclick={() => deleteTarget = null}>Cancel</button>
+        <button type="button" class="dialog-btn dialog-btn-danger" onclick={confirmDelete} data-testid="delete-dialog-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .view-list {
@@ -402,5 +451,120 @@
   .empty-state {
     color: var(--sk-muted);
     font-size: var(--sk-font-size-body);
+  }
+
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sk-space-lg);
+    z-index: 1000;
+    animation: dialog-fade 120ms ease-out;
+  }
+
+  .dialog-card {
+    max-width: 400px;
+    width: 100%;
+    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    border-radius: var(--sk-radius-md);
+    padding: var(--sk-space-lg);
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    animation: dialog-pop 140ms ease-out;
+  }
+
+  .dialog-title {
+    margin: 0 0 var(--sk-space-sm);
+    font-weight: 600;
+    color: var(--sk-text);
+  }
+
+  .dialog-detail {
+    margin: 0 0 var(--sk-space-md);
+    font-size: var(--sk-font-size-body);
+    color: var(--sk-muted);
+  }
+
+  .dialog-input {
+    width: 100%;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--sk-text);
+    padding: 8px 10px;
+    font: inherit;
+    margin-bottom: var(--sk-space-md);
+  }
+
+  .dialog-input:focus {
+    border-color: rgba(0, 169, 165, 0.4);
+    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+    outline: none;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sk-space-sm);
+  }
+
+  .dialog-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--sk-radius-md);
+    font: inherit;
+    cursor: pointer;
+    padding: 7px 14px;
+    font-size: var(--sk-font-size-body);
+  }
+
+  .dialog-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .dialog-btn-secondary {
+    border: 1px solid var(--sk-border-light);
+    background: transparent;
+    color: var(--sk-text);
+  }
+
+  .dialog-btn-secondary:hover:not(:disabled) {
+    background: rgba(47, 72, 88, 0.04);
+  }
+
+  .dialog-btn-primary {
+    border: 1px solid rgba(0, 169, 165, 0.3);
+    background: rgba(0, 169, 165, 0.1);
+    color: var(--sk-accent);
+  }
+
+  .dialog-btn-primary:hover:not(:disabled) {
+    background: rgba(0, 169, 165, 0.18);
+  }
+
+  .dialog-btn-danger {
+    border: 1px solid rgba(181, 71, 71, 0.3);
+    background: rgba(181, 71, 71, 0.08);
+    color: #b54747;
+  }
+
+  .dialog-btn-danger:hover:not(:disabled) {
+    background: rgba(181, 71, 71, 0.16);
+  }
+
+  @keyframes dialog-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes dialog-pop {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
   }
 </style>
