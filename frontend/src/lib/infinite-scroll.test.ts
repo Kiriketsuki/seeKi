@@ -59,25 +59,36 @@ describe('makeSyntheticSkeletonRows', () => {
   it('marks rows with SKELETON_ROW_MARKER = skeleton', () => {
     const rows = makeSyntheticSkeletonRows(2, ['id']);
     for (const row of rows) {
-      expect(row[SKELETON_ROW_MARKER]).toBe('skeleton');
+      expect((row as Record<string | symbol, unknown>)[SKELETON_ROW_MARKER]).toBe('skeleton');
     }
+  });
+
+  it('does not leak marker into string keys', () => {
+    const rows = makeSyntheticSkeletonRows(1, ['id']);
+    expect(Object.keys(rows[0])).toEqual(['id']);
   });
 });
 
 describe('makeInlineErrorRow', () => {
   it('marks row with SKELETON_ROW_MARKER = error', () => {
     const row = makeInlineErrorRow(['id', 'name']);
-    expect(row[SKELETON_ROW_MARKER]).toBe('error');
+    expect((row as Record<string | symbol, unknown>)[SKELETON_ROW_MARKER]).toBe('error');
+  });
+
+  it('does not leak marker into string keys', () => {
+    const row = makeInlineErrorRow(['id']);
+    expect(Object.keys(row)).toEqual(['id']);
   });
 });
 
 describe('isSyntheticRow', () => {
   it('detects skeleton rows', () => {
-    expect(isSyntheticRow({ [SKELETON_ROW_MARKER]: 'skeleton' })).toBe(true);
+    const rows = makeSyntheticSkeletonRows(1, ['id']);
+    expect(isSyntheticRow(rows[0])).toBe(true);
   });
 
   it('detects error rows', () => {
-    expect(isSyntheticRow({ [SKELETON_ROW_MARKER]: 'error' })).toBe(true);
+    expect(isSyntheticRow(makeInlineErrorRow(['id']))).toBe(true);
   });
 
   it('returns false for real rows', () => {
@@ -96,8 +107,9 @@ describe('appendBatch', () => {
   });
 
   it('strips synthetic rows from state before merging', () => {
+    const skeleton = makeSyntheticSkeletonRows(1, ['id'])[0];
     const state = {
-      rows: [{ id: 1 }, { [SKELETON_ROW_MARKER]: 'skeleton', id: null }],
+      rows: [{ id: 1 }, skeleton],
       loadedCount: 1,
       lastLoadedPage: 1,
       capState: 'none' as const,

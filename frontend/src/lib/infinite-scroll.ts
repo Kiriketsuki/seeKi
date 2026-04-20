@@ -1,6 +1,8 @@
 export const SOFT_CAP = 5_000;
 export const HARD_CAP = 10_000;
-export const SKELETON_ROW_MARKER = '__seekiRowState';
+export const SKELETON_ROW_MARKER: unique symbol = Symbol('seeki.skeleton');
+
+type MarkedRow = { [SKELETON_ROW_MARKER]?: 'skeleton' | 'error' };
 
 export type RowCapState = 'none' | 'soft' | 'hard';
 
@@ -39,26 +41,26 @@ export function makeSyntheticSkeletonRows(
   count: number,
   columns: string[],
 ): Record<string, unknown>[] {
-  return Array.from({ length: count }, (_, i) => {
-    const row: Record<string, unknown> = { [SKELETON_ROW_MARKER]: 'skeleton' };
-    for (const col of columns) {
-      row[col] = null;
-    }
-    row['__skeletonIndex'] = i;
+  return Array.from({ length: count }, () => {
+    const row: Record<string, unknown> & MarkedRow = Object.fromEntries(
+      columns.map((c) => [c, null]),
+    );
+    row[SKELETON_ROW_MARKER] = 'skeleton';
     return row;
   });
 }
 
 export function makeInlineErrorRow(columns: string[]): Record<string, unknown> {
-  const row: Record<string, unknown> = { [SKELETON_ROW_MARKER]: 'error' };
-  for (const col of columns) {
-    row[col] = null;
-  }
+  const row: Record<string, unknown> & MarkedRow = Object.fromEntries(
+    columns.map((c) => [c, null]),
+  );
+  row[SKELETON_ROW_MARKER] = 'error';
   return row;
 }
 
 export function isSyntheticRow(row: Record<string, unknown>): boolean {
-  return row[SKELETON_ROW_MARKER] === 'skeleton' || row[SKELETON_ROW_MARKER] === 'error';
+  const marker = (row as MarkedRow)[SKELETON_ROW_MARKER];
+  return marker === 'skeleton' || marker === 'error';
 }
 
 export function appendBatch(

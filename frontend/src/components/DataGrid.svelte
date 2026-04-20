@@ -243,7 +243,7 @@
     h: HyperFunc<VNode>,
     props: CellTemplateProp,
   ): VNode {
-    const model = props.model as Record<string, unknown> | undefined;
+    const model = props.model as Record<string | symbol, unknown> | undefined;
     const markerVal = model?.[SKELETON_ROW_MARKER];
 
     if (markerVal === 'skeleton') {
