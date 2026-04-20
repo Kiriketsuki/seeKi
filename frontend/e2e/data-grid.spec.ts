@@ -547,3 +547,127 @@ test.describe('Data Grid — Infinite Scroll', () => {
     }
   });
 });
+
+test.describe('Data Grid — RowCapWarning Banner', () => {
+  test('soft cap banner appears when loaded rows reach SOFT_CAP', async ({ page, seeki }) => {
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    // Intercept rows API to inflate total_rows and return a large batch
+    let intercepted = false;
+    await page.route('**/api/tables/*/rows*', async (route) => {
+      if (intercepted) {
+        await route.continue();
+        return;
+      }
+      intercepted = true;
+      const response = await route.fetch();
+      const body = await response.json();
+      const original = body as { rows: Record<string, unknown>[]; total_rows: number; columns: { name: string }[] };
+      // Fabricate enough rows to cross the 5,000 soft cap
+      const template = original.rows[0] ?? {};
+      const fakeRows = Array.from({ length: 5_000 }, (_, i) => {
+        const row: Record<string, unknown> = {};
+        for (const col of original.columns) {
+          row[col.name] = template[col.name] ?? `fake-${i}`;
+        }
+        return row;
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...original,
+          rows: fakeRows,
+          total_rows: 50_000,
+        }),
+      });
+    });
+
+    // Trigger a reload so the intercepted response takes effect
+    const rowsResponse = seeki.pendingGridRowsResponse();
+    await page.locator('revo-grid').evaluate((el) => {
+      const inner: Element | null =
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
+        el;
+      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
+    });
+    await rowsResponse;
+
+    // Wait for the soft cap banner to render
+    const softBanner = page.locator('.cap-banner--soft');
+    await expect(softBanner).toBeVisible({ timeout: 10_000 });
+    await expect(softBanner).toContainText('rows loaded');
+  });
+
+  test('no cap banner for small tables', async ({ page, seeki }) => {
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    const total = await seeki.getTotalRows();
+    test.skip(total >= 5_000, 'Table too large — expected small table for negative test');
+
+    await expect(page.locator('.cap-banner--soft')).not.toBeVisible();
+    await expect(page.locator('.cap-banner--hard')).not.toBeVisible();
+  });
+});
+
+test.describe('Data Grid — Inline Error Retry', () => {
+  test('scroll-append failure shows error row with retry button', async ({ page, seeki }) => {
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    const initialLoaded = await seeki.getLoadedCount();
+    const total = await seeki.getTotalRows();
+    test.skip(initialLoaded >= total, 'All rows already loaded — cannot trigger scroll-append');
+
+    // Abort ALL subsequent rows requests to force both retry attempts to fail
+    let abortCount = 0;
+    await page.route('**/api/**/rows*', async (route) => {
+      abortCount++;
+      await route.abort('connectionrefused');
+    });
+
+    // Scroll to bottom to trigger loadMoreRows
+    await page.locator('revo-grid').evaluate((el) => {
+      const inner: Element | null =
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
+        el;
+      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
+    });
+
+    // Wait for the inline error row to appear (after first attempt + 500ms backoff + second attempt)
+    const retryButton = page.locator('.sk-error-cell__retry');
+    await expect(retryButton).toBeVisible({ timeout: 15_000 });
+
+    // Both attempts should have been aborted
+    expect(abortCount).toBeGreaterThanOrEqual(2);
+
+    // Remove the route interception so retry succeeds
+    await page.unroute('**/api/**/rows*');
+
+    // Click the retry button
+    const rowsResponse = seeki.pendingGridRowsResponse();
+    await retryButton.click();
+    await rowsResponse;
+
+    // Error row should be gone and more rows should be loaded
+    await expect(retryButton).not.toBeVisible({ timeout: 5_000 });
+    const newLoaded = await seeki.getLoadedCount();
+    expect(newLoaded).toBeGreaterThan(initialLoaded);
+  });
+});
