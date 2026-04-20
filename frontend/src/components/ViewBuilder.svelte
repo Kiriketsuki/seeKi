@@ -90,6 +90,9 @@
   let templateStage = $state(true);
   let upgradeConfirmOpen = $state(false);
 
+  // onDraftChange is a reactive dep here (Svelte 5 $props() tracking).
+  // builderDraftLive must NOT appear in App.svelte's reactive template — only in handlers —
+  // otherwise the cascade de5fd53 prevents would silently reintroduce itself.
   $effect(() => {
     onDraftChange?.({ columns, sources, grouping, ranking });
   });
