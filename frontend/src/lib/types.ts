@@ -373,6 +373,16 @@ export interface LastUsedTableState {
   sort_columns: SortColumn[];
   filters: FilterState;
   search_term: string | null;
+  page_size?: number | null;
+}
+
+export type PageSizePreference = 50 | 100 | 250 | 500;
+
+export type PaginationMode = 'infinite' | 'paged';
+
+export interface DataSettings {
+  pageSize: PageSizePreference;
+  paginationMode: PaginationMode;
 }
 
 export type SidebarMode = 'tables' | 'settings';

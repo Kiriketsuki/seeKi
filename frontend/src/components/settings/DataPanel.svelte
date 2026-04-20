@@ -1,11 +1,37 @@
 <script lang="ts">
   import PanelFrame from './PanelFrame.svelte';
-  import { clearAllPresets } from '../../lib/api';
+  import { clearAllPresets, saveSettings } from '../../lib/api';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from '../../lib/constants';
+  import { buildDataSettingsEntries } from '../../lib/settings';
+  import type { PaginationMode } from '../../lib/types';
+
+  let {
+    paginationMode = 'infinite',
+    onPaginationModeChange,
+  }: {
+    paginationMode?: PaginationMode;
+    onPaginationModeChange?: (mode: PaginationMode) => void;
+  } = $props();
 
   let clearing = $state(false);
   let cleared = $state(false);
   let error = $state('');
+  let savingMode = $state(false);
+
+  async function handleModeChange(mode: PaginationMode) {
+    if (savingMode || mode === paginationMode) return;
+    savingMode = true;
+    try {
+      const entries = buildDataSettingsEntries({ pageSize: 50, paginationMode: mode });
+      await saveSettings(entries);
+      onPaginationModeChange?.(mode);
+    } catch {
+      // Non-fatal — surface no error, the parent still applies the mode change.
+      onPaginationModeChange?.(mode);
+    } finally {
+      savingMode = false;
+    }
+  }
 
   function clearLocalStorage() {
     if (typeof localStorage === 'undefined') return;
@@ -43,6 +69,37 @@
   title="Data"
   description="Manage the browsing state SeeKi stores locally — remembered sort orders, filters, search terms, column visibility, and presets."
 >
+  <div class="card">
+    <div class="row">
+      <div class="info">
+        <strong>Browsing mode</strong>
+        <p>Infinite scroll loads more rows as you scroll. Paged browsing uses Previous / Next controls and loads one page at a time.</p>
+      </div>
+      <div class="action">
+        <div class="mode-toggle" role="group" aria-label="Browsing mode">
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={paginationMode === 'infinite'}
+            disabled={savingMode}
+            onclick={() => void handleModeChange('infinite')}
+          >
+            Infinite scroll
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={paginationMode === 'paged'}
+            disabled={savingMode}
+            onclick={() => void handleModeChange('paged')}
+          >
+            Paged
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="row">
       <div class="info">
@@ -129,5 +186,43 @@
 
   .message.error {
     color: #b91c1c;
+  }
+
+  .mode-toggle {
+    display: flex;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    overflow: hidden;
+  }
+
+  .mode-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--sk-secondary-strong);
+    font: inherit;
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 100ms;
+  }
+
+  .mode-btn + .mode-btn {
+    border-left: 1px solid var(--sk-border-light);
+  }
+
+  .mode-btn.active {
+    background: var(--sk-accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .mode-btn:not(.active):hover:not(:disabled) {
+    background: rgba(47, 72, 88, 0.05);
+  }
+
+  .mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

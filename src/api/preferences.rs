@@ -114,6 +114,24 @@ fn validate_known_setting(key: &str, value: &Value) -> Result<(), Err> {
                 return Err(Err::bad_request("appearance.row_density is not supported"));
             }
         }
+        "page_size" => {
+            let Some(n) = value.as_u64() else {
+                return Err(Err::bad_request("page_size must be a number"));
+            };
+            if !matches!(n, 50 | 100 | 250 | 500) {
+                return Err(Err::bad_request("page_size must be 50, 100, 250, or 500"));
+            }
+        }
+        "data.pagination_mode" => {
+            let Some(mode) = value.as_str() else {
+                return Err(Err::bad_request("data.pagination_mode must be a string"));
+            };
+            if !matches!(mode, "infinite" | "paged") {
+                return Err(Err::bad_request(
+                    "data.pagination_mode must be \"infinite\" or \"paged\"",
+                ));
+            }
+        }
         _ => {}
     }
 
@@ -568,6 +586,108 @@ mod tests {
             .unwrap();
         let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn settings_accept_valid_page_size() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"page_size":100}"#))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn settings_reject_invalid_page_size() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"page_size":99}"#))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn settings_accept_valid_pagination_mode() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"data.pagination_mode":"infinite"}"#))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn settings_reject_invalid_pagination_mode() {
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/settings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"data.pagination_mode":"virtual"}"#))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn last_used_accepts_page_size() {
+        // Setup mode returns 503 — page_size:250 is valid JSON, not rejected with 400.
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/last-used/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"sort_columns":[],"filters":{},"page_size":250}"#,
+            ))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn last_used_accepts_null_page_size() {
+        // Setup mode returns 503 — page_size:null is valid JSON, not rejected with 400.
+        let (store, _dir) = ephemeral_store().await;
+        let mode = initial_mode(None);
+        let app = setup_router(mode, store);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/preferences/presets/last-used/public/vehicles")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"sort_columns":[],"filters":{},"page_size":null}"#,
+            ))
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]

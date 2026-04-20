@@ -1,8 +1,11 @@
 import type {
   AppearanceSettings,
   BrandingSettings,
+  DataSettings,
   DateFormatPreference,
   DisplayConfig,
+  PageSizePreference,
+  PaginationMode,
   RowDensityPreference,
   SettingsEntries,
 } from './types';
@@ -76,4 +79,38 @@ export function isRowDensityPreference(
   value: unknown,
 ): value is RowDensityPreference {
   return value === 'comfortable' || value === 'compact';
+}
+
+export const DEFAULT_DATA_SETTINGS: DataSettings = {
+  pageSize: 50,
+  paginationMode: 'infinite',
+};
+
+export function isPageSizePreference(value: unknown): value is PageSizePreference {
+  return value === 50 || value === 100 || value === 250 || value === 500;
+}
+
+export function isPaginationMode(value: unknown): value is PaginationMode {
+  return value === 'infinite' || value === 'paged';
+}
+
+export function parseDataSettings(settings: SettingsEntries): DataSettings {
+  const rawValue = settings['data.page_size'];
+  const numericValue = typeof rawValue === 'string' ? Number(rawValue) : rawValue;
+  const pageSize: PageSizePreference = isPageSizePreference(numericValue)
+    ? numericValue
+    : DEFAULT_DATA_SETTINGS.pageSize;
+
+  const paginationMode = isPaginationMode(settings['data.pagination_mode'])
+    ? settings['data.pagination_mode']
+    : DEFAULT_DATA_SETTINGS.paginationMode;
+
+  return { pageSize, paginationMode };
+}
+
+export function buildDataSettingsEntries(data: DataSettings): SettingsEntries {
+  return {
+    'data.page_size': data.pageSize,
+    'data.pagination_mode': data.paginationMode,
+  };
 }

@@ -13,6 +13,7 @@
     FilterState,
     SortState,
   } from '../lib/types';
+  import { onMount } from 'svelte';
   import {
     buildSortableColumn,
     cycleSort,
@@ -21,6 +22,7 @@
     replaceSort,
     sortStateToConfig,
   } from '../lib/data-grid';
+  import { SKELETON_ROW_MARKER } from '../lib/infinite-scroll';
 
   let {
     columns = [],
@@ -29,8 +31,13 @@
     sortState = [],
     filters = {},
     filtersVisible = false,
+    fetchingMore = false,
+    appendError = false,
+    resetSignal = 0,
     onSortChange,
     onFilterChange,
+    onNearBottom,
+    onRetryAppend,
   }: {
     columns: ColumnInfo[];
     rows: Record<string, unknown>[];
@@ -38,9 +45,16 @@
     sortState?: SortState;
     filters?: FilterState;
     filtersVisible?: boolean;
+    fetchingMore?: boolean;
+    appendError?: boolean;
+    resetSignal?: number;
     onSortChange?: (nextSortState: SortState) => void;
     onFilterChange?: (column: string, value: string) => void;
+    onNearBottom?: () => void;
+    onRetryAppend?: () => void;
   } = $props();
+
+  let gridEl: HTMLDivElement | undefined = $state(undefined);
 
   type SortEventDetail = {
     column: ColumnRegular;
@@ -52,6 +66,56 @@
     new Map(columns.map((column) => [column.name, column]))
   );
   let sorting = $derived(sortStateToConfig(sortState));
+
+  function findViewportScroll(): Element | null {
+    return gridEl?.querySelector('revogr-viewport-scroll') ?? null;
+  }
+
+  function handleScroll(event: Event) {
+    const el = event.target as Element;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 200) {
+      onNearBottom?.();
+    }
+  }
+
+  $effect(() => {
+    if (!gridEl) return;
+
+    let scrollEl: Element | null = null;
+
+    function tryAttach(): boolean {
+      scrollEl = findViewportScroll();
+      if (scrollEl) {
+        scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+        return true;
+      }
+      return false;
+    }
+
+    const observer = new MutationObserver(() => {
+      if (tryAttach()) observer.disconnect();
+    });
+
+    if (!tryAttach()) {
+      observer.observe(gridEl, { childList: true, subtree: true });
+    }
+
+    return () => {
+      observer.disconnect();
+      scrollEl?.removeEventListener('scroll', handleScroll);
+    };
+  });
+
+  $effect(() => {
+    // Track resetSignal — scroll to top whenever it changes (including on initial mount).
+    // The parent only increments this counter when a genuine reset occurs.
+    void resetSignal;
+    const scrollEl = findViewportScroll();
+    if (scrollEl) {
+      (scrollEl as HTMLElement).scrollTop = 0;
+    }
+  });
 
   function renderHeader(
     h: HyperFunc<VNode>,
@@ -179,6 +243,33 @@
     h: HyperFunc<VNode>,
     props: CellTemplateProp,
   ): VNode {
+    const model = props.model as Record<string, unknown> | undefined;
+    const markerVal = model?.[SKELETON_ROW_MARKER];
+
+    if (markerVal === 'skeleton') {
+      return h('div', { class: { 'sk-skeleton-cell': true } }, [
+        h('div', { class: { 'sk-skeleton-shimmer': true } }, ''),
+      ]);
+    }
+
+    if (markerVal === 'error') {
+      const isFirstCol = (props as CellTemplateProp & { colIndex?: number }).colIndex === 0;
+      if (isFirstCol) {
+        return h('div', { class: { 'sk-error-cell': true } }, [
+          h('span', { class: { 'sk-error-cell__msg': true } }, 'Failed to load'),
+          h(
+            'button',
+            {
+              class: { 'sk-error-cell__retry': true },
+              onclick: (e: Event) => { e.stopPropagation(); onRetryAppend?.(); },
+            },
+            'Retry',
+          ),
+        ]);
+      }
+      return h('div', { class: { 'sk-error-cell': true } }, '');
+    }
+
     const info = columnsByName.get(String(props.prop));
     if (!info) {
       return h(
@@ -259,7 +350,7 @@
   );
 </script>
 
-<div id="data-grid" class="grid-card" class:filters-visible={filtersVisible}>
+<div id="data-grid" class="grid-card" class:filters-visible={filtersVisible} bind:this={gridEl}>
   <RevoGrid
     columns={gridColumns}
     source={rows}
@@ -429,6 +520,63 @@
   .grid-card :global(.sk-grid-badge.is-false) {
     background: rgba(220, 38, 38, 0.12);
     color: var(--sk-boolean-false);
+  }
+
+  .grid-card :global(.sk-skeleton-cell) {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0 var(--sk-space-sm);
+  }
+
+  .grid-card :global(.sk-skeleton-shimmer) {
+    width: 70%;
+    height: 12px;
+    border-radius: var(--sk-radius-sm);
+    background: linear-gradient(
+      90deg,
+      rgba(47, 72, 88, 0.06) 25%,
+      rgba(47, 72, 88, 0.12) 50%,
+      rgba(47, 72, 88, 0.06) 75%
+    );
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .grid-card :global(.sk-error-cell) {
+    display: flex;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    width: 100%;
+    height: 100%;
+    padding: 0 var(--sk-space-sm);
+  }
+
+  .grid-card :global(.sk-error-cell__msg) {
+    color: #b91c1c;
+    font-size: var(--sk-font-size-sm);
+  }
+
+  .grid-card :global(.sk-error-cell__retry) {
+    border: 1px solid rgba(185, 28, 28, 0.3);
+    border-radius: var(--sk-radius-sm);
+    background: rgba(185, 28, 28, 0.06);
+    color: #b91c1c;
+    padding: 2px var(--sk-space-sm);
+    font: inherit;
+    font-size: var(--sk-font-size-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .grid-card :global(.sk-error-cell__retry:hover) {
+    background: rgba(185, 28, 28, 0.12);
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header) {

@@ -12,6 +12,7 @@
   import GridRefreshToolbar from './components/GridRefreshToolbar.svelte';
   import QuickStatsBar from './components/QuickStatsBar.svelte';
   import StatusBar from './components/StatusBar.svelte';
+  import RowCapWarning from './components/RowCapWarning.svelte';
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
   import {
@@ -39,6 +40,8 @@
     ColumnInfo,
     DisplayConfig,
     FilterState,
+    PageSizePreference,
+    PaginationMode,
     QueryResult,
     SavedViewDefinition,
     SavedViewSummary,
@@ -65,9 +68,21 @@
   import {
     buildAppearanceSettingsEntries,
     buildBrandingSettingsEntries,
+    buildDataSettingsEntries,
+    isPageSizePreference,
     parseAppearanceSettings,
     parseBrandingSettings,
+    parseDataSettings,
   } from './lib/settings';
+  import {
+    appendBatch,
+    computeHasMore,
+    isSyntheticRow,
+    makeInlineErrorRow,
+    makeSyntheticSkeletonRows,
+    resetState,
+    type RowCapState,
+  } from './lib/infinite-scroll';
 
   function setSidebarMode(mode: SidebarMode) {
     sidebarMode.set(mode);
@@ -154,6 +169,14 @@
   let settingsOpen: boolean = $state(false);
   let updateAvailable: boolean = $state(false);
   let updateStatus: UpdateStatus | null = $state(null);
+  let pageSize: PageSizePreference = $state(50);
+  let paginationMode: PaginationMode = $state('infinite');
+  let loadedRows: Record<string, unknown>[] = $state([]);
+  let lastLoadedPage: number = $state(0);
+  let fetchingMore: boolean = $state(false);
+  let appendError: boolean = $state(false);
+  let rowCapState: RowCapState = $state('none');
+  let resetSignal: number = $state(0);
   let filterDebounceId: ReturnType<typeof setTimeout> | null = null;
   let searchDebounceId: ReturnType<typeof setTimeout> | null = null;
   let lastUsedSaveId: ReturnType<typeof setTimeout> | null = null;
@@ -169,7 +192,11 @@
   });
 
   const refreshController = createGridRefreshController(async () => {
-    await loadRows(currentPage, sortState, filters, searchTerm);
+    if (paginationMode === 'infinite') {
+      await resetAndLoadRows(sortState, filters, searchTerm);
+    } else {
+      await loadRows(currentPage, sortState, filters, searchTerm);
+    }
   });
 
   let activeFilterCount = $derived(
@@ -234,6 +261,13 @@
     }
     return false;
   });
+  let displayRows = $derived.by(() =>
+    paginationMode === 'infinite' ? loadedRows : (queryResult?.rows ?? [])
+  );
+  let totalRows = $derived.by(() => queryResult?.total_rows ?? 0);
+  let infiniteHasMore = $derived.by(() =>
+    computeHasMore(loadedRows.filter((r) => !isSyntheticRow(r)).length, totalRows, rowCapState)
+  );
   let brandingSettings = $derived.by(() =>
     parseBrandingSettings(appSettings, displayConfig)
   );
@@ -323,6 +357,9 @@
         savedViews = views;
         displayConfig = config;
         appSettings = settings;
+        const dataSettings = parseDataSettings(settings);
+        pageSize = dataSettings.pageSize;
+        paginationMode = dataSettings.paginationMode;
         if (tables.length > 0) {
           await selectTable(tables[0]);
         }
@@ -588,6 +625,7 @@
         sort_columns: sortCols,
         filters: nextFilters,
         search_term: nextSearch || null,
+        page_size: pageSize,
       }).catch(() => {
         // Non-fatal — last-used save should never break the UI
       });
@@ -600,7 +638,7 @@
     nextFilters: FilterState = filters,
     nextSearchTerm: string = searchTerm,
   ): FetchRowsParams {
-    const params: FetchRowsParams = { page };
+    const params: FetchRowsParams = { page, page_size: pageSize };
     const sort = serializeSortState(nextSortState);
     if (sort != null) {
       params.sort = sort;
@@ -655,7 +693,29 @@
         }));
         initialFilters = lastUsed.filters;
         initialSearch = lastUsed.search_term ?? '';
+        if (lastUsed.page_size != null && isPageSizePreference(lastUsed.page_size)) {
+          pageSize = lastUsed.page_size;
+        } else {
+          const globalPageSize = parseDataSettings(appSettings).pageSize;
+          pageSize = globalPageSize;
+        }
+      } else {
+        pageSize = parseDataSettings(appSettings).pageSize;
       }
+
+      columns = cols;
+      columnVisibility = loadColumnVisibility(visibilityKey, cols);
+      sortState = initialSortState;
+      filters = initialFilters;
+      searchTerm = initialSearch;
+
+      const scrollInit = resetState();
+      loadedRows = scrollInit.rows;
+      lastLoadedPage = scrollInit.lastLoadedPage;
+      rowCapState = scrollInit.capState;
+      fetchingMore = false;
+      appendError = false;
+      resetSignal++;
 
       const result = await fetchRows(
         table.schema,
@@ -664,12 +724,18 @@
       );
       if (myRequest !== selectRequestId) return;
 
-      columns = cols;
-      columnVisibility = loadColumnVisibility(visibilityKey, cols);
       queryResult = result;
-      sortState = initialSortState;
-      filters = initialFilters;
-      searchTerm = initialSearch;
+      if (paginationMode === 'infinite') {
+        const nextState = appendBatch(
+          { rows: [], loadedCount: 0, lastLoadedPage: 0, capState: 'none' },
+          result.rows,
+          1,
+          result.total_rows,
+        );
+        loadedRows = nextState.rows;
+        lastLoadedPage = nextState.lastLoadedPage;
+        rowCapState = nextState.capState;
+      }
       refreshController.markRefreshed();
     } catch (e) {
       if (myRequest !== selectRequestId) return;
@@ -692,6 +758,14 @@
     resetSearchState();
 
     try {
+      const scrollInit = resetState();
+      loadedRows = scrollInit.rows;
+      lastLoadedPage = scrollInit.lastLoadedPage;
+      rowCapState = scrollInit.capState;
+      fetchingMore = false;
+      appendError = false;
+      resetSignal++;
+
       const [definition, result] = await Promise.all([
         fetchView(view.id),
         fetchViewRows(view.id, buildRowsParams(1, [], {}, '')),
@@ -705,6 +779,17 @@
       sortState = [];
       filters = {};
       searchTerm = '';
+      if (paginationMode === 'infinite') {
+        const nextState = appendBatch(
+          { rows: [], loadedCount: 0, lastLoadedPage: 0, capState: 'none' },
+          result.rows,
+          1,
+          result.total_rows,
+        );
+        loadedRows = nextState.rows;
+        lastLoadedPage = nextState.lastLoadedPage;
+        rowCapState = nextState.capState;
+      }
       refreshController.markRefreshed();
     } catch (e) {
       if (myRequest !== selectRequestId) return;
@@ -735,6 +820,17 @@
       if (myRequest !== selectRequestId || result == null) return;
       queryResult = result;
       currentPage = page;
+      if (paginationMode === 'infinite') {
+        const nextState = appendBatch(
+          { rows: loadedRows.filter((r) => !isSyntheticRow(r)), loadedCount: loadedRows.filter((r) => !isSyntheticRow(r)).length, lastLoadedPage: page - 1, capState: rowCapState },
+          result.rows,
+          page,
+          result.total_rows,
+        );
+        loadedRows = nextState.rows;
+        lastLoadedPage = nextState.lastLoadedPage;
+        rowCapState = nextState.capState;
+      }
       if (tablesSurface.kind === 'view' && selectedView) {
         columns = result.columns;
         columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
@@ -748,6 +844,102 @@
     }
   }
 
+  async function resetAndLoadRows(
+    nextSort: SortState = sortState,
+    nextFilters: FilterState = filters,
+    nextSearch: string = searchTerm,
+  ) {
+    const scrollInit = resetState();
+    loadedRows = scrollInit.rows;
+    lastLoadedPage = scrollInit.lastLoadedPage;
+    rowCapState = scrollInit.capState;
+    fetchingMore = false;
+    appendError = false;
+    resetSignal++;
+    await loadRows(1, nextSort, nextFilters, nextSearch);
+  }
+
+  async function fetchNextPage(page: number): Promise<QueryResult | null> {
+    const params = buildRowsParams(page);
+    if (tablesSurface.kind === 'view' && selectedView) {
+      return fetchViewRows(selectedView.id, params);
+    }
+    if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
+      return fetchRows(selectedSchema, selectedTable, params);
+    }
+    return null;
+  }
+
+  async function loadMoreRows() {
+    if (fetchingMore || !infiniteHasMore) return;
+    const nextPage = lastLoadedPage + 1;
+    const myRequest = ++selectRequestId;
+
+    const colNames = visibleColumns.map((c) => c.name);
+    loadedRows = [
+      ...loadedRows.filter((r) => !isSyntheticRow(r)),
+      ...makeSyntheticSkeletonRows(3, colNames),
+    ];
+    fetchingMore = true;
+
+    let result: QueryResult | null = null;
+    let failed = false;
+
+    try {
+      result = await fetchNextPage(nextPage);
+    } catch {
+      // First failure — auto-retry once
+      try {
+        result = await fetchNextPage(nextPage);
+      } catch {
+        failed = true;
+      }
+    }
+
+    if (myRequest !== selectRequestId) {
+      loadedRows = loadedRows.filter((r) => !isSyntheticRow(r));
+      fetchingMore = false;
+      return;
+    }
+
+    if (failed || result == null) {
+      const cleanRows = loadedRows.filter((r) => !isSyntheticRow(r));
+      loadedRows = [...cleanRows, makeInlineErrorRow(colNames)];
+      appendError = true;
+      fetchingMore = false;
+      return;
+    }
+
+    const nextState = appendBatch(
+      {
+        rows: loadedRows.filter((r) => !isSyntheticRow(r)),
+        loadedCount: loadedRows.filter((r) => !isSyntheticRow(r)).length,
+        lastLoadedPage,
+        capState: rowCapState,
+      },
+      result.rows,
+      nextPage,
+      result.total_rows,
+    );
+    loadedRows = nextState.rows;
+    lastLoadedPage = nextState.lastLoadedPage;
+    rowCapState = nextState.capState;
+    queryResult = result;
+    fetchingMore = false;
+  }
+
+  async function handlePageSizeChange(size: PageSizePreference) {
+    pageSize = size;
+    const entries = buildDataSettingsEntries({ pageSize: size, paginationMode });
+    void saveSettings(entries).catch(() => {});
+    appSettings = { ...appSettings, ...entries };
+    if (paginationMode === 'infinite') {
+      await resetAndLoadRows();
+    } else {
+      await loadRows(1);
+    }
+  }
+
   async function goToPage(page: number) {
     clearFilterDebounce();
     clearSearchDebounce();
@@ -758,7 +950,7 @@
     clearFilterDebounce();
     clearSearchDebounce();
     sortState = nextSortState;
-    void loadRows(1, nextSortState);
+    void resetAndLoadRows(nextSortState);
     if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
       scheduleLastUsedSave(selectedSchema, selectedTable, nextSortState, filters, searchTerm);
     }
@@ -774,7 +966,7 @@
     clearFilterDebounce();
     clearSearchDebounce();
     filterDebounceId = setTimeout(() => {
-      void loadRows(1, sortState, nextFilters);
+      void resetAndLoadRows(sortState, nextFilters);
       filterDebounceId = null;
     }, 300);
     if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
@@ -788,7 +980,7 @@
     if (!hasSurfaceSelection) return;
 
     searchDebounceId = setTimeout(() => {
-      void loadRows(1);
+      void resetAndLoadRows();
       searchDebounceId = null;
     }, 300);
     if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
@@ -808,7 +1000,7 @@
       return;
     }
 
-    void loadRows(1, sortState, filters, '');
+    void resetAndLoadRows(sortState, filters, '');
   }
 
   function handleToggleColumnVisibility(columnName: string, visible: boolean) {
@@ -887,6 +1079,16 @@
       ...appSettings,
       ...entries,
     };
+  }
+
+  async function handlePaginationModeChange(mode: PaginationMode) {
+    paginationMode = mode;
+    const entries = buildDataSettingsEntries({ pageSize, paginationMode: mode });
+    void saveSettings(entries).catch(() => {});
+    appSettings = { ...appSettings, ...entries };
+    if (mode === 'infinite') {
+      await resetAndLoadRows();
+    }
   }
 
   function openBuilder(
@@ -1189,18 +1391,29 @@
                 {visibleColumns}
                 {focusedTextColumnName}
               />
+              {#if paginationMode === 'infinite' && rowCapState !== 'none'}
+                <RowCapWarning
+                  capState={rowCapState}
+                  loadedCount={loadedRows.filter((r) => !isSyntheticRow(r)).length}
+                />
+              {/if}
               <div class="grid-area">
                 <div class="grid-shell">
-                  <div class="grid-content">
+                  <div class="grid-content" class:stale={tableLoading && paginationMode === 'infinite'}>
                     <DataGrid
                       columns={visibleColumns}
-                      rows={queryResult?.rows ?? []}
+                      rows={displayRows}
                       dateFormat={appearanceSettings.dateFormat}
                       {sortState}
                       {filters}
                       {filtersVisible}
+                      {fetchingMore}
+                      {appendError}
+                      {resetSignal}
                       onSortChange={handleSortChange}
                       onFilterChange={handleFilterChange}
+                      onNearBottom={() => { if (paginationMode === 'infinite') void loadMoreRows(); }}
+                      onRetryAppend={() => { appendError = false; void loadMoreRows(); }}
                     />
                   </div>
                   {#if hasSurfaceSelection}
@@ -1240,7 +1453,9 @@
                 </div>
               </div>
               <StatusBar
+                mode={paginationMode}
                 total={queryResult?.total_rows ?? 0}
+                loadedCount={loadedRows.filter((r) => !isSyntheticRow(r)).length}
                 start={
                   queryResult && queryResult.total_rows > 0
                     ? (queryResult.page - 1) * queryResult.page_size + 1
@@ -1257,8 +1472,10 @@
                     ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size))
                     : 1
                 }
+                {pageSize}
                 loading={tableLoading}
                 onPageChange={goToPage}
+                onPageSizeChange={handlePageSizeChange}
               />
             </main>
           {/if}
@@ -1267,9 +1484,11 @@
             <SettingsContent
               branding={brandingSettings}
               appearance={appearanceSettings}
+              {paginationMode}
               {updateStatus}
               onSaveBranding={handleSaveBranding}
               onSaveAppearance={handleSaveAppearance}
+              onPaginationModeChange={handlePaginationModeChange}
               onUpdateStatusChange={(s) => {
                 applyUpdateStatus(s);
               }}
@@ -1418,6 +1637,11 @@
     inset: 0 0 var(--sk-dock-clearance) 0;
     min-width: 0;
     min-height: 0;
+    transition: opacity 150ms ease-out;
+  }
+
+  .grid-content.stale {
+    opacity: 0.55;
   }
 
   .grid-loading {

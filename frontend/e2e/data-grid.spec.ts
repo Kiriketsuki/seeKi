@@ -1,5 +1,8 @@
 import { test, expect } from './fixtures';
 
+/** Matches both paged ("Showing X - Y of Z") and infinite ("Loaded X of Y") status text. */
+const DUAL_STATUS_RE = /(?:Showing \d[\d,]* - \d[\d,]* of|Loaded \d[\d,]* of) \d[\d,]*/;
+
 test.describe('Data Grid — Loading', () => {
   test.beforeEach(async ({ page, seeki }) => {
     await page.goto('/');
@@ -8,17 +11,21 @@ test.describe('Data Grid — Loading', () => {
   });
 
   test('grid loads with data on initial page', async ({ page, seeki }) => {
-    // Verify status bar shows the expected range
+    // Verify status bar shows data in either paged or infinite mode
     const statusText = await seeki.getStatusBarText();
-    expect(statusText).toMatch(/Showing 1 - \d+ of \d+/);
+    expect(statusText).toMatch(DUAL_STATUS_RE);
 
     // Parse and verify we have rows
     const totalRows = await seeki.getTotalRows();
     expect(totalRows).toBeGreaterThan(0);
 
-    const range = await seeki.getPageRange();
-    expect(range.start).toBe(1);
-    expect(range.end).toBeGreaterThanOrEqual(1);
+    // In paged mode also verify the page range
+    const infinite = await seeki.isInfiniteMode();
+    if (!infinite) {
+      const range = await seeki.getPageRange();
+      expect(range.start).toBe(1);
+      expect(range.end).toBeGreaterThanOrEqual(1);
+    }
 
     // Verify column headers are present — wait for at least one to render
     const headers = page.locator('[role="columnheader"]');
@@ -231,7 +238,7 @@ test.describe('Data Grid — Filtering', () => {
 
     // Verify the status bar updated and filter actually narrowed results
     const statusText = await seeki.getStatusBarText();
-    expect(statusText).toMatch(/Showing \d+ - \d+ of \d+/);
+    expect(statusText).toMatch(DUAL_STATUS_RE);
 
     const filteredTotal = await seeki.getTotalRows();
     // Lower bound: filter actually matched rows (not a zero-match silent pass).
@@ -304,7 +311,7 @@ test.describe('Data Grid — Search', () => {
 
     // Verify status bar shows filtered results
     const statusText = await seeki.getStatusBarText();
-    expect(statusText).toMatch(/Showing \d+ - \d+ of \d+/);
+    expect(statusText).toMatch(DUAL_STATUS_RE);
 
     const searchTotal = await seeki.getTotalRows();
     expect(searchTotal).toBeLessThanOrEqual(initialTotal);
@@ -319,6 +326,13 @@ test.describe('Data Grid — Pagination', () => {
   });
 
   test('pagination forward and back', async ({ page, seeki }) => {
+    // Skip if app is in infinite-scroll mode (no page buttons)
+    const isInfinite = await seeki.isInfiniteMode();
+    if (isInfinite) {
+      test.skip(true, 'Pagination test requires paged mode — switch to paged in Settings > Data to run this test.');
+      return;
+    }
+
     // Check if we have enough rows for pagination
     const totalRows = await seeki.getTotalRows();
 
@@ -432,5 +446,104 @@ test.describe('Data Grid — Cell Formatting', () => {
       (el) => window.getComputedStyle(el).textAlign,
     );
     expect(textAlign).toBe('right');
+  });
+});
+
+test.describe('Data Grid — Infinite Scroll', () => {
+  test.beforeEach(async ({ page, seeki }) => {
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+  });
+
+  test('infinite mode: status bar shows "Loaded X of Y" format', async ({ seeki }) => {
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    const statusText = await seeki.getStatusBarText();
+    expect(statusText).toMatch(/^Loaded \d[\d,]* of \d[\d,]*$/);
+
+    const loaded = await seeki.getLoadedCount();
+    const total = await seeki.getTotalRows();
+    expect(loaded).toBeGreaterThan(0);
+    expect(total).toBeGreaterThan(0);
+    expect(loaded).toBeLessThanOrEqual(total);
+  });
+
+  test('infinite mode: scroll to bottom appends next batch', async ({ page, seeki }) => {
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    const initialLoaded = await seeki.getLoadedCount();
+    const total = await seeki.getTotalRows();
+    test.skip(initialLoaded >= total, 'All rows already loaded — cannot scroll to append');
+
+    // Scroll the RevoGrid scroll container to the bottom
+    const rowsResponse = seeki.pendingRowsResponse();
+    await page.locator('revo-grid').evaluate((el) => {
+      const inner: Element | null =
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
+        el;
+      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
+    });
+    await rowsResponse;
+
+    // Wait for status bar to reflect more loaded rows
+    await page.waitForFunction(
+      (prev) => {
+        const el = document.querySelector('.statusbar .showing');
+        const match = el?.textContent?.match(/Loaded\s+([\d,]+)\s+of/);
+        return match ? parseInt(match[1].replace(/,/g, ''), 10) > prev : false;
+      },
+      initialLoaded,
+      { timeout: 10_000 },
+    );
+
+    const newLoaded = await seeki.getLoadedCount();
+    expect(newLoaded).toBeGreaterThan(initialLoaded);
+  });
+
+  test('paged mode: status bar shows "Showing X - Y of Z" format', async ({ page, seeki }) => {
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(isInfinite, 'Test verifies paged mode — already in infinite mode');
+
+    const statusText = await seeki.getStatusBarText();
+    expect(statusText).toMatch(/^Showing \d[\d,]* - \d[\d,]* of \d[\d,]*$/);
+
+    // Paged mode should show Previous/Next buttons
+    await expect(page.locator('button[aria-label="Previous page"]')).toBeAttached();
+    await expect(page.locator('button[aria-label="Next page"]')).toBeAttached();
+  });
+
+  test('page-size selector changes batch size in infinite mode', async ({ page, seeki }) => {
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    // The status bar page-size select is rendered in infinite mode
+    const pageSizeSelect = page.locator('.statusbar select#sk-page-size');
+    await expect(pageSizeSelect).toBeVisible();
+
+    // Get initial loaded count
+    const initialLoaded = await seeki.getLoadedCount();
+
+    // Change to a different page size and wait for reload
+    const rowsResponse = seeki.pendingRowsResponse();
+    await pageSizeSelect.selectOption('100');
+    await rowsResponse;
+
+    // Loaded count should reflect the new batch size
+    await seeki.waitForGridLoaded();
+    const newLoaded = await seeki.getLoadedCount();
+    expect(newLoaded).toBeGreaterThan(0);
+    // After a reset the new first batch size should align with the chosen page size
+    const total = await seeki.getTotalRows();
+    expect(newLoaded).toBeLessThanOrEqual(total);
+
+    // Restore original selection to avoid polluting other tests
+    if (initialLoaded <= 50) {
+      await seeki.pendingRowsResponse();
+      await pageSizeSelect.selectOption('50');
+    }
   });
 });

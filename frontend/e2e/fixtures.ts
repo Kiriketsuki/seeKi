@@ -106,14 +106,27 @@ export class SeekiHelpers {
     return await this.page.locator('.statusbar .showing').textContent() ?? '';
   }
 
-  /** Parse the total row count from the status bar. */
+  /** Parse the total row count from the status bar (works for both paged and infinite modes). */
   async getTotalRows(): Promise<number> {
     const text = await this.getStatusBarText();
     const match = text.match(/of\s+([\d,]+)/);
     return match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
   }
 
-  /** Parse the current page range from the status bar. */
+  /** Parse how many rows are loaded in infinite-scroll mode ("Loaded X of Y"). */
+  async getLoadedCount(): Promise<number> {
+    const text = await this.getStatusBarText();
+    const match = text.match(/Loaded\s+([\d,]+)\s+of/);
+    return match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
+  }
+
+  /** Returns true when the status bar shows infinite-scroll mode text. */
+  async isInfiniteMode(): Promise<boolean> {
+    const text = await this.getStatusBarText();
+    return text.startsWith('Loaded');
+  }
+
+  /** Parse the current page range from the status bar (paged mode only). */
   async getPageRange(): Promise<{ start: number; end: number }> {
     const text = await this.getStatusBarText();
     const match = text.match(/([\d,]+)\s*-\s*([\d,]+)/);

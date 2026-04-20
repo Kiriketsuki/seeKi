@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAppearanceSettingsEntries,
   buildBrandingSettingsEntries,
+  buildDataSettingsEntries,
   parseAppearanceSettings,
   parseBrandingSettings,
+  parseDataSettings,
 } from './settings';
 import type { DisplayConfig } from './types';
 
@@ -62,6 +64,42 @@ describe('parseAppearanceSettings', () => {
       dateFormat: 'system',
       rowDensity: 'comfortable',
     });
+  });
+});
+
+describe('parseDataSettings', () => {
+  it('returns valid saved data settings', () => {
+    expect(
+      parseDataSettings({
+        'data.page_size': 100,
+        'data.pagination_mode': 'paged',
+      }),
+    ).toEqual({ pageSize: 100, paginationMode: 'paged' });
+  });
+
+  it('round-trips through buildDataSettingsEntries', () => {
+    const original = { pageSize: 250 as const, paginationMode: 'infinite' as const };
+    const entries = buildDataSettingsEntries(original);
+    expect(parseDataSettings(entries)).toEqual(original);
+  });
+
+  it('falls back to defaults for invalid values', () => {
+    expect(
+      parseDataSettings({
+        'data.page_size': 999,
+        'data.pagination_mode': 'rolling',
+      }),
+    ).toEqual({ pageSize: 50, paginationMode: 'infinite' });
+  });
+
+  it('falls back to defaults for missing keys', () => {
+    expect(parseDataSettings({})).toEqual({ pageSize: 50, paginationMode: 'infinite' });
+  });
+
+  it('accepts page_size as a numeric string', () => {
+    expect(
+      parseDataSettings({ 'data.page_size': '500', 'data.pagination_mode': 'paged' }),
+    ).toEqual({ pageSize: 500, paginationMode: 'paged' });
   });
 });
 
