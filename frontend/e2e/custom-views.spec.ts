@@ -368,13 +368,7 @@ test.describe.serial('Custom views — Infinite scroll', () => {
     } else {
       // Trigger scroll-to-bottom on the grid
       const rowsResponse = seeki.pendingGridRowsResponse();
-      await page.locator('revo-grid').evaluate((el) => {
-        const inner: Element | null =
-          (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
-          (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
-          el;
-        (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
-      });
+      await seeki.scrollGridToBottom();
       await rowsResponse;
 
       await page.waitForFunction(

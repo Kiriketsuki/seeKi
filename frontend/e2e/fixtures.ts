@@ -228,6 +228,17 @@ export class SeekiHelpers {
     return await sidebar.evaluate((el) => el.classList.contains('collapsed'));
   }
 
+  /** Scroll the RevoGrid container to the bottom to trigger infinite scroll. */
+  async scrollGridToBottom(): Promise<void> {
+    await this.page.locator('revo-grid').evaluate((el) => {
+      const inner: Element | null =
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
+        el;
+      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
+    });
+  }
+
   /** Replace window.open with a recorder before page load. */
   async installWindowOpenRecorder(): Promise<void> {
     await this.page.addInitScript(() => {

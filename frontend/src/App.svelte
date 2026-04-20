@@ -266,8 +266,9 @@
     paginationMode === 'infinite' ? loadedRows : (queryResult?.rows ?? [])
   );
   let totalRows = $derived.by(() => queryResult?.total_rows ?? 0);
+  let cleanRowCount = $derived(loadedRows.filter((r) => !isSyntheticRow(r)).length);
   let infiniteHasMore = $derived.by(() =>
-    computeHasMore(loadedRows.filter((r) => !isSyntheticRow(r)).length, totalRows, rowCapState)
+    computeHasMore(cleanRowCount, totalRows, rowCapState)
   );
   let brandingSettings = $derived.by(() =>
     parseBrandingSettings(appSettings, displayConfig)
@@ -823,7 +824,7 @@
       currentPage = page;
       if (paginationMode === 'infinite') {
         const nextState = appendBatch(
-          { rows: loadedRows.filter((r) => !isSyntheticRow(r)), loadedCount: loadedRows.filter((r) => !isSyntheticRow(r)).length, lastLoadedPage: page - 1, capState: rowCapState },
+          { rows: loadedRows.filter((r) => !isSyntheticRow(r)), loadedCount: cleanRowCount, lastLoadedPage: page - 1, capState: rowCapState },
           result.rows,
           page,
           result.total_rows,
@@ -889,18 +890,17 @@
     let result: QueryResult | null = null;
     let failed = false;
 
-    try {
-      result = await fetchNextPage(nextPage);
-    } catch {
-      if (isStale()) { failed = true; } else {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        if (isStale()) { failed = true; break; }
         await new Promise((r) => setTimeout(r, 500));
-        if (isStale()) { failed = true; } else {
-          try {
-            result = await fetchNextPage(nextPage);
-          } catch {
-            failed = true;
-          }
-        }
+        if (isStale()) { failed = true; break; }
+      }
+      try {
+        result = await fetchNextPage(nextPage);
+        break;
+      } catch {
+        if (attempt === 1) failed = true;
       }
     }
 
@@ -918,10 +918,11 @@
       return;
     }
 
+    const cleanRows = loadedRows.filter((r) => !isSyntheticRow(r));
     const nextState = appendBatch(
       {
-        rows: loadedRows.filter((r) => !isSyntheticRow(r)),
-        loadedCount: loadedRows.filter((r) => !isSyntheticRow(r)).length,
+        rows: cleanRows,
+        loadedCount: cleanRows.length,
         lastLoadedPage,
         capState: rowCapState,
       },
@@ -1402,7 +1403,7 @@
               {#if paginationMode === 'infinite' && rowCapState !== 'none'}
                 <RowCapWarning
                   capState={rowCapState}
-                  loadedCount={loadedRows.filter((r) => !isSyntheticRow(r)).length}
+                  loadedCount={cleanRowCount}
                 />
               {/if}
               <div class="grid-area">
@@ -1463,7 +1464,7 @@
               <StatusBar
                 mode={paginationMode}
                 total={queryResult?.total_rows ?? 0}
-                loadedCount={loadedRows.filter((r) => !isSyntheticRow(r)).length}
+                loadedCount={cleanRowCount}
                 start={
                   queryResult && queryResult.total_rows > 0
                     ? (queryResult.page - 1) * queryResult.page_size + 1

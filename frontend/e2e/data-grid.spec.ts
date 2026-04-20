@@ -480,13 +480,7 @@ test.describe('Data Grid — Infinite Scroll', () => {
 
     // Scroll the RevoGrid scroll container to the bottom
     const rowsResponse = seeki.pendingRowsResponse();
-    await page.locator('revo-grid').evaluate((el) => {
-      const inner: Element | null =
-        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
-        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
-        el;
-      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
-    });
+    await seeki.scrollGridToBottom();
     await rowsResponse;
 
     // Wait for status bar to reflect more loaded rows
@@ -590,13 +584,7 @@ test.describe('Data Grid — RowCapWarning Banner', () => {
 
     // Trigger a reload so the intercepted response takes effect
     const rowsResponse = seeki.pendingGridRowsResponse();
-    await page.locator('revo-grid').evaluate((el) => {
-      const inner: Element | null =
-        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
-        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
-        el;
-      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
-    });
+    await seeki.scrollGridToBottom();
     await rowsResponse;
 
     // Wait for the soft cap banner to render
@@ -642,13 +630,7 @@ test.describe('Data Grid — Inline Error Retry', () => {
     });
 
     // Scroll to bottom to trigger loadMoreRows
-    await page.locator('revo-grid').evaluate((el) => {
-      const inner: Element | null =
-        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
-        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
-        el;
-      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
-    });
+    await seeki.scrollGridToBottom();
 
     // Wait for the inline error row to appear (after first attempt + 500ms backoff + second attempt)
     const retryButton = page.locator('.sk-error-cell__retry');
