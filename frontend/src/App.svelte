@@ -49,8 +49,12 @@
     TableInfo,
     TablesSurface,
     UpdateStatus,
+    ViewColumn,
     ViewDraft,
     ViewDefinitionFilters,
+    ViewGrouping,
+    ViewRanking,
+    ViewSourceRef,
   } from './lib/types';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import {
@@ -115,6 +119,7 @@
   let savedViews: SavedViewSummary[] = $state([]);
   let tablesSurface: TablesSurface = $state({ kind: 'table' });
   let builderDraft: ViewDraft | null = $state(null);
+  let builderDraftLive: { columns: ViewColumn[]; sources: ViewSourceRef[]; grouping: ViewGrouping | null; ranking: ViewRanking | null } | null = $state(null);
   let builderSourceLabel = $state('');
   let builderReturnTarget: TablesSurface = $state({ kind: 'table' });
   let pendingCreateView = $state(false);
@@ -890,6 +895,7 @@
     returnTarget: TablesSurface = getCurrentSurfaceSnapshot(),
   ) {
     builderDraft = cloneDraft(draft);
+    builderDraftLive = null;
     builderSourceLabel = sourceLabel;
     builderReturnTarget = returnTarget;
     tablesSurface = { kind: 'builder' };
@@ -924,7 +930,8 @@
   }
 
   function handleCreateView() {
-    if (builderDraft && (builderDraft.columns.length > 0 || (builderDraft.sources?.length ?? 0) > 0 || builderDraft.grouping != null || builderDraft.ranking != null)) {
+    const live = builderDraftLive ?? builderDraft;
+    if (live && (live.columns.length > 0 || (live.sources?.length ?? 0) > 0 || live.grouping != null || live.ranking != null)) {
       pendingCreateView = true;
       return;
     }
@@ -952,6 +959,7 @@
       a.name.localeCompare(b.name)
     );
     builderDraft = null;
+    builderDraftLive = null;
     builderSourceLabel = '';
     builderReturnTarget = { kind: 'table' };
     await refreshViewsList();
@@ -961,6 +969,7 @@
   async function handleCancelBuilder() {
     const target = builderReturnTarget;
     builderDraft = null;
+    builderDraftLive = null;
     builderSourceLabel = '';
     builderReturnTarget = { kind: 'table' };
 
@@ -1124,7 +1133,7 @@
                 sourceLabel={builderSourceLabel}
                 onCancel={handleCancelBuilder}
                 onSaved={handleBuilderSaved}
-                onDraftChange={(d) => { if (builderDraft) builderDraft = { ...builderDraft, ...d }; }}
+                onDraftChange={(d) => { builderDraftLive = { ...d }; }}
               />
             </main>
           {:else}
