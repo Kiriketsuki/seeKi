@@ -45,12 +45,14 @@
     sourceLabel = '',
     onCancel,
     onSaved,
+    onDraftChange,
   }: {
     tables: TableInfo[];
     initialDraft: ViewDraft | null;
     sourceLabel?: string;
     onCancel: () => void;
     onSaved: (view: SavedViewSummary) => Promise<void> | void;
+    onDraftChange?: (draft: { columns: ViewColumn[]; sources: ViewSourceRef[]; grouping: ViewGrouping | null; ranking: ViewRanking | null }) => void;
   } = $props();
 
   const templateLabels: Record<ViewTemplateId, string> = {
@@ -87,6 +89,10 @@
   let loadedColumns = $state<Record<string, ColumnInfo[]>>({});
   let templateStage = $state(true);
   let upgradeConfirmOpen = $state(false);
+
+  $effect(() => {
+    onDraftChange?.({ columns, sources, grouping, ranking });
+  });
 
   function tableKey(schema: string, table: string): string {
     return `${schema}.${table}`;

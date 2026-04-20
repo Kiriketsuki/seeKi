@@ -1124,6 +1124,7 @@
                 sourceLabel={builderSourceLabel}
                 onCancel={handleCancelBuilder}
                 onSaved={handleBuilderSaved}
+                onDraftChange={(d) => { if (builderDraft) builderDraft = { ...builderDraft, ...d }; }}
               />
             </main>
           {:else}
@@ -1286,7 +1287,7 @@
   >
     <div class="draft-guard-card" role="dialog" aria-modal="true" aria-label="Unsaved draft">
       <p class="draft-guard-title">You have an unsaved view draft</p>
-      <p class="draft-guard-detail">Creating a new view will discard your current draft with {builderDraft?.columns.length ?? 0} column{(builderDraft?.columns.length ?? 0) === 1 ? '' : 's'}. Continue?</p>
+      <p class="draft-guard-detail">Creating a new view will discard your current draft including columns, joins, grouping, and ranking. Continue?</p>
       <div class="draft-guard-actions">
         <button type="button" class="draft-guard-btn draft-guard-btn-secondary" onclick={() => pendingCreateView = false}>Keep editing</button>
         <button type="button" class="draft-guard-btn draft-guard-btn-danger" onclick={forceCreateView}>Discard &amp; create new</button>
