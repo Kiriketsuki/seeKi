@@ -924,7 +924,7 @@
   }
 
   function handleCreateView() {
-    if (builderDraft && builderDraft.columns.length > 0) {
+    if (builderDraft && (builderDraft.columns.length > 0 || (builderDraft.sources?.length ?? 0) > 0 || builderDraft.grouping != null || builderDraft.ranking != null)) {
       pendingCreateView = true;
       return;
     }

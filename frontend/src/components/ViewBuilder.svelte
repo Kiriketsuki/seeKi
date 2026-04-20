@@ -86,6 +86,7 @@
   let seedKey = $state('');
   let loadedColumns = $state<Record<string, ColumnInfo[]>>({});
   let templateStage = $state(true);
+  let upgradeConfirmOpen = $state(false);
 
   function tableKey(schema: string, table: string): string {
     return `${schema}.${table}`;
@@ -344,7 +345,10 @@
   const currentGroupingValue = $derived.by(() => encodeColumnRef(grouping?.keys[0]));
   const currentLatestValue = $derived.by(() => encodeColumnRef(grouping?.latest_by));
   const currentRankValue = $derived.by(() => encodeColumnRef(ranking?.order_by));
-  const currentFilterCount = $derived.by(() => Object.keys(filters).length);
+  const currentFilterCount = $derived.by(() => {
+    const activeKeys = new Set(filterRows.map((row) => row.key));
+    return Object.keys(filters).filter((key) => activeKeys.has(key) && filters[key] != null).length;
+  });
   const builderItems = $derived.by<BuilderGridItem[]>(() =>
     columns.map((column, index) => ({
       id: `${outputNameForColumn(column)}-${index}`,
@@ -887,11 +891,15 @@
   }
 
   async function handleSave() {
-    if ((initialDraft?.definition_version ?? 2) < 2) {
-      const proceed = window.confirm('Saving this draft upgrades the saved-view definition to version 2. Continue?');
-      if (!proceed) return;
+    if ((initialDraft?.definition_version ?? 2) < 2 && !upgradeConfirmOpen) {
+      upgradeConfirmOpen = true;
+      return;
     }
+    upgradeConfirmOpen = false;
+    await doSave();
+  }
 
+  async function doSave() {
     const trimmedName = name.trim();
     if (!trimmedName) {
       error = 'Saved view name must not be empty';
@@ -1065,6 +1073,23 @@
   </div>
 {/if}
 
+{#if upgradeConfirmOpen}
+  <div
+    class="dialog-backdrop"
+    role="presentation"
+    onclick={(e) => { if (e.target === e.currentTarget) upgradeConfirmOpen = false; }}
+  >
+    <div class="dialog-card" role="dialog" aria-modal="true" aria-label="Upgrade view definition">
+      <p class="dialog-title">Upgrade to version 2?</p>
+      <p class="dialog-detail">Saving this draft upgrades the saved-view definition to version 2. This cannot be undone.</p>
+      <div class="dialog-actions">
+        <button type="button" class="dialog-btn dialog-btn-secondary" onclick={() => upgradeConfirmOpen = false}>Cancel</button>
+        <button type="button" class="dialog-btn dialog-btn-primary" onclick={handleSave} data-testid="upgrade-dialog-confirm">Upgrade &amp; save</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .builder {
     flex: 1;
@@ -1135,5 +1160,93 @@
     .filter-row {
       grid-template-columns: minmax(0, 1fr);
     }
+  }
+
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sk-space-lg);
+    z-index: 1000;
+    animation: dialog-fade 120ms ease-out;
+  }
+
+  .dialog-card {
+    max-width: 400px;
+    width: 100%;
+    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    border-radius: var(--sk-radius-md);
+    padding: var(--sk-space-lg);
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    animation: dialog-pop 140ms ease-out;
+  }
+
+  .dialog-title {
+    margin: 0 0 var(--sk-space-sm);
+    font-weight: 600;
+    color: var(--sk-text);
+  }
+
+  .dialog-detail {
+    margin: 0 0 var(--sk-space-md);
+    font-size: var(--sk-font-size-body);
+    color: var(--sk-muted);
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sk-space-sm);
+  }
+
+  .dialog-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--sk-radius-md);
+    font: inherit;
+    cursor: pointer;
+    padding: 7px 14px;
+    font-size: var(--sk-font-size-body);
+  }
+
+  .dialog-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .dialog-btn-secondary {
+    border: 1px solid var(--sk-border-light);
+    background: transparent;
+    color: var(--sk-text);
+  }
+
+  .dialog-btn-secondary:hover:not(:disabled) {
+    background: rgba(47, 72, 88, 0.04);
+  }
+
+  .dialog-btn-primary {
+    border: 1px solid rgba(0, 169, 165, 0.3);
+    background: rgba(0, 169, 165, 0.1);
+    color: var(--sk-accent);
+  }
+
+  .dialog-btn-primary:hover:not(:disabled) {
+    background: rgba(0, 169, 165, 0.18);
+  }
+
+  @keyframes dialog-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes dialog-pop {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
   }
 </style>
