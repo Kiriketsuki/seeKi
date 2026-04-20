@@ -16,7 +16,7 @@
     hiddenColumnCount = 0,
     hasTable = false,
     disabled = false,
-    sortState = { column: null, direction: null },
+    sortState = [],
     onToggleSearch,
     onSearchInput,
     onSearchClear,
@@ -74,10 +74,11 @@
   let controlsDisabled = $derived(disabled || !hasTable);
 
   let sortDescription = $derived.by(() => {
-    if (!sortState.column || !sortState.direction) return '';
-    const col = columns.find((c) => c.name === sortState.column);
-    const label = col?.display_name ?? sortState.column;
-    const dir = sortState.direction === 'asc' ? 'ascending' : 'descending';
+    const first = sortState[0];
+    if (!first) return '';
+    const col = columns.find((c) => c.name === first.column);
+    const label = col?.display_name ?? first.column;
+    const dir = first.direction === 'asc' ? 'ascending' : 'descending';
     return `Sorted by ${label}, ${dir}`;
   });
 

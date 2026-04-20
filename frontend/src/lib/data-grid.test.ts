@@ -88,6 +88,16 @@ describe('formatCellValue', () => {
       expect(result.kind).toBe('text');
       expect(result.display).toBe('not-a-date');
     });
+
+    it('formats a valid date string using YYYY-MM-DD preference', () => {
+      const result = formatCellValue(dateCol, '2024-06-15', 'YYYY-MM-DD');
+      expect(result.display).toBe('2024-06-15');
+    });
+
+    it('formats a valid date string using DD/MM/YYYY preference', () => {
+      const result = formatCellValue(dateCol, '2024-06-15', 'DD/MM/YYYY');
+      expect(result.display).toBe('15/06/2024');
+    });
   });
 
   describe('datetime', () => {
@@ -103,6 +113,11 @@ describe('formatCellValue', () => {
     it('formats ISO datetime', () => {
       const result = formatCellValue(tsCol, '2024-01-15T14:30:00');
       expect(result.kind).toBe('timestamp');
+    });
+
+    it('formats datetime using MM/DD/YYYY preference', () => {
+      const result = formatCellValue(tsCol, '2024-01-15T14:30:00', 'MM/DD/YYYY');
+      expect(result.display).toContain('01/15/2024');
     });
 
     it('formats timestamp with time zone', () => {

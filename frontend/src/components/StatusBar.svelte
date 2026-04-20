@@ -56,7 +56,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--sk-space-sm) var(--sk-space-2xl);
+    padding: var(--sk-statusbar-padding-y) var(--sk-space-2xl);
     background: var(--sk-glass-statusbar);
     backdrop-filter: var(--sk-glass-statusbar-blur);
     -webkit-backdrop-filter: var(--sk-glass-statusbar-blur);

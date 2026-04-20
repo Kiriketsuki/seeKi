@@ -2,11 +2,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::DefaultBodyLimit;
-use axum::http::StatusCode;
+use axum::http::header::{CACHE_CONTROL, HOST, ORIGIN, REFERER};
+use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::{Extension, Json, extract::Request};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::update::UpdateState;
 use crate::update::github;
@@ -39,105 +40,250 @@ pub async fn require_update_token(
 
 // ── GET /api/version ─────────────────────────────────────────────────────────
 
-pub async fn get_version() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "version": env!("SEEKI_VERSION"),
-        "commit": env!("SEEKI_COMMIT"),
-        "built_at": env!("SEEKI_BUILT_AT"),
-    }))
+#[derive(Debug, Clone, Serialize)]
+pub struct VersionResponse {
+    pub version: &'static str,
+    pub commit: &'static str,
+    pub built_at: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateStatusResponse {
+    pub current: String,
+    pub latest: Option<String>,
+    pub pre_release_channel: bool,
+    pub poll_interval_hours: u8,
+    pub update_available: bool,
+    pub previous_exists: bool,
+    pub last_checked: Option<String>,
+    pub release_notes: Option<String>,
+    pub available_builds: Vec<AvailableBuild>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AvailableBuild {
+    pub tag: String,
+    pub published_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateTokenResponse {
+    token: String,
+}
+
+pub async fn get_version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        version: env!("SEEKI_VERSION"),
+        commit: env!("SEEKI_GIT_COMMIT"),
+        built_at: env!("SEEKI_BUILT_AT"),
+    })
+}
+
+async fn build_update_status_response(update: &UpdateState) -> UpdateStatusResponse {
+    let settings = {
+        let guard = update.settings.lock().await;
+        guard.clone()
+    };
+    let cached = update.cache.latest(settings.pre_release_channel).await;
+    let current = SeekiVersion::current();
+    let current_path = swap::current_exe_path().ok();
+    let previous_exists = current_path
+        .as_ref()
+        .is_some_and(|path| swap::has_previous(path));
+
+    let (latest, update_available, release_notes) = release_metadata(&current, cached.as_ref());
+
+    // Expose the list of recent prereleases only when the prerelease channel
+    // is enabled — stable users should not see prerelease builds in the picker.
+    let available_builds = if settings.pre_release_channel {
+        update
+            .cache
+            .prerelease_list()
+            .await
+            .map(|list| {
+                list.into_iter()
+                    .map(|rel| AvailableBuild {
+                        tag: rel.tag_name.trim_start_matches('v').to_string(),
+                        published_at: rel.published_at,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    UpdateStatusResponse {
+        current: current.to_string(),
+        latest,
+        pre_release_channel: settings.pre_release_channel,
+        poll_interval_hours: settings.poll_interval_hours,
+        update_available,
+        previous_exists,
+        last_checked: settings.last_checked,
+        release_notes,
+        available_builds,
+    }
+}
+
+fn release_metadata(
+    current: &SeekiVersion,
+    release: Option<&github::GitHubRelease>,
+) -> (Option<String>, bool, Option<String>) {
+    let Some(release) = release else {
+        return (None, false, None);
+    };
+
+    let tag = release.tag_name.trim_start_matches('v').to_string();
+    let update_available = match SeekiVersion::from_str(&tag) {
+        Ok(version) => {
+            // Nightly build suffixes encode `{date}g{sha}`, which do not sort
+            // meaningfully against each other. Use the release's published_at
+            // against the currently running binary's build time — a newer
+            // publish time on a different tag is an update; an older one is
+            // a downgrade and must never be offered (it could roll the user
+            // back past schema migrations they've already applied).
+            if is_nightly_suffix(&current.suffix) && is_nightly_suffix(&version.suffix) {
+                tag != current.to_string() && release_is_newer_than_running(&release.published_at)
+            } else {
+                version > *current
+            }
+        }
+        Err(error) => {
+            tracing::warn!(tag = %tag, error = %error, "Failed to parse release version tag");
+            false
+        }
+    };
+    (Some(tag), update_available, Some(release.body.clone()))
+}
+
+fn is_nightly_suffix(suffix: &str) -> bool {
+    suffix.starts_with('n')
+}
+
+/// True if `release_published_at` (ISO 8601) is strictly after the running
+/// binary's compile-time `SEEKI_BUILT_AT`. Used to reject downgrade candidates
+/// when comparing nightly tags by identity.
+///
+/// Fails safe: on any parse error we return `false` (treat as not-an-update)
+/// rather than risk offering a downgrade.
+fn release_is_newer_than_running(release_published_at: &str) -> bool {
+    use chrono::DateTime;
+    let Ok(published) = DateTime::parse_from_rfc3339(release_published_at) else {
+        tracing::warn!(
+            published_at = %release_published_at,
+            "Failed to parse release published_at — not offering update"
+        );
+        return false;
+    };
+    let Ok(built) = DateTime::parse_from_rfc3339(env!("SEEKI_BUILT_AT")) else {
+        tracing::warn!(
+            built_at = %env!("SEEKI_BUILT_AT"),
+            "Failed to parse SEEKI_BUILT_AT — not offering update"
+        );
+        return false;
+    };
+    published > built
+}
+
+async fn persist_last_checked(update: &UpdateState) -> Result<(), AppError> {
+    let mut settings = update.settings.lock().await;
+    settings.last_checked = Some(chrono::Utc::now().to_rfc3339());
+    settings.save()?;
+    Ok(())
+}
+
+fn request_origin(headers: &HeaderMap) -> Option<url::Url> {
+    let host = header_value(headers, HOST)?;
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("http");
+    url::Url::parse(&format!("{scheme}://{host}")).ok()
+}
+
+fn header_value(headers: &HeaderMap, name: axum::http::header::HeaderName) -> Option<&str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn same_origin(left: &url::Url, right: &url::Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
+}
+
+fn is_same_origin_request(headers: &HeaderMap) -> bool {
+    let Some(expected_origin) = request_origin(headers) else {
+        return false;
+    };
+
+    if let Some(origin) = header_value(headers, ORIGIN) {
+        if origin == "null" {
+            return false;
+        }
+        return url::Url::parse(origin)
+            .map(|candidate| same_origin(&candidate, &expected_origin))
+            .unwrap_or(false);
+    }
+
+    let Some(referer) = header_value(headers, REFERER) else {
+        return false;
+    };
+    url::Url::parse(referer)
+        .map(|candidate| same_origin(&candidate, &expected_origin))
+        .unwrap_or(false)
 }
 
 // ── GET /api/update/status ───────────────────────────────────────────────────
 
 pub async fn get_update_status(
     Extension(update): Extension<Arc<UpdateState>>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let settings = update.settings.lock().await;
-    let cached = update.cache.latest().await;
-    let current = SeekiVersion::current();
-    let current_path = swap::current_exe_path().ok();
-    let previous_exists = current_path.as_ref().is_some_and(|p| swap::has_previous(p));
-
-    let (latest, update_available) = if let Some(release) = cached {
-        let tag = release.tag_name.trim_start_matches('v');
-        let latest_ver = SeekiVersion::from_str(tag);
-        let avail = match &latest_ver {
-            Ok(v) => v > &current,
-            Err(e) => {
-                tracing::warn!(tag = %tag, error = %e, "Failed to parse cached release version tag");
-                false
-            }
-        };
-        (Some(tag.to_string()), avail)
-    } else {
-        (None, false)
-    };
-
-    Ok(Json(serde_json::json!({
-        "current": current.to_string(),
-        "latest": latest,
-        "pre_release_channel": settings.pre_release_channel,
-        "update_available": update_available,
-        "previous_exists": previous_exists,
-        "last_checked": settings.last_checked,
-    })))
+) -> Result<Json<UpdateStatusResponse>, AppError> {
+    Ok(Json(build_update_status_response(update.as_ref()).await))
 }
 
 // ── POST /api/update/check ───────────────────────────────────────────────────
 
 pub async fn check_update(
     Extension(update): Extension<Arc<UpdateState>>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<UpdateStatusResponse>, AppError> {
     let pre = {
         let s = update.settings.lock().await;
         s.pre_release_channel
     };
 
-    let release = github::check_latest(&update.cache, pre, true).await?;
-
-    // Update last_checked timestamp
-    {
-        let mut s = update.settings.lock().await;
-        s.last_checked = Some(chrono::Utc::now().to_rfc3339());
-        if let Err(e) = s.save() {
-            tracing::warn!(error = %e, "Failed to persist update settings");
-        }
+    let result = github::check_latest(&update.cache, pre, true).await?;
+    if result.fetched {
+        persist_last_checked(update.as_ref()).await?;
     }
 
-    let current = SeekiVersion::current();
+    Ok(Json(build_update_status_response(update.as_ref()).await))
+}
 
-    let (tag, update_available, assets, body) = if let Some(rel) = release {
-        let tag = rel.tag_name.trim_start_matches('v').to_string();
-        let avail = match SeekiVersion::from_str(&tag) {
-            Ok(v) => v > current,
-            Err(e) => {
-                tracing::warn!(tag = %tag, error = %e, "Failed to parse release version tag");
-                false
-            }
-        };
-        let assets: Vec<serde_json::Value> = rel
-            .assets
-            .iter()
-            .map(|a| {
-                serde_json::json!({
-                    "name": a.name,
-                    "size": a.size,
-                    "url": a.browser_download_url,
-                })
-            })
-            .collect();
-        (Some(tag), avail, assets, Some(rel.body))
-    } else {
-        (None, false, vec![], None)
-    };
+// ── GET /api/update/token ────────────────────────────────────────────────────
 
-    Ok(Json(serde_json::json!({
-        "current": current.to_string(),
-        "latest": tag,
-        "update_available": update_available,
-        "assets": assets,
-        "release_notes": body,
-    })))
+pub async fn get_update_token(
+    Extension(update): Extension<Arc<UpdateState>>,
+    headers: HeaderMap,
+) -> Result<(axum::http::HeaderMap, Json<UpdateTokenResponse>), AppError> {
+    if !is_same_origin_request(&headers) {
+        return Err(AppError::forbidden(
+            "Cross-origin update token requests are not allowed",
+        ));
+    }
+
+    let mut response_headers = axum::http::HeaderMap::new();
+    response_headers.insert(
+        CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    Ok((
+        response_headers,
+        Json(UpdateTokenResponse {
+            token: update.token.expose().to_string(),
+        }),
+    ))
 }
 
 // ── POST /api/update/apply ───────────────────────────────────────────────────
@@ -146,6 +292,9 @@ pub async fn check_update(
 pub struct ApplyRequest {
     source: String,
     wip_upload_id: Option<String>,
+    /// Optional: install a specific release tag from the cached prerelease list
+    /// instead of the newest available. Used by the build picker UI.
+    release_tag: Option<String>,
 }
 
 pub async fn apply_update(
@@ -156,14 +305,33 @@ pub async fn apply_update(
 
     match req.source.as_str() {
         "release" => {
-            // Get cached release
+            // Get cached release — either the newest one, or a specific tag
+            // from the prerelease list when the build picker has selected one.
             let pre = {
                 let s = update.settings.lock().await;
                 s.pre_release_channel
             };
-            let release = github::check_latest(&update.cache, pre, false)
-                .await?
-                .ok_or_else(|| AppError::bad_request("No release available — run check first"))?;
+
+            let release = if let Some(requested_tag) = req.release_tag.as_deref() {
+                let normalized = requested_tag.trim_start_matches('v');
+                let list = update.cache.prerelease_list().await.ok_or_else(|| {
+                    AppError::bad_request("No build list cached — run check for updates first")
+                })?;
+                list.into_iter()
+                    .find(|r| r.tag_name.trim_start_matches('v') == normalized)
+                    .ok_or_else(|| {
+                        AppError::bad_request(format!(
+                            "Build '{requested_tag}' not found in cached list"
+                        ))
+                    })?
+            } else {
+                github::check_latest(&update.cache, pre, false)
+                    .await?
+                    .release
+                    .ok_or_else(|| {
+                        AppError::bad_request("No release available — run check first")
+                    })?
+            };
 
             let asset = github::select_asset(&release.assets).ok_or_else(|| {
                 AppError::bad_request("No compatible binary found in release assets")
@@ -172,12 +340,15 @@ pub async fn apply_update(
             // Require the SHA256 sidecar to be present in the release manifest
             // before downloading anything — fail fast if the release is incomplete.
             let sha256_asset_name = format!("{}.sha256", &asset.name);
-            let has_sha256_asset = release.assets.iter().any(|a| a.name == sha256_asset_name);
-            if !has_sha256_asset {
-                return Err(AppError::bad_request(
-                    "Release is missing a SHA256 sidecar — refusing to apply an unverified binary",
-                ));
-            }
+            let sha256_asset = release
+                .assets
+                .iter()
+                .find(|a| a.name == sha256_asset_name)
+                .ok_or_else(|| {
+                    AppError::bad_request(
+                        "Release is missing a SHA256 sidecar — refusing to apply an unverified binary",
+                    )
+                })?;
 
             // Download the binary into memory and hash it in one streaming pass.
             // This eliminates both the TOCTOU window (no double-read of a temp
@@ -189,8 +360,9 @@ pub async fn apply_update(
                 .map_err(|e| AppError::bad_request(format!("Download failed: {e}")))?;
 
             // Download and compare the expected SHA256 sidecar.
-            let sha256_url = format!("{}.sha256", &asset.browser_download_url);
-            let expected_sha256 = github::download_sha256(&sha256_url).await.map_err(|e| {
+            // Use the actual URL from the manifest rather than constructing it.
+            let sha256_url = &sha256_asset.browser_download_url;
+            let expected_sha256 = github::download_sha256(sha256_url).await.map_err(|e| {
                 AppError::bad_request(format!(
                     "SHA256 sidecar exists but download failed — aborting for safety: {e}"
                 ))
@@ -347,24 +519,45 @@ pub async fn rollback(
 #[derive(Deserialize)]
 pub struct UpdateSettingsRequest {
     pre_release_channel: Option<bool>,
+    poll_interval_hours: Option<u8>,
 }
 
 pub async fn update_settings(
     Extension(update): Extension<Arc<UpdateState>>,
     Json(req): Json<UpdateSettingsRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let mut settings = update.settings.lock().await;
+) -> Result<Json<UpdateStatusResponse>, AppError> {
+    let mut should_notify = false;
+    {
+        let mut settings = update.settings.lock().await;
 
-    if let Some(pre) = req.pre_release_channel {
-        settings.pre_release_channel = pre;
+        if let Some(pre) = req.pre_release_channel
+            && settings.pre_release_channel != pre
+        {
+            settings.pre_release_channel = pre;
+            should_notify = true;
+        }
+
+        if let Some(hours) = req.poll_interval_hours {
+            if !crate::update::is_valid_poll_interval_hours(hours) {
+                return Err(AppError::bad_request(
+                    "poll_interval_hours must be one of 0, 1, 6, or 24",
+                ));
+            }
+
+            if settings.poll_interval_hours != hours {
+                settings.poll_interval_hours = hours;
+                should_notify = true;
+            }
+        }
+
+        settings.save()?;
     }
 
-    settings.save()?;
+    if should_notify {
+        update.settings_changed.notify_one();
+    }
 
-    Ok(Json(serde_json::json!({
-        "pre_release_channel": settings.pre_release_channel,
-        "last_checked": settings.last_checked,
-    })))
+    Ok(Json(build_update_status_response(update.as_ref()).await))
 }
 
 /// Helper to construct the WIP upload route with a 100 MB body limit.
@@ -389,4 +582,128 @@ pub fn protected_update_router() -> axum::Router {
         .route("/update/wip", wip_route())
         .route("/update/rollback", post(rollback))
         .layer(middleware::from_fn(require_update_token))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use axum::response::IntoResponse;
+    use tokio::sync::{Mutex, Notify};
+
+    fn test_update_state() -> Arc<UpdateState> {
+        Arc::new(UpdateState {
+            cache: github::ReleaseCache::new(),
+            settings: Mutex::new(crate::update::UpdateSettings::default()),
+            swap_lock: Mutex::new(()),
+            shutdown: Arc::new(Notify::new()),
+            settings_changed: Arc::new(Notify::new()),
+            wip_manifests: Mutex::new(HashMap::new()),
+            token: crate::update::UpdateToken::generate(),
+        })
+    }
+
+    fn header_map(entries: &[(&str, &str)]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for (name, value) in entries {
+            headers.insert(
+                axum::http::header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                axum::http::HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn same_origin_accepts_matching_origin_header() {
+        let headers = header_map(&[
+            ("host", "127.0.0.1:3141"),
+            ("origin", "http://127.0.0.1:3141"),
+        ]);
+        assert!(is_same_origin_request(&headers));
+    }
+
+    #[test]
+    fn same_origin_rejects_mismatched_origin_header() {
+        let headers = header_map(&[
+            ("host", "127.0.0.1:3141"),
+            ("origin", "http://evil.example"),
+        ]);
+        assert!(!is_same_origin_request(&headers));
+    }
+
+    #[test]
+    fn same_origin_accepts_matching_referer_when_origin_is_absent() {
+        let headers = header_map(&[
+            ("host", "127.0.0.1:3141"),
+            ("referer", "http://127.0.0.1:3141/settings"),
+        ]);
+        assert!(is_same_origin_request(&headers));
+    }
+
+    #[test]
+    fn same_origin_rejects_missing_origin_and_referer() {
+        let headers = header_map(&[("host", "127.0.0.1:3141")]);
+        assert!(!is_same_origin_request(&headers));
+    }
+
+    #[tokio::test]
+    async fn update_settings_accepts_valid_poll_interval() {
+        let update = test_update_state();
+        let response = match update_settings(
+            Extension(update.clone()),
+            Json(UpdateSettingsRequest {
+                pre_release_channel: Some(true),
+                poll_interval_hours: Some(24),
+            }),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(_) => panic!("expected settings update to succeed"),
+        };
+
+        assert!(response.0.pre_release_channel);
+        assert_eq!(response.0.poll_interval_hours, 24);
+    }
+
+    #[tokio::test]
+    async fn update_settings_rejects_invalid_poll_interval() {
+        let update = test_update_state();
+        let error = match update_settings(
+            Extension(update),
+            Json(UpdateSettingsRequest {
+                pre_release_channel: None,
+                poll_interval_hours: Some(12),
+            }),
+        )
+        .await
+        {
+            Ok(_) => panic!("expected invalid poll interval to be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.into_response().status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn get_update_token_sets_no_store_cache_control() {
+        let update = test_update_state();
+        let (headers, body) = match get_update_token(
+            Extension(update.clone()),
+            header_map(&[
+                ("host", "127.0.0.1:3141"),
+                ("origin", "http://127.0.0.1:3141"),
+            ]),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(_) => panic!("expected token request to succeed"),
+        };
+
+        assert_eq!(headers.get(CACHE_CONTROL).unwrap(), "no-store");
+        assert_eq!(body.0.token, update.token.expose());
+    }
 }

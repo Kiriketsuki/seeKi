@@ -29,7 +29,9 @@ pub struct GitHubAsset {
 // ── Release cache ────────────────────────────────────────────────────────────
 
 pub struct ReleaseCache {
-    inner: Mutex<Option<CacheEntry>>,
+    stable: Mutex<Option<CacheEntry>>,
+    prerelease: Mutex<Option<CacheEntry>>,
+    prerelease_list: Mutex<Option<ListCacheEntry>>,
 }
 
 struct CacheEntry {
@@ -37,29 +39,66 @@ struct CacheEntry {
     fetched_at: Instant,
 }
 
+struct ListCacheEntry {
+    releases: Vec<GitHubRelease>,
+    fetched_at: Instant,
+}
+
 impl ReleaseCache {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(None),
+            stable: Mutex::new(None),
+            prerelease: Mutex::new(None),
+            prerelease_list: Mutex::new(None),
         }
     }
 
     /// Return the cached release if the cache is still warm.
-    pub async fn latest(&self) -> Option<GitHubRelease> {
-        let guard = self.inner.lock().await;
+    pub async fn latest(&self, include_prerelease: bool) -> Option<GitHubRelease> {
+        let guard = self.cache_slot(include_prerelease).lock().await;
         guard
             .as_ref()
             .filter(|e| e.fetched_at.elapsed() < CACHE_TTL)
             .map(|e| e.release.clone())
     }
 
-    async fn set(&self, release: GitHubRelease) {
-        let mut guard = self.inner.lock().await;
+    /// Return the cached list of recent prereleases if the cache is warm.
+    pub async fn prerelease_list(&self) -> Option<Vec<GitHubRelease>> {
+        let guard = self.prerelease_list.lock().await;
+        guard
+            .as_ref()
+            .filter(|e| e.fetched_at.elapsed() < CACHE_TTL)
+            .map(|e| e.releases.clone())
+    }
+
+    async fn set(&self, include_prerelease: bool, release: GitHubRelease) {
+        let mut guard = self.cache_slot(include_prerelease).lock().await;
         *guard = Some(CacheEntry {
             release,
             fetched_at: Instant::now(),
         });
     }
+
+    async fn set_prerelease_list(&self, releases: Vec<GitHubRelease>) {
+        let mut guard = self.prerelease_list.lock().await;
+        *guard = Some(ListCacheEntry {
+            releases,
+            fetched_at: Instant::now(),
+        });
+    }
+
+    fn cache_slot(&self, include_prerelease: bool) -> &Mutex<Option<CacheEntry>> {
+        if include_prerelease {
+            &self.prerelease
+        } else {
+            &self.stable
+        }
+    }
+}
+
+pub struct ReleaseCheckResult {
+    pub release: Option<GitHubRelease>,
+    pub fetched: bool,
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -75,10 +114,13 @@ pub async fn check_latest(
     cache: &ReleaseCache,
     include_prerelease: bool,
     force: bool,
-) -> anyhow::Result<Option<GitHubRelease>> {
+) -> anyhow::Result<ReleaseCheckResult> {
     // Serve from cache when possible
-    if !force && let Some(cached) = cache.latest().await {
-        return Ok(Some(cached));
+    if !force && let Some(cached) = cache.latest(include_prerelease).await {
+        return Ok(ReleaseCheckResult {
+            release: Some(cached),
+            fetched: false,
+        });
     }
 
     let client = reqwest::Client::builder()
@@ -87,20 +129,29 @@ pub async fn check_latest(
         .build()?;
 
     let release = if include_prerelease {
-        fetch_newest_prerelease(&client).await
+        fetch_newest_prerelease(&client, cache).await
     } else {
         fetch_latest_stable(&client).await
     };
 
     match release {
         Ok(Some(rel)) => {
-            cache.set(rel.clone()).await;
-            Ok(Some(rel))
+            cache.set(include_prerelease, rel.clone()).await;
+            Ok(ReleaseCheckResult {
+                release: Some(rel),
+                fetched: true,
+            })
         }
-        Ok(None) => Ok(None),
+        Ok(None) => Ok(ReleaseCheckResult {
+            release: None,
+            fetched: true,
+        }),
         Err(e) => {
             tracing::warn!(error = %e, "Failed to check GitHub for updates");
-            Ok(None)
+            Ok(ReleaseCheckResult {
+                release: None,
+                fetched: false,
+            })
         }
     }
 }
@@ -248,10 +299,31 @@ pub async fn download_sha256(url: &str) -> anyhow::Result<String> {
 ///
 /// Prefers `seeki-x86_64-linux-musl`, falls back to `seeki-x86_64-linux-gnu`.
 pub fn select_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
-    assets
-        .iter()
-        .find(|a| a.name == "seeki-x86_64-linux-musl")
-        .or_else(|| assets.iter().find(|a| a.name == "seeki-x86_64-linux-gnu"))
+    select_asset_for_platform(std::env::consts::OS, std::env::consts::ARCH, assets)
+}
+
+fn select_asset_for_platform<'a>(
+    os: &str,
+    arch: &str,
+    assets: &'a [GitHubAsset],
+) -> Option<&'a GitHubAsset> {
+    match (os, arch) {
+        ("linux", "x86_64") => assets
+            .iter()
+            .find(|asset| asset.name == "seeki-x86_64-linux-musl")
+            .or_else(|| {
+                assets
+                    .iter()
+                    .find(|asset| asset.name == "seeki-x86_64-linux-gnu")
+            }),
+        ("macos", "x86_64") => assets
+            .iter()
+            .find(|asset| asset.name == "seeki-x86_64-darwin"),
+        ("macos", "aarch64") => assets
+            .iter()
+            .find(|asset| asset.name == "seeki-aarch64-darwin"),
+        _ => None,
+    }
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -267,8 +339,12 @@ async fn fetch_latest_stable(client: &reqwest::Client) -> anyhow::Result<Option<
     Ok(Some(release))
 }
 
+/// Number of recent prereleases to cache for the build picker.
+const PRERELEASE_LIST_SIZE: usize = 10;
+
 async fn fetch_newest_prerelease(
     client: &reqwest::Client,
+    cache: &ReleaseCache,
 ) -> anyhow::Result<Option<GitHubRelease>> {
     let resp = client
         .get(GITHUB_API_BASE)
@@ -276,6 +352,106 @@ async fn fetch_newest_prerelease(
         .await?
         .error_for_status()?;
     let releases: Vec<GitHubRelease> = resp.json().await?;
-    // The first entry from the list endpoint is the most recent release
-    Ok(releases.into_iter().next())
+    // Filter to only prereleases — otherwise we'd return stable releases to
+    // prerelease-channel users whenever a stable is published after a prerelease.
+    let prereleases: Vec<GitHubRelease> = releases
+        .into_iter()
+        .filter(|r| r.prerelease)
+        .take(PRERELEASE_LIST_SIZE)
+        .collect();
+    let newest = prereleases.first().cloned();
+    cache.set_prerelease_list(prereleases).await;
+    Ok(newest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asset(name: &str) -> GitHubAsset {
+        GitHubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.com/{name}"),
+            size: 42,
+        }
+    }
+
+    fn release(tag_name: &str) -> GitHubRelease {
+        GitHubRelease {
+            tag_name: tag_name.to_string(),
+            prerelease: false,
+            assets: vec![],
+            body: "notes".to_string(),
+            published_at: "2026-04-16T09:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn select_asset_prefers_linux_musl() {
+        let assets = vec![
+            asset("seeki-x86_64-linux-gnu"),
+            asset("seeki-x86_64-linux-musl"),
+        ];
+        assert_eq!(
+            select_asset_for_platform("linux", "x86_64", &assets).map(|value| value.name.as_str()),
+            Some("seeki-x86_64-linux-musl")
+        );
+    }
+
+    #[test]
+    fn select_asset_falls_back_to_linux_gnu() {
+        let assets = vec![asset("seeki-x86_64-linux-gnu")];
+        assert_eq!(
+            select_asset_for_platform("linux", "x86_64", &assets).map(|value| value.name.as_str()),
+            Some("seeki-x86_64-linux-gnu")
+        );
+    }
+
+    #[test]
+    fn select_asset_supports_macos_intel() {
+        let assets = vec![asset("seeki-x86_64-darwin")];
+        assert_eq!(
+            select_asset_for_platform("macos", "x86_64", &assets).map(|value| value.name.as_str()),
+            Some("seeki-x86_64-darwin")
+        );
+    }
+
+    #[test]
+    fn select_asset_supports_macos_apple_silicon() {
+        let assets = vec![asset("seeki-aarch64-darwin")];
+        assert_eq!(
+            select_asset_for_platform("macos", "aarch64", &assets).map(|value| value.name.as_str()),
+            Some("seeki-aarch64-darwin")
+        );
+    }
+
+    #[test]
+    fn select_asset_returns_none_for_unsupported_platform() {
+        let assets = vec![asset("seeki-x86_64-linux-musl")];
+        assert!(select_asset_for_platform("windows", "x86_64", &assets).is_none());
+    }
+
+    #[tokio::test]
+    async fn stable_and_prerelease_cache_entries_are_separate() {
+        let cache = ReleaseCache::new();
+        cache.set(false, release("v26.5.0.3")).await;
+
+        assert_eq!(
+            cache.latest(false).await.map(|value| value.tag_name),
+            Some("v26.5.0.3".to_string())
+        );
+        assert!(cache.latest(true).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn prerelease_cache_entry_does_not_satisfy_stable_reads() {
+        let cache = ReleaseCache::new();
+        cache.set(true, release("v26.5.0.3n260416g1a2b3c4")).await;
+
+        assert_eq!(
+            cache.latest(true).await.map(|value| value.tag_name),
+            Some("v26.5.0.3n260416g1a2b3c4".to_string())
+        );
+        assert!(cache.latest(false).await.is_none());
+    }
 }

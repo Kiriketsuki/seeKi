@@ -22,7 +22,7 @@
     justify-content: space-between;
     gap: var(--sk-space-md);
     padding: 0;
-    min-height: 52px;
+    min-height: var(--sk-table-header-min-height);
     border-bottom: 1px solid var(--sk-border-light);
     background: rgba(255, 255, 255, 0.18);
     backdrop-filter: blur(10px);

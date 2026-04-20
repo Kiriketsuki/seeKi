@@ -1,174 +1,372 @@
 name: Release Management
 
 on:
-  # Trigger only after the CI workflow completes successfully on the release
-  # branch. This eliminates the sleep+poll race where check-runs may not yet
-  # be registered when the gate job runs.
-  workflow_run:
-    workflows: ["CI"]
+  push:
     branches:
       - release
-    types:
-      - completed
+      - "task/**"
+      - "feature/**"
+      - "bug/**"
+      - "hotfix/**"
   workflow_dispatch:
 
-jobs:
-  # ── Gate: only proceed if CI passed ────────────────────────────────
-  ci-gate:
-    name: CI Gate
-    runs-on: ubuntu-latest
-    # For workflow_run triggers, block if CI did not succeed.
-    # workflow_dispatch bypasses this check (manual override).
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-    steps:
-      - name: CI passed
-        run: echo "CI workflow completed successfully — proceeding with release."
+env:
+  CARGO_TERM_COLOR: always
 
-  # ── Prepare: sync VERSION, create tag ──────────────────────────────
-  prepare:
-    name: Prepare Release
-    needs: ci-gate
+jobs:
+  metadata:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      build_version: ${{ steps.prepare.outputs.build_version }}
+      tag_name: ${{ steps.prepare.outputs.tag_name }}
+      release_name: ${{ steps.prepare.outputs.release_name }}
+      prerelease: ${{ steps.prepare.outputs.prerelease }}
+      release_body: ${{ steps.prepare.outputs.release_body }}
+      checkout_ref: ${{ steps.prepare.outputs.checkout_ref }}
+      target_sha: ${{ steps.prepare.outputs.target_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          ref: release
+          ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Read and sync VERSION
-        id: version
+      - name: Sync VERSION from main
+        if: github.ref_name == 'release'
         run: |
+          set -euo pipefail
+
           git fetch origin main
-          MAIN_VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
-          RELEASE_VERSION=$(cat VERSION | tr -d '[:space:]')
+
+          MAIN_VERSION="$(git show origin/main:VERSION | tr -d '[:space:]')"
+          RELEASE_VERSION="$(tr -d '[:space:]' < VERSION)"
 
           if [ "$MAIN_VERSION" != "$RELEASE_VERSION" ]; then
             echo "Syncing VERSION from main: $MAIN_VERSION"
-            echo "$MAIN_VERSION" > VERSION
+            printf '%s\n' "$MAIN_VERSION" > VERSION
+
+            if [ -f package.json ]; then
+              sed -i "s/\"version\": \".*\"/\"version\": \"$MAIN_VERSION\"/" package.json
+            fi
+
+            find . -maxdepth 4 -name "pyproject.toml" \
+              -not -path "*/node_modules/*" \
+              -not -path "*/.pio/*" \
+              -not -path "*/vendor/*" \
+              -not -path "*/.venv/*" | while read -r f; do
+              if grep -q '^version' "$f"; then
+                sed -i "s/^version = \".*\"/version = \"$MAIN_VERSION\"/" "$f"
+              fi
+            done
+
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add VERSION
+            git add -A
             git diff --cached --quiet || {
               git commit -m "ci: sync version $MAIN_VERSION from main [skip ci]"
-              git push origin release
+              git push origin HEAD:release
             }
           fi
 
-          VERSION=$(cat VERSION | tr -d '[:space:]')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Create git tag
+      - name: Prepare release metadata
+        id: prepare
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "Tag v$VERSION already exists, skipping."
-          else
-            git tag -a "v$VERSION" -m "Release version $VERSION"
-            git push origin "v$VERSION"
+          set -euo pipefail
+
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ -z "$VERSION" ]; then
+            echo "VERSION file is empty"
+            exit 1
           fi
 
-  # ── Build: matrix of target architectures ──────────────────────────
+          if [ "$REF_NAME" = "release" ]; then
+            BUILD_VERSION="$VERSION"
+            PRERELEASE=false
+            RELEASE_NAME="Release v$BUILD_VERSION"
+            CHANNEL="stable"
+            PUBLISH_REASON="Published automatically from the release branch after syncing VERSION from main."
+          else
+            BASE_VERSION="$(printf '%s' "$VERSION" | sed -E 's/^([0-9]{2}\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+            if [ -z "$BASE_VERSION" ]; then
+              echo "Unable to derive prerelease base version from: $VERSION"
+              exit 1
+            fi
+
+            BUILD_STAMP="$(date -u +%y%m%d)"
+            SHORT_SHA="$(git rev-parse --short=7 HEAD | tr '[:upper:]' '[:lower:]')"
+            BUILD_VERSION="${BASE_VERSION}n${BUILD_STAMP}g${SHORT_SHA}"
+            PRERELEASE=true
+            RELEASE_NAME="Prerelease v$BUILD_VERSION"
+            CHANNEL="prerelease"
+            PUBLISH_REASON="Published automatically from a supported work branch or workflow dispatch."
+          fi
+
+          TAG_NAME="v$BUILD_VERSION"
+          TARGET_SHA="$(git rev-parse HEAD)"
+          COMMIT_SHORT="$(git rev-parse --short=12 HEAD)"
+
+          # Version component breakdown (for the "Version Components" section).
+          # Format is YY.major.minor.patch[suffix]: YY=year-of-epic, major=epic,
+          # minor=feature, patch=task/bug, suffix=prerelease tag.
+          BASE_FOR_COMPONENTS="${BASE_VERSION:-$VERSION}"
+          YY_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f1)"
+          MAJOR_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f2)"
+          MINOR_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f3)"
+          PATCH_COMP="$(printf '%s' "$BASE_FOR_COMPONENTS" | cut -d. -f4)"
+          YEAR_COMP="20$YY_COMP"
+
+          # Changelog: commits since the previous release tag. Matches stable
+          # semver-ish tags (vNN.N.N.N[suffix]) so we skip nightly g{sha} tags,
+          # which would otherwise turn every prerelease body into a 1-commit diff.
+          PREV_TAG="$(git tag --list 'v[0-9][0-9].*' --sort=-v:refname \
+            | grep -Ev 'n[0-9]{6}g' \
+            | head -n 1 || true)"
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG="$(git rev-list --max-parents=0 HEAD | head -n 1)"
+          fi
+
+          # Group commits by conventional-commit type into markdown sections.
+          # Bullets use `- <subject> (<short-sha>)` so reviewers can click into GitHub.
+          CHANGELOG_FILE="$(mktemp)"
+          declare -A SECTIONS=(
+            [feat]="### Features"
+            [fix]="### Fixes"
+            [perf]="### Performance"
+            [refactor]="### Refactors"
+            [docs]="### Docs"
+            [test]="### Tests"
+            [ci]="### CI / Build"
+            [chore]="### Chores"
+            [hotfix]="### Hotfixes"
+            [saga]="### Sagas"
+            [epic]="### Epics"
+          )
+          ORDER=(feat fix perf refactor docs test ci chore hotfix saga epic)
+          declare -A BUCKETS=()
+          OTHER=""
+          while IFS='|' read -r SHA SUBJECT; do
+            [ -z "$SHA" ] && continue
+            TYPE="$(printf '%s' "$SUBJECT" | sed -nE 's/^([a-z]+)(\([^)]+\))?!?:.*/\1/p')"
+            LINE="- $(printf '%s' "$SUBJECT" | sed -E 's/[[:space:]]*$//') ($SHA)"
+            if [ -n "$TYPE" ] && [ -n "${SECTIONS[$TYPE]:-}" ]; then
+              BUCKETS[$TYPE]="${BUCKETS[$TYPE]:-}"$'\n'"$LINE"
+            else
+              OTHER="$OTHER"$'\n'"$LINE"
+            fi
+          done < <(git log "$PREV_TAG..HEAD" --no-merges --pretty=format:'%h|%s')
+
+          for T in "${ORDER[@]}"; do
+            if [ -n "${BUCKETS[$T]:-}" ]; then
+              printf '%s\n%s\n\n' "${SECTIONS[$T]}" "${BUCKETS[$T]}" >> "$CHANGELOG_FILE"
+            fi
+          done
+          if [ -n "$OTHER" ]; then
+            printf '### Other\n%s\n\n' "$OTHER" >> "$CHANGELOG_FILE"
+          fi
+          if [ ! -s "$CHANGELOG_FILE" ]; then
+            printf -- '- _No commits since %s._\n' "$PREV_TAG" >> "$CHANGELOG_FILE"
+          fi
+
+          {
+            echo "build_version=$BUILD_VERSION"
+            echo "tag_name=$TAG_NAME"
+            echo "release_name=$RELEASE_NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "checkout_ref=$TARGET_SHA"
+            echo "target_sha=$TARGET_SHA"
+            echo "release_body<<EOF"
+            echo "# $RELEASE_NAME"
+            echo
+            echo "**Version**: \`$BUILD_VERSION\`"
+            echo "**Year**: $YEAR_COMP"
+            echo "**Branch**: \`$REF_NAME\`"
+            echo "**Commit**: \`$COMMIT_SHORT\`"
+            echo "**Channel**: \`$CHANNEL\`"
+            echo "**Previous**: \`$PREV_TAG\`"
+            echo
+            echo "$PUBLISH_REASON"
+            echo
+            echo "## Version Components"
+            echo
+            echo "- **Epics (Major)**: $MAJOR_COMP"
+            echo "- **Features (Minor)**: $MINOR_COMP"
+            echo "- **Tasks/Bugs (Patch)**: $PATCH_COMP"
+            echo
+            echo "## Changes"
+            echo
+            cat "$CHANGELOG_FILE"
+            echo "## Runtime Assets"
+            echo
+            echo "- \`seeki-x86_64-linux-musl\` + \`seeki-x86_64-linux-musl.sha256\`"
+            echo "- \`seeki-x86_64-darwin\` + \`seeki-x86_64-darwin.sha256\`"
+            echo "- \`seeki-aarch64-darwin\` + \`seeki-aarch64-darwin.sha256\`"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          rm -f "$CHANGELOG_FILE"
+
   build:
-    name: Build (${{ matrix.target }})
-    needs: prepare
+    name: Build ${{ matrix.target }}
+    needs: metadata
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            artifact: seeki-x86_64-linux-gnu
-            runner: ubuntu-latest
-          - target: x86_64-unknown-linux-musl
-            artifact: seeki-x86_64-linux-musl
-            runner: ubuntu-latest
-    runs-on: ${{ matrix.runner }}
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset_name: seeki-x86_64-linux-musl
+          - os: macos-14
+            target: x86_64-apple-darwin
+            asset_name: seeki-x86_64-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset_name: seeki-aarch64-darwin
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          ref: release
+          ref: ${{ needs.metadata.outputs.checkout_ref }}
+          fetch-depth: 0
+
+      - name: Write build VERSION
+        run: |
+          printf '%s\n' '${{ needs.metadata.outputs.build_version }}' > VERSION
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install musl tools (musl target only)
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
-
-      - name: Ensure frontend/dist exists
-        run: mkdir -p frontend/dist
+      - name: Run tests
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo test --locked --target ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
-      - name: Rename binary
+      - name: Package release assets
+        env:
+          ASSET_NAME: ${{ matrix.asset_name }}
+          TARGET: ${{ matrix.target }}
         run: |
-          cp target/${{ matrix.target }}/release/seeki ${{ matrix.artifact }}
-          chmod +x ${{ matrix.artifact }}
+          set -euo pipefail
 
-      - name: Generate SHA256
-        run: |
-          sha256sum ${{ matrix.artifact }} | awk '{print $1}' > ${{ matrix.artifact }}.sha256
-          echo "SHA256: $(cat ${{ matrix.artifact }}.sha256)"
+          mkdir -p release-assets
+          cp "target/$TARGET/release/seeki" "release-assets/$ASSET_NAME"
+          chmod +x "release-assets/$ASSET_NAME"
+          shasum -a 256 "release-assets/$ASSET_NAME" | awk '{print $1}' > "release-assets/$ASSET_NAME.sha256"
 
-      - name: Upload build artifacts
+      - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: release-${{ matrix.target }}
           path: |
-            ${{ matrix.artifact }}
-            ${{ matrix.artifact }}.sha256
+            release-assets/${{ matrix.asset_name }}
+            release-assets/${{ matrix.asset_name }}.sha256
+          if-no-files-found: error
 
-  # ── Release: collect artifacts and publish ──────────────────────────
-  release:
-    name: Publish GitHub Release
-    needs: [prepare, build]
+  publish:
+    name: Publish GitHub release
+    needs:
+      - metadata
+      - build
     runs-on: ubuntu-latest
+    if: github.ref_name == 'release' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          ref: release
+          ref: ${{ needs.metadata.outputs.checkout_ref }}
           fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: Download release assets
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-assets
+          pattern: release-*
+          merge-multiple: true
 
-      - name: Collect binaries
+      - name: Validate release asset contract
         run: |
-          mkdir -p release-assets
-          find artifacts -type f | while read f; do
-            cp "$f" release-assets/
-          done
-          ls -la release-assets/
+          set -euo pipefail
 
-      - name: Create or update GitHub Release
+          expected_files=(
+            seeki-x86_64-linux-musl
+            seeki-x86_64-linux-musl.sha256
+            seeki-x86_64-darwin
+            seeki-x86_64-darwin.sha256
+            seeki-aarch64-darwin
+            seeki-aarch64-darwin.sha256
+          )
+
+          actual_count="$(find release-assets -maxdepth 1 -type f | wc -l | tr -d '[:space:]')"
+          if [ "$actual_count" != "6" ]; then
+            echo "Expected exactly 6 release files, found $actual_count"
+            find release-assets -maxdepth 1 -type f | sort
+            exit 1
+          fi
+
+          for file in "${expected_files[@]}"; do
+            test -f "release-assets/$file"
+          done
+
+      - name: Create stable git tag
+        if: github.ref_name == 'release'
+        env:
+          TAG_NAME: ${{ needs.metadata.outputs.tag_name }}
+          TARGET_SHA: ${{ needs.metadata.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "Tag $TAG_NAME already exists, skipping."
+          else
+            git tag -a "$TAG_NAME" "$TARGET_SHA" -m "Release version ${{ needs.metadata.outputs.build_version }}"
+            git push origin "$TAG_NAME"
+          fi
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: Release ${{ needs.prepare.outputs.tag }}
-          generate_release_notes: true
+          tag_name: ${{ needs.metadata.outputs.tag_name }}
+          target_commitish: ${{ needs.metadata.outputs.target_sha }}
+          name: ${{ needs.metadata.outputs.release_name }}
+          body: ${{ needs.metadata.outputs.release_body }}
           draft: false
-          prerelease: ${{ contains(needs.prepare.outputs.version, 'a') || contains(needs.prepare.outputs.version, 'b') || contains(needs.prepare.outputs.version, 'rc') }}
-          files: release-assets/*
+          prerelease: ${{ needs.metadata.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/seeki-x86_64-linux-musl
+            release-assets/seeki-x86_64-linux-musl.sha256
+            release-assets/seeki-x86_64-darwin
+            release-assets/seeki-x86_64-darwin.sha256
+            release-assets/seeki-aarch64-darwin
+            release-assets/seeki-aarch64-darwin.sha256

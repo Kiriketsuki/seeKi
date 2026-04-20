@@ -45,17 +45,22 @@ Config is loaded from `seeki.toml` (CWD) or `~/.config/seeki/config.toml`. See `
 src/
 ├── main.rs          # Entry point: config → DB pool → axum Router → serve
 ├── config.rs        # TOML config loading (AppConfig, DatabaseConfig, DatabaseKind enum)
-├── api/mod.rs       # Axum routes under /api (tables, columns, rows)
+├── api/mod.rs       # Axum routes under /api (tables, columns, rows, views)
+├── api/views.rs     # View CRUD + preview + rows endpoints under /api/views
 ├── db/mod.rs        # DatabasePool enum (dispatch layer) + shared types (TableInfo, ColumnInfo, QueryResult)
-├── db/postgres.rs   # PostgreSQL-specific queries (schema introspection, paginated row fetching)
+├── db/postgres.rs   # PostgreSQL-specific queries (schema introspection, paginated row fetching, view SQL planning)
+├── store/mod.rs     # Local SQLite store (preferences, saved views)
+├── store/views.rs   # Saved view CRUD (create, read, update, delete) in local SQLite
 └── auth/mod.rs      # Placeholder — auth not yet implemented
 ```
 
 **Data flow**: HTTP request → `api/` handler → `DatabasePool` dispatch → engine-specific module (e.g. `postgres.rs`) → JSON response.
 
+**Views data flow**: View CRUD → `api/views.rs` → `store/views.rs` (SQLite). View row queries → `api/views.rs` → `db/postgres.rs` (builds JOIN + GROUP BY SQL from the stored definition, executes against PostgreSQL).
+
 **Adding a new database engine**: Add a `db/<engine>.rs` implementing the same functions as `postgres.rs` (`list_tables`, `get_columns`, `query_rows`), add a variant to `DatabasePool` and `DatabaseKind`, wire up the match arms.
 
-**Frontend**: Will be Svelte 5 + RevoGrid in `frontend/`. Assets are embedded into the binary via `rust-embed` for single-binary deployment. Frontend directory is currently empty.
+**Frontend**: Svelte 5 + RevoGrid in `frontend/`. Assets are embedded into the binary via `rust-embed` for single-binary deployment. Key components: `App.svelte` (main shell), `ViewBuilder.svelte` (custom view builder), `ViewList.svelte` (sidebar view list), `ColumnPicker.svelte` (column selection dialog), `DataGrid.svelte`, `ActionDock.svelte`, `StatusBar.svelte`.
 
 ## SQL Injection Prevention
 
@@ -72,7 +77,7 @@ Uses Rust edition **2024** (`Cargo.toml`). This requires rustc 1.85+.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **seeKi** (686 symbols, 1346 relationships, 52 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **seeKi** (2012 symbols, 4935 relationships, 173 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -160,8 +165,13 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 
 ## CLI
 
-- Re-index: `npx gitnexus analyze`
-- Check freshness: `npx gitnexus status`
-- Generate docs: `npx gitnexus wiki`
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->

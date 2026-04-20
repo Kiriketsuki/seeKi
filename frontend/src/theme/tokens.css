@@ -73,4 +73,31 @@
     rgba(255, 255, 255, 0.4) 4px,
     rgba(255, 255, 255, 0.4) 8px
   );
+
+  /* Density tokens */
+  --sk-table-header-min-height: 52px;
+  --sk-toolbar-gap: var(--sk-space-sm);
+  --sk-toolbar-padding-y: var(--sk-space-md);
+  --sk-tool-button-size: 32px;
+  --sk-statusbar-padding-y: var(--sk-space-sm);
+  --sk-grid-header-gap: 6px;
+  --sk-grid-filter-padding-y: 4px;
+  --sk-grid-filter-padding-x: 8px;
+  --sk-grid-filter-header-height: 72px;
+  --sk-grid-badge-padding-y: 2px;
+  --sk-grid-badge-padding-x: 8px;
+}
+
+.sk-density--compact {
+  --sk-table-header-min-height: 44px;
+  --sk-toolbar-gap: 6px;
+  --sk-toolbar-padding-y: var(--sk-space-sm);
+  --sk-tool-button-size: 28px;
+  --sk-statusbar-padding-y: 6px;
+  --sk-grid-header-gap: 4px;
+  --sk-grid-filter-padding-y: 2px;
+  --sk-grid-filter-padding-x: 6px;
+  --sk-grid-filter-header-height: 62px;
+  --sk-grid-badge-padding-y: 1px;
+  --sk-grid-badge-padding-x: 6px;
 }

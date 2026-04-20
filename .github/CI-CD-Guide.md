@@ -1,8 +1,8 @@
-# CI/CD Guide — kTemplate
+# CI/CD Guide — SeeKi
 
 ## Overview
 
-Year-prefixed semver (`YY.Major.Minor.Patch[hotfix]`) with automated version bumping, issue-to-branch automation, and GitHub release management.
+Year-prefixed semver (`YY.Major.Minor.Patch[hotfix]`) with automated version bumping, issue-to-branch automation, and GitHub release publishing for SeeKi binaries.
 
 ## Workflows
 
@@ -11,7 +11,7 @@ Year-prefixed semver (`YY.Major.Minor.Patch[hotfix]`) with automated version bum
 | `version-validation.yml` | PR to `main` or `release` | Validate `VERSION` file format and uniqueness vs latest tag |
 | `version-bump.yml` | PR merged to `main` / direct push with `hotfix:` | Auto-increment version in `VERSION` file |
 | `manual-version-bump.yml` | `workflow_dispatch` | Manual bump (major/minor/patch) or year rollover |
-| `release.yml` | PR merged to `release` / push to `release` | Sync VERSION from main, create Git tag + GitHub Release |
+| `release.yml` | Push to `release`, `task/*`, `feature/*`, `bug/*`, `hotfix/*`, or `workflow_dispatch` | Build 3 platform binaries, publish 6 release assets, stable on `release`, prerelease on supported work branches |
 | `issue-branch-handler.yml` | Issue labeled `task`, `feature`, or `bug` | Create branch + draft PR + sub-issue parent tracking |
 | `deploy-docs.yml` | Push to `main` touching `docs/**`, or `workflow_dispatch` | Build docs index and push to `docs` branch for GitHub Pages |
 
@@ -39,6 +39,7 @@ docs              ← GitHub Pages (managed by CI, do not commit to directly)
 task/{n}-...      ← large work units (branch from main)
 feature/{n}-…     ← features (branch from task or main)
 bug/{n}-…         ← bug fixes (branch from feature, task, or main)
+hotfix/{n}-…      ← urgent fixes (branch from main or release-adjacent work)
 ```
 
 Sub-issues automatically branch from their parent issue's branch via `issue-branch-handler.yml`.
@@ -74,9 +75,53 @@ Run **Manual Version Bump** from Actions → workflow_dispatch, select `year-rol
 
 ## Release Process
 
+### Stable releases
+
 1. Create PR from `main` → `release` (use **Rebase**)
 2. `version-validation.yml` checks format and uniqueness vs latest tag
-3. After merge, `release.yml` creates tag `v{VERSION}` and a GitHub Release
+3. After merge/push to `release`, `release.yml`:
+   - syncs `VERSION` from `main` if needed
+   - rereads the final `VERSION`
+   - builds frontend + release binaries for:
+     - `x86_64-unknown-linux-musl`
+     - `x86_64-apple-darwin`
+     - `aarch64-apple-darwin`
+   - creates tag `v{VERSION}`
+   - publishes exactly six runtime assets:
+     - `seeki-x86_64-linux-musl`
+     - `seeki-x86_64-linux-musl.sha256`
+     - `seeki-x86_64-darwin`
+     - `seeki-x86_64-darwin.sha256`
+     - `seeki-aarch64-darwin`
+     - `seeki-aarch64-darwin.sha256`
+
+### Prerelease publishing
+
+- Pushes to `task/*`, `feature/*`, `bug/*`, and `hotfix/*` run the same 3-target build matrix.
+- `workflow_dispatch` can also publish from the selected ref.
+- CI derives a workspace-only prerelease version from `VERSION` + the build date/commit SHA.
+- That derived version is written only inside the workflow workspace so the built binary, tag, and release metadata match; it is **not** committed back to the source branch.
+- Prereleases publish the same six assets as stable releases, marked as GitHub prereleases.
+
+## Auto-Update Platform Contract
+
+The SeeKi updater currently expects these asset names:
+
+| Platform | Release asset |
+|----------|---------------|
+| Linux x86_64 | `seeki-x86_64-linux-musl` |
+| macOS Intel | `seeki-x86_64-darwin` |
+| macOS Apple Silicon | `seeki-aarch64-darwin` |
+
+Each binary must ship with a same-name `.sha256` sidecar because the updater derives the checksum URL by appending `.sha256`.
+
+## macOS quarantine workaround
+
+macOS release binaries are currently unsigned. If Gatekeeper blocks the app after download or update, clear quarantine manually:
+
+```bash
+xattr -d com.apple.quarantine /path/to/seeki
+```
 
 ## Setting Up the Release Branch
 

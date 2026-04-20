@@ -22,6 +22,162 @@ export interface QueryResult {
   page_size: number;
 }
 
+export type ViewAggregate = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'LATEST';
+
+export type ViewTemplateId =
+  | 'scratch'
+  | 'most-recent-per-group'
+  | 'counts-per-day'
+  | 'top-n-per-group'
+  | 'totals-by-week'
+  | 'previous-row-delta';
+
+export type ViewFilterValue =
+  | {
+      op:
+        | 'eq'
+        | 'gt'
+        | 'gte'
+        | 'lt'
+        | 'lte'
+        | 'contains'
+        | 'starts_with';
+      value: string;
+    }
+  | {
+      op: 'between';
+      value: [string, string];
+    }
+  | {
+      op: 'is_empty';
+    }
+  | {
+      op: 'in_list';
+      value: string[];
+    };
+
+export type ViewDefinitionFilters = Record<string, ViewFilterValue>;
+
+export type ViewSourceKind = 'fk' | 'match' | 'self';
+
+export interface ViewSourceRef {
+  id: string;
+  kind: ViewSourceKind;
+  schema: string;
+  table: string;
+  label?: string | null;
+  match?: {
+    base_column: string;
+    source_column: string;
+  } | null;
+  self?: {
+    entity_column: string;
+    order_column: string;
+    direction: 'previous' | 'next';
+  } | null;
+}
+
+export interface ViewColumnRef {
+  source_id?: string | null;
+  source_schema: string;
+  source_table: string;
+  column_name: string;
+}
+
+export interface ViewOrderBy {
+  source_id?: string | null;
+  source_schema: string;
+  source_table: string;
+  column_name: string;
+  direction: 'asc' | 'desc';
+}
+
+export interface ViewGrouping {
+  keys: ViewColumnRef[];
+  latest_by?: ViewOrderBy | null;
+}
+
+export interface ViewRanking {
+  partition_by: ViewColumnRef[];
+  order_by?: ViewOrderBy | null;
+  limit: number;
+}
+
+export type ViewDerivedOperation =
+  | 'difference'
+  | 'ratio_percent'
+  | 'age_of_timestamp'
+  | 'date_bucket'
+  | 'date_part'
+  | 'text_concat'
+  | 'text_length'
+  | 'if_then';
+
+export interface ViewDerivedInput {
+  kind: 'column' | 'literal';
+  source_id?: string | null;
+  source_schema?: string | null;
+  source_table?: string | null;
+  column_name?: string | null;
+  value?: string | null;
+}
+
+export interface ViewDerivedColumn {
+  alias?: string | null;
+  operation: ViewDerivedOperation;
+  inputs: ViewDerivedInput[];
+  options?: Record<string, unknown> | null;
+}
+
+export interface ViewColumn {
+  kind?: 'source' | 'derived';
+  source_id?: string | null;
+  source_schema: string;
+  source_table: string;
+  column_name: string;
+  alias?: string | null;
+  aggregate?: ViewAggregate | null;
+  derived?: ViewDerivedColumn | null;
+}
+
+export interface FkHop {
+  from_schema: string;
+  from_table: string;
+  from_columns: string[];
+  to_schema: string;
+  to_table: string;
+  to_columns: string[];
+  constraint_name: string;
+}
+
+export interface SavedViewSummary {
+  id: number;
+  name: string;
+  base_schema: string;
+  base_table: string;
+  definition_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ViewDefinitionShape {
+  columns: ViewColumn[];
+  filters: ViewDefinitionFilters;
+  sources?: ViewSourceRef[];
+  grouping?: ViewGrouping | null;
+  ranking?: ViewRanking | null;
+  template?: ViewTemplateId | null;
+}
+
+export interface SavedViewDefinition extends SavedViewSummary, ViewDefinitionShape {}
+
+export interface ViewDraft extends ViewDefinitionShape {
+  name: string;
+  base_schema: string;
+  base_table: string;
+  definition_version?: number;
+}
+
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortEntry {
@@ -39,6 +195,22 @@ export interface TablesResponse {
 
 export interface ColumnsResponse {
   columns: ColumnInfo[];
+}
+
+export interface SavedViewsResponse {
+  views: SavedViewSummary[];
+}
+
+export interface SavedViewResponse {
+  view: SavedViewDefinition;
+}
+
+export interface FkPathResponse {
+  path: FkHop[];
+}
+
+export interface ColumnSamplesResponse {
+  samples: string[];
 }
 
 export interface StatusResponse {
@@ -141,21 +313,25 @@ export interface VersionInfo {
   built_at: string;
 }
 
+export type VersionResponse = VersionInfo;
+
+export type UpdatePollIntervalHours = 0 | 1 | 6 | 24;
+
 export interface UpdateStatus {
   current: string;
   latest: string | null;
   pre_release_channel: boolean;
+  poll_interval_hours: UpdatePollIntervalHours;
   update_available: boolean;
   previous_exists: boolean;
   last_checked: string | null;
+  release_notes: string | null;
+  available_builds: AvailableBuild[];
 }
 
-export interface CheckResult {
-  current: string;
-  latest: string | null;
-  update_available: boolean;
-  assets: { name: string; size: number; url: string }[];
-  release_notes: string | null;
+export interface AvailableBuild {
+  tag: string;
+  published_at: string;
 }
 
 export interface WipUploadResult {
@@ -172,4 +348,74 @@ export interface ApplyResult {
 export interface RollbackResult {
   status: string;
   message: string;
+}
+
+// ── Preferences / Store Types ───────────────────────────────────────────────
+
+export interface SortColumn {
+  col: string;
+  dir: SortDirection;
+}
+
+export interface SortPreset {
+  id: number;
+  name: string;
+  columns: SortColumn[];
+}
+
+export interface FilterPreset {
+  id: number;
+  name: string;
+  filters: FilterState;
+}
+
+export interface LastUsedTableState {
+  sort_columns: SortColumn[];
+  filters: FilterState;
+  search_term: string | null;
+}
+
+export type SidebarMode = 'tables' | 'settings';
+
+export type TablesSurface =
+  | { kind: 'table' }
+  | { kind: 'builder' }
+  | { kind: 'view'; viewId: number };
+
+export type SettingsSection =
+  | 'updates'
+  | 'branding'
+  | 'appearance'
+  | 'connection'
+  | 'data'
+  | 'about';
+
+export type DateFormatPreference =
+  | 'system'
+  | 'YYYY-MM-DD'
+  | 'DD/MM/YYYY'
+  | 'MM/DD/YYYY';
+
+export type RowDensityPreference = 'comfortable' | 'compact';
+
+export interface BrandingSettings {
+  title: string;
+  subtitle: string;
+}
+
+export interface AppearanceSettings {
+  dateFormat: DateFormatPreference;
+  rowDensity: RowDensityPreference;
+}
+
+export type SettingsEntries = Record<string, unknown>;
+
+export interface ConnectionStatusResponse {
+  database_kind: 'postgres' | 'sqlite';
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  schemas: string[];
+  ssh_enabled: boolean;
+  ssh_connected: boolean;
 }

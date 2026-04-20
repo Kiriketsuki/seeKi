@@ -44,6 +44,17 @@ export class SeekiHelpers {
     );
   }
 
+  /** Wait for the next table or saved-view rows response. */
+  pendingGridRowsResponse(): Promise<import('@playwright/test').Response> {
+    return this.page.waitForResponse(
+      (resp) =>
+        (resp.url().includes('/api/tables/') || resp.url().includes('/api/views/')) &&
+        resp.url().includes('/rows') &&
+        resp.ok(),
+      { timeout: 10_000 },
+    );
+  }
+
   /**
    * Like pendingRowsResponse but accepts any non-500 status (including 4xx).
    * Use in error-state tests where 400 is an expected valid response.
@@ -52,6 +63,17 @@ export class SeekiHelpers {
     return this.page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/tables/') &&
+        resp.url().includes('/rows') &&
+        resp.status() < 500,
+      { timeout: 10_000 },
+    );
+  }
+
+  /** Like pendingGridRowsResponse but accepts any non-500 status. */
+  pendingGridRowsResponseAny(): Promise<import('@playwright/test').Response> {
+    return this.page.waitForResponse(
+      (resp) =>
+        (resp.url().includes('/api/tables/') || resp.url().includes('/api/views/')) &&
         resp.url().includes('/rows') &&
         resp.status() < 500,
       { timeout: 10_000 },
@@ -107,6 +129,12 @@ export class SeekiHelpers {
     await this.waitForGridLoaded();
   }
 
+  /** Click a saved view in the sidebar to navigate to it. */
+  async selectView(displayName: string): Promise<void> {
+    await this.page.locator('.view-item', { hasText: displayName }).click();
+    await this.waitForGridLoaded();
+  }
+
   /** Get visible column header labels from the RevoGrid (light DOM). */
   async getVisibleColumnHeaders(): Promise<string[]> {
     const labels = this.page.locator('.sk-grid-header__label');
@@ -139,6 +167,11 @@ export class SeekiHelpers {
     return await this.page.locator('.table-item .table-item-name').allTextContents();
   }
 
+  /** Get sidebar saved view names. */
+  async getSidebarViewNames(): Promise<string[]> {
+    return await this.page.locator('.view-item .view-item-name').allTextContents();
+  }
+
   /** Get the text content of the ActionDock sort announcement live region. */
   getSortAnnouncement() {
     return this.getActionDock().locator('[aria-live]');
@@ -154,9 +187,55 @@ export class SeekiHelpers {
     await this.page.locator('.sidebar .toggle').click();
   }
 
+  /** Switch the sidebar workspace to Settings. */
+  async openSettings(): Promise<void> {
+    const settingsButton = this.page.locator('button', { hasText: 'Settings' }).first();
+    if (await settingsButton.isVisible()) {
+      await settingsButton.click();
+      return;
+    }
+
+    await this.page.locator('.collapsed-modes button[aria-label="Show settings workspace"]').click();
+  }
+
+  /** Switch the sidebar workspace back to the Data workspace. */
+  async openTables(): Promise<void> {
+    const tablesButton = this.page.locator('button', { hasText: 'Data' }).first();
+    if (await tablesButton.isVisible()) {
+      await tablesButton.click();
+      return;
+    }
+
+    await this.page.locator('.collapsed-modes button[aria-label="Show data workspace"]').click();
+  }
+
   /** Check if sidebar is collapsed. */
   async isSidebarCollapsed(): Promise<boolean> {
     const sidebar = this.page.locator('.sidebar');
     return await sidebar.evaluate((el) => el.classList.contains('collapsed'));
+  }
+
+  /** Replace window.open with a recorder before page load. */
+  async installWindowOpenRecorder(): Promise<void> {
+    await this.page.addInitScript(() => {
+      const openedUrls: string[] = [];
+      Object.defineProperty(window, '__seekiOpenedUrls', {
+        value: openedUrls,
+        writable: false,
+      });
+      window.open = ((url?: string | URL | undefined) => {
+        if (url != null) {
+          openedUrls.push(String(url));
+        }
+        return null;
+      }) as typeof window.open;
+    });
+  }
+
+  /** Read URLs recorded by installWindowOpenRecorder. */
+  async getOpenedUrls(): Promise<string[]> {
+    return await this.page.evaluate(
+      () => (window as unknown as { __seekiOpenedUrls?: string[] }).__seekiOpenedUrls ?? [],
+    );
   }
 }
