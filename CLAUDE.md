@@ -60,7 +60,7 @@ src/
 
 **Adding a new database engine**: Add a `db/<engine>.rs` implementing the same functions as `postgres.rs` (`list_tables`, `get_columns`, `query_rows`), add a variant to `DatabasePool` and `DatabaseKind`, wire up the match arms.
 
-**Frontend**: Svelte 5 + RevoGrid in `frontend/`. Assets are embedded into the binary via `rust-embed` for single-binary deployment. Key components: `App.svelte` (main shell, ~1400 lines), `ViewBuilder.svelte` (custom view builder), `ViewList.svelte` (sidebar view list), `ColumnPickerPopover.svelte` (column selection dialog), `DataGrid.svelte`, `ActionDock.svelte`, `StatusBar.svelte`.
+**Frontend**: Svelte 5 + RevoGrid in `frontend/`. Assets are embedded into the binary via `rust-embed` for single-binary deployment. Key components: `App.svelte` (main shell), `ViewBuilder.svelte` (custom view builder), `ViewList.svelte` (sidebar view list), `ColumnPicker.svelte` (column selection dialog), `DataGrid.svelte`, `ActionDock.svelte`, `StatusBar.svelte`.
 
 ## SQL Injection Prevention
 
@@ -77,7 +77,7 @@ Uses Rust edition **2024** (`Cargo.toml`). This requires rustc 1.85+.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **seeKi** (1597 symbols, 3798 relationships, 136 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **seeKi** (2012 symbols, 4935 relationships, 173 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

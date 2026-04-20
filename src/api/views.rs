@@ -13,8 +13,9 @@ use serde::Deserialize;
 
 use crate::app_mode::SharedAppMode;
 use crate::db::{
-    SavedViewDefinition, SortDirection, SortEntry, ValidationError, ViewColumn, ViewDraft,
-    ViewExportQueryParams, ViewRowsQueryParams,
+    PlannerCompatibility, SavedViewColumnKind, SavedViewDefinition, SortDirection, SortEntry,
+    ValidationError, ViewDefinitionShape, ViewDerivedInputKind, ViewDraft, ViewExportQueryParams,
+    ViewRowsQueryParams,
 };
 use crate::store::{Store, connection_id, views};
 
@@ -38,18 +39,16 @@ struct CreateSavedViewBody {
     name: String,
     base_schema: String,
     base_table: String,
-    columns: Vec<ViewColumn>,
-    #[serde(default)]
-    filters: HashMap<String, String>,
+    #[serde(flatten)]
+    shape: ViewDefinitionShape,
 }
 
 #[derive(Debug, Deserialize)]
 struct PreviewSavedViewBody {
     base_schema: String,
     base_table: String,
-    columns: Vec<ViewColumn>,
-    #[serde(default)]
-    filters: HashMap<String, String>,
+    #[serde(flatten)]
+    shape: ViewDefinitionShape,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +62,14 @@ struct FkPathQuery {
     base_table: String,
     target_schema: String,
     target_table: String,
+}
+
+enum EitherExportShape {
+    Legacy {
+        columns: Vec<crate::db::ViewColumn>,
+        filters: HashMap<String, String>,
+    },
+    Advanced(ViewDefinitionShape),
 }
 
 fn trim_name(name: &str) -> Option<&str> {
@@ -106,13 +113,59 @@ fn validate_view_definition(
     state: &crate::AppState,
     base_schema: &str,
     base_table: &str,
-    columns: &[ViewColumn],
+    shape: &ViewDefinitionShape,
 ) -> Result<(), super::AppError> {
     validate_allowed_table(state, base_schema, base_table)?;
-    for column in columns {
+    for column in &shape.columns {
+        if matches!(column.kind, Some(SavedViewColumnKind::Derived)) {
+            continue;
+        }
         validate_allowed_table(state, &column.source_schema, &column.source_table)?;
     }
+    for source in &shape.sources {
+        validate_allowed_table(state, &source.schema, &source.table)?;
+    }
+    if let Some(grouping) = &shape.grouping {
+        for key in &grouping.keys {
+            validate_allowed_table(state, &key.source_schema, &key.source_table)?;
+        }
+        if let Some(order_by) = &grouping.latest_by {
+            validate_allowed_table(state, &order_by.source_schema, &order_by.source_table)?;
+        }
+    }
+    if let Some(ranking) = &shape.ranking {
+        for key in &ranking.partition_by {
+            validate_allowed_table(state, &key.source_schema, &key.source_table)?;
+        }
+        if let Some(order_by) = &ranking.order_by {
+            validate_allowed_table(state, &order_by.source_schema, &order_by.source_table)?;
+        }
+    }
+    for column in &shape.columns {
+        let Some(derived) = &column.derived else {
+            continue;
+        };
+        for input in &derived.inputs {
+            if matches!(input.kind, ViewDerivedInputKind::Column) {
+                let schema = input.source_schema.as_deref().ok_or_else(|| {
+                    super::AppError::bad_request("Derived column input of kind Column must specify source_schema")
+                })?;
+                let table = input.source_table.as_deref().ok_or_else(|| {
+                    super::AppError::bad_request("Derived column input of kind Column must specify source_table")
+                })?;
+                validate_allowed_table(state, schema, table)?;
+            }
+        }
+    }
     Ok(())
+}
+
+fn planner_compatibility_for_shape(
+    shape: &ViewDefinitionShape,
+) -> Result<PlannerCompatibility, super::AppError> {
+    shape
+        .planner_compatibility()
+        .map_err(|err| super::AppError::bad_request(err.to_string()))
 }
 
 fn map_view_store_error(err: anyhow::Error) -> super::AppError {
@@ -149,23 +202,24 @@ fn parse_sort_without_validation(sort: Option<&str>) -> anyhow::Result<Vec<SortE
             return Err(ValidationError("Malformed sort segment: empty segment".into()).into());
         }
 
+        let safe = super::truncate_for_error(trimmed);
         let (column_raw, direction_raw) = trimmed
             .split_once(':')
-            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {trimmed}")))?;
+            .ok_or_else(|| ValidationError(format!("Malformed sort segment: {safe}")))?;
         let column = column_raw.trim();
         let direction = direction_raw.trim();
 
         if column.is_empty() || direction.is_empty() {
-            return Err(ValidationError(format!("Malformed sort segment: {trimmed}")).into());
+            return Err(ValidationError(format!("Malformed sort segment: {safe}")).into());
         }
         if !crate::db::postgres::is_valid_identifier(column) {
             return Err(
-                ValidationError(format!("Invalid sort column name in segment: {trimmed}")).into(),
+                ValidationError(format!("Invalid sort column name in segment: {safe}")).into(),
             );
         }
         if !seen.insert(column.to_string()) {
             return Err(
-                ValidationError(format!("Duplicate sort column in segment: {trimmed}")).into(),
+                ValidationError(format!("Duplicate sort column in segment: {safe}")).into(),
             );
         }
 
@@ -175,7 +229,7 @@ fn parse_sort_without_validation(sort: Option<&str>) -> anyhow::Result<Vec<SortE
             SortDirection::Desc
         } else {
             return Err(
-                ValidationError(format!("Invalid sort direction in segment: {trimmed}")).into(),
+                ValidationError(format!("Invalid sort direction in segment: {safe}")).into(),
             );
         };
 
@@ -217,26 +271,44 @@ async fn create_saved_view(
     let (state, conn_id) = current_state_and_conn_id(&mode).await?;
     let name = trim_name(&body.name)
         .ok_or_else(|| super::AppError::bad_request("Saved view name must not be empty"))?;
-    if body.columns.is_empty() {
+    if body.shape.columns.is_empty() {
         return Err(super::AppError::bad_request(
             "Saved views must include at least one selected column",
         ));
     }
-    validate_view_definition(&state, &body.base_schema, &body.base_table, &body.columns)?;
+    validate_view_definition(&state, &body.base_schema, &body.base_table, &body.shape)?;
 
-    // Validate SQL planning before persistence.
-    state
-        .db
-        .preview_view(
-            &ViewDraft {
-                base_schema: &body.base_schema,
-                base_table: &body.base_table,
-                columns: &body.columns,
-                filters: &body.filters,
-            },
-            1,
-        )
-        .await?;
+    match planner_compatibility_for_shape(&body.shape)? {
+        PlannerCompatibility::Legacy(legacy) => {
+            state
+                .db
+                .preview_view(
+                    &ViewDraft {
+                        base_schema: &body.base_schema,
+                        base_table: &body.base_table,
+                        columns: &legacy.columns,
+                        filters: &legacy.filters,
+                    },
+                    1,
+                )
+                .await?;
+        }
+        PlannerCompatibility::RequiresPlannerV2(_) => {
+            let pg_pool = state.db.pg_pool().ok_or_else(|| {
+                super::AppError::bad_request(
+                    "Advanced saved-view planning is not supported for this database type",
+                )
+            })?;
+            crate::db::postgres::preview_view_shape(
+                pg_pool,
+                &body.base_schema,
+                &body.base_table,
+                &body.shape,
+                1,
+            )
+            .await?;
+        }
+    }
 
     let created = views::create_view(
         store.pool(),
@@ -244,8 +316,7 @@ async fn create_saved_view(
         name,
         &body.base_schema,
         &body.base_table,
-        &body.columns,
-        &body.filters,
+        &body.shape,
     )
     .await
     .map_err(map_view_store_error)?;
@@ -309,19 +380,38 @@ async fn preview_saved_view(
     Json(body): Json<PreviewSavedViewBody>,
 ) -> Result<Json<serde_json::Value>, super::AppError> {
     let (state, _conn_id) = current_state_and_conn_id(&mode).await?;
-    validate_view_definition(&state, &body.base_schema, &body.base_table, &body.columns)?;
-    let result = state
-        .db
-        .preview_view(
-            &ViewDraft {
-                base_schema: &body.base_schema,
-                base_table: &body.base_table,
-                columns: &body.columns,
-                filters: &body.filters,
-            },
-            100,
-        )
-        .await?;
+    validate_view_definition(&state, &body.base_schema, &body.base_table, &body.shape)?;
+    let result = match planner_compatibility_for_shape(&body.shape)? {
+        PlannerCompatibility::Legacy(legacy) => {
+            state
+                .db
+                .preview_view(
+                    &ViewDraft {
+                        base_schema: &body.base_schema,
+                        base_table: &body.base_table,
+                        columns: &legacy.columns,
+                        filters: &legacy.filters,
+                    },
+                    100,
+                )
+                .await?
+        }
+        PlannerCompatibility::RequiresPlannerV2(_) => {
+            let pg_pool = state.db.pg_pool().ok_or_else(|| {
+                super::AppError::bad_request(
+                    "Advanced saved-view planning is not supported for this database type",
+                )
+            })?;
+            crate::db::postgres::preview_view_shape(
+                pg_pool,
+                &body.base_schema,
+                &body.base_table,
+                &body.shape,
+                100,
+            )
+            .await?
+        }
+    };
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -353,26 +443,49 @@ async fn get_saved_view_rows(
 ) -> Result<Json<serde_json::Value>, super::AppError> {
     let (state, conn_id) = current_state_and_conn_id(&mode).await?;
     let view = load_saved_view_definition(&store, &conn_id, id).await?;
-    validate_view_definition(&state, &view.base_schema, &view.base_table, &view.columns)?;
+    validate_view_definition(&state, &view.base_schema, &view.base_table, &view.shape)?;
     super::reject_legacy_sort_params(&all_params)?;
     let sort = parse_sort_without_validation(params.sort.as_deref())?;
     let filters = super::parse_filters(&all_params);
-    let result = state
-        .db
-        .query_view_rows(&ViewRowsQueryParams {
-            draft: ViewDraft {
-                base_schema: &view.base_schema,
-                base_table: &view.base_table,
-                columns: &view.columns,
-                filters: &view.filters,
-            },
-            page: params.page.max(1),
-            page_size: params.page_size.clamp(1, super::MAX_PAGE_SIZE),
-            sort: &sort,
-            search: params.search.as_deref(),
-            filters: &filters,
-        })
-        .await?;
+    let result = match planner_compatibility_for_shape(&view.shape)? {
+        PlannerCompatibility::Legacy(legacy) => {
+            state
+                .db
+                .query_view_rows(&ViewRowsQueryParams {
+                    draft: ViewDraft {
+                        base_schema: &view.base_schema,
+                        base_table: &view.base_table,
+                        columns: &legacy.columns,
+                        filters: &legacy.filters,
+                    },
+                    page: params.page.max(1),
+                    page_size: params.page_size.clamp(1, super::MAX_PAGE_SIZE),
+                    sort: &sort,
+                    search: params.search.as_deref(),
+                    filters: &filters,
+                })
+                .await?
+        }
+        PlannerCompatibility::RequiresPlannerV2(_) => {
+            let pg_pool = state.db.pg_pool().ok_or_else(|| {
+                super::AppError::bad_request(
+                    "Advanced saved-view planning is not supported for this database type",
+                )
+            })?;
+            crate::db::postgres::query_view_shape_rows(
+                pg_pool,
+                &view.base_schema,
+                &view.base_table,
+                &view.shape,
+                params.page.max(1),
+                params.page_size.clamp(1, super::MAX_PAGE_SIZE),
+                &sort,
+                params.search.as_deref(),
+                &filters,
+            )
+            .await?
+        }
+    };
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -385,7 +498,8 @@ async fn export_saved_view_csv(
 ) -> Result<impl IntoResponse, super::AppError> {
     let (state, conn_id) = current_state_and_conn_id(&mode).await?;
     let view = load_saved_view_definition(&store, &conn_id, id).await?;
-    validate_view_definition(&state, &view.base_schema, &view.base_table, &view.columns)?;
+    validate_view_definition(&state, &view.base_schema, &view.base_table, &view.shape)?;
+    let compatibility = planner_compatibility_for_shape(&view.shape)?;
     super::reject_legacy_sort_params(&all_params)?;
     let filters = super::parse_filters(&all_params);
     let sort = parse_sort_without_validation(params.sort.as_deref())?;
@@ -414,8 +528,15 @@ async fn export_saved_view_csv(
     };
     let base_schema = view.base_schema.clone();
     let base_table = view.base_table.clone();
-    let view_columns = view.columns.clone();
-    let definition_filters = view.filters.clone();
+    let export_shape = match compatibility {
+        PlannerCompatibility::Legacy(legacy) => EitherExportShape::Legacy {
+            columns: legacy.columns,
+            filters: legacy.filters,
+        },
+        PlannerCompatibility::RequiresPlannerV2(_) => {
+            EitherExportShape::Advanced(view.shape.clone())
+        }
+    };
     let sort_owned = sort;
     let search_owned = params.search.clone();
     let filters_owned = filters;
@@ -423,18 +544,40 @@ async fn export_saved_view_csv(
     tokio::spawn(async move {
         use futures::StreamExt;
 
-        let export_params = ViewExportQueryParams {
-            draft: ViewDraft {
-                base_schema: &base_schema,
-                base_table: &base_table,
-                columns: &view_columns,
-                filters: &definition_filters,
-            },
-            sort: &sort_owned,
-            search: search_owned.as_deref(),
-            filters: &filters_owned,
+        let legacy_export_params = match &export_shape {
+            EitherExportShape::Legacy { columns, filters } => Some(ViewExportQueryParams {
+                draft: ViewDraft {
+                    base_schema: &base_schema,
+                    base_table: &base_table,
+                    columns,
+                    filters,
+                },
+                sort: &sort_owned,
+                search: search_owned.as_deref(),
+                filters: &filters_owned,
+            }),
+            EitherExportShape::Advanced(_) => None,
         };
-        let export = crate::db::postgres::export_view_rows_stream(&pg_pool, &export_params).await;
+
+        let export = if let Some(export_params) = legacy_export_params.as_ref() {
+            crate::db::postgres::export_view_rows_stream(&pg_pool, export_params).await
+        } else {
+            match &export_shape {
+                EitherExportShape::Legacy { .. } => unreachable!(),
+                EitherExportShape::Advanced(shape) => {
+                    crate::db::postgres::export_view_shape_rows_stream(
+                        &pg_pool,
+                        &base_schema,
+                        &base_table,
+                        shape,
+                        &sort_owned,
+                        search_owned.as_deref(),
+                        &filters_owned,
+                    )
+                    .await
+                }
+            }
+        };
 
         let (columns, mut row_stream) = match export {
             Ok(value) => value,
@@ -594,14 +737,23 @@ mod tests {
             "Orders",
             "public",
             "orders",
-            &[ViewColumn {
-                source_schema: "public".into(),
-                source_table: "orders".into(),
-                column_name: "id".into(),
-                alias: None,
-                aggregate: None,
-            }],
-            &HashMap::new(),
+            &ViewDefinitionShape {
+                columns: vec![crate::db::SavedViewColumn {
+                    kind: None,
+                    source_id: None,
+                    source_schema: "public".into(),
+                    source_table: "orders".into(),
+                    column_name: "id".into(),
+                    alias: None,
+                    aggregate: None,
+                    derived: None,
+                }],
+                filters: HashMap::new(),
+                sources: Vec::new(),
+                grouping: None,
+                ranking: None,
+                template: None,
+            },
         )
         .await
         .unwrap();
@@ -678,7 +830,7 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["view"]["name"], "Renamed");
         assert!(json["view"]["columns"].is_null());
-        assert_eq!(json["view"]["definition_version"], 1);
+        assert_eq!(json["view"]["definition_version"], 2);
     }
 
     #[tokio::test]
@@ -770,6 +922,53 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("is not exposed in this SeeKi connection")
+        );
+    }
+
+    #[tokio::test]
+    async fn create_saved_view_validates_v2_shape_before_persisting() {
+        // V2 shapes must be validated via preview_view_shape before being stored.
+        // With a lazy (non-connected) pool the validation correctly fails at the
+        // DB layer, proving the validation path is exercised.
+        let (app, _dir) = test_router(test_app_config()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/views")
+                    .header(axum::http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "name":"Latest SOC",
+                            "base_schema":"public",
+                            "base_table":"orders",
+                            "columns":[
+                                {
+                                    "source_schema":"public",
+                                    "source_table":"orders",
+                                    "column_name":"battery_soc",
+                                    "aggregate":"LATEST"
+                                }
+                            ],
+                            "filters":{"battery_soc":{"op":"lt","value":"20"}},
+                            "sources":[{"id":"base","kind":"fk","schema":"public","table":"orders"}],
+                            "grouping":{
+                                "keys":[{"source_schema":"public","source_table":"orders","column_name":"vehicle_id"}],
+                                "latest_by":{"source_schema":"public","source_table":"orders","column_name":"scanned_at","direction":"desc"}
+                            },
+                            "template":"most-recent-per-group"
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "V2 shape should be validated against the database before persisting"
         );
     }
 }

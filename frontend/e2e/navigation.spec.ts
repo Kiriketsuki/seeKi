@@ -6,6 +6,10 @@ test.describe('Navigation — Default Load', () => {
     await seeki.waitForAppReady();
   });
 
+  test('sidebar shows the Data workspace label', async ({ page }) => {
+    await expect(page.locator('[data-testid="sidebar-mode-data"]').first()).toContainText('Data');
+  });
+
   test('default table loads on app start', async ({ page, seeki }) => {
     // Wait for the grid to be loaded
     await seeki.waitForGridLoaded();

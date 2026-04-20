@@ -25,6 +25,7 @@ import type {
   SavedViewDefinition,
   ViewDraft,
   FkHop,
+  ColumnSamplesResponse,
 } from './types';
 import {
   mockFetchTables,
@@ -241,6 +242,10 @@ export async function createView(draft: ViewDraft): Promise<SavedViewSummary> {
     base_table: draft.base_table,
     columns: draft.columns,
     filters: draft.filters,
+    sources: draft.sources,
+    grouping: draft.grouping,
+    ranking: draft.ranking,
+    template: draft.template,
   });
   assertShape(data, ['view'], '/api/views');
   return data.view;
@@ -287,6 +292,10 @@ export async function previewView(
     base_table: draft.base_table,
     columns: draft.columns,
     filters: draft.filters,
+    sources: draft.sources,
+    grouping: draft.grouping,
+    ranking: draft.ranking,
+    template: draft.template,
   });
   assertShape(data, ['rows', 'total_rows', 'page', 'page_size'], '/api/views/preview');
   return data;
@@ -341,6 +350,19 @@ export async function fetchFkPath(
     }
     throw error;
   }
+}
+
+export async function fetchColumnSamples(
+  schema: string,
+  table: string,
+  column: string,
+): Promise<string[]> {
+  if (USE_MOCK) return [];
+  const searchParams = new URLSearchParams({ column });
+  const path = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/samples?${searchParams.toString()}`;
+  const data = await apiFetch<ColumnSamplesResponse>(path);
+  assertShape(data, ['samples'], path);
+  return data.samples;
 }
 
 export async function fetchConnectionStatus(): Promise<ConnectionStatusResponse> {

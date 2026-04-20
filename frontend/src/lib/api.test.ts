@@ -79,6 +79,7 @@ function fullUpdateStatus() {
     previous_exists: false,
     last_checked: null,
     release_notes: null,
+    available_builds: [],
   };
 }
 
@@ -447,7 +448,11 @@ describe('custom views API helpers', () => {
           aggregate: null,
         },
       ],
-      filters: { customer_name: 'acme' },
+      filters: { customer_name: { op: 'contains', value: 'acme' } },
+      sources: [],
+      grouping: null,
+      ranking: null,
+      template: null,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -467,7 +472,11 @@ describe('custom views API helpers', () => {
               aggregate: null,
             },
           ],
-          filters: { customer_name: 'acme' },
+          filters: { customer_name: { op: 'contains', value: 'acme' } },
+          sources: [],
+          grouping: null,
+          ranking: null,
+          template: null,
         }),
       }),
     );
@@ -519,5 +528,20 @@ describe('custom views API helpers', () => {
     const { fetchFkPath } = await import('./api');
 
     await expect(fetchFkPath('public', 'orders', 'public', 'customers')).resolves.toEqual([]);
+  });
+
+  it('fetchColumnSamples reads the dedicated samples endpoint', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ samples: ['alpha', 'beta'] }));
+    const { fetchColumnSamples } = await import('./api');
+
+    await expect(fetchColumnSamples('public', 'orders', 'status')).resolves.toEqual([
+      'alpha',
+      'beta',
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tables/public/orders/samples?column=status',
+      expect.objectContaining({ method: 'GET' }),
+    );
   });
 });
