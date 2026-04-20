@@ -183,7 +183,8 @@
   let modeShortcutId: ReturnType<typeof setTimeout> | null = null;
   let updateStatusPollId: ReturnType<typeof setInterval> | null = null;
   let pendingModeShortcut: 'g' | null = null;
-  let selectRequestId = 0;
+  let navRequestId = 0;
+  let scrollRequestId = 0;
   let refreshSnapshot: GridRefreshSnapshot = $state({
     surfaceKey: null,
     intervalMs: 0,
@@ -660,7 +661,7 @@
   }
 
   async function selectTable(table: TableInfo) {
-    const myRequest = ++selectRequestId;
+    const myRequest = ++navRequestId;
     tablesSurface = { kind: 'table' };
     selectedSchema = table.schema;
     selectedTable = table.name;
@@ -684,7 +685,7 @@
         fetchColumns(table.schema, table.name),
         !isSetup ? fetchLastUsedState(table.schema, table.name) : Promise.resolve(null),
       ]);
-      if (myRequest !== selectRequestId) return;
+      if (myRequest !== navRequestId) return;
 
       if (lastUsed) {
         initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
@@ -722,7 +723,7 @@
         table.name,
         buildRowsParams(1, initialSortState, initialFilters, initialSearch),
       );
-      if (myRequest !== selectRequestId) return;
+      if (myRequest !== navRequestId) return;
 
       queryResult = result;
       if (paginationMode === 'infinite') {
@@ -738,15 +739,15 @@
       }
       refreshController.markRefreshed();
     } catch (e) {
-      if (myRequest !== selectRequestId) return;
+      if (myRequest !== navRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load table';
     } finally {
-      if (myRequest === selectRequestId) tableLoading = false;
+      if (myRequest === navRequestId) tableLoading = false;
     }
   }
 
   async function openSavedView(view: SavedViewSummary) {
-    const myRequest = ++selectRequestId;
+    const myRequest = ++navRequestId;
     tablesSurface = { kind: 'view', viewId: view.id };
     tableError = null;
     tableLoading = true;
@@ -770,7 +771,7 @@
         fetchView(view.id),
         fetchViewRows(view.id, buildRowsParams(1, [], {}, '')),
       ]);
-      if (myRequest !== selectRequestId) return;
+      if (myRequest !== navRequestId) return;
 
       selectedView = definition;
       columns = result.columns;
@@ -792,10 +793,10 @@
       }
       refreshController.markRefreshed();
     } catch (e) {
-      if (myRequest !== selectRequestId) return;
+      if (myRequest !== navRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load saved view';
     } finally {
-      if (myRequest === selectRequestId) tableLoading = false;
+      if (myRequest === navRequestId) tableLoading = false;
     }
   }
 
@@ -805,7 +806,7 @@
     nextFilters: FilterState = filters,
     nextSearchTerm: string = searchTerm,
   ) {
-    const myRequest = ++selectRequestId;
+    const myRequest = ++navRequestId;
     tableError = null;
     tableLoading = true;
     try {
@@ -817,7 +818,7 @@
             ? await fetchRows(selectedSchema, selectedTable, params)
             : null;
 
-      if (myRequest !== selectRequestId || result == null) return;
+      if (myRequest !== navRequestId || result == null) return;
       queryResult = result;
       currentPage = page;
       if (paginationMode === 'infinite') {
@@ -837,10 +838,10 @@
       }
       refreshController.markRefreshed();
     } catch (e) {
-      if (myRequest !== selectRequestId) return;
+      if (myRequest !== navRequestId) return;
       tableError = e instanceof Error ? e.message : 'Failed to load rows';
     } finally {
-      if (myRequest === selectRequestId) tableLoading = false;
+      if (myRequest === navRequestId) tableLoading = false;
     }
   }
 
@@ -873,7 +874,10 @@
   async function loadMoreRows() {
     if (fetchingMore || !infiniteHasMore) return;
     const nextPage = lastLoadedPage + 1;
-    const myRequest = ++selectRequestId;
+    const myNav = navRequestId;
+    const myScroll = ++scrollRequestId;
+
+    const isStale = () => myNav !== navRequestId || myScroll !== scrollRequestId;
 
     const colNames = visibleColumns.map((c) => c.name);
     loadedRows = [
@@ -888,15 +892,19 @@
     try {
       result = await fetchNextPage(nextPage);
     } catch {
-      // First failure — auto-retry once
-      try {
-        result = await fetchNextPage(nextPage);
-      } catch {
-        failed = true;
+      if (isStale()) { failed = true; } else {
+        await new Promise((r) => setTimeout(r, 500));
+        if (isStale()) { failed = true; } else {
+          try {
+            result = await fetchNextPage(nextPage);
+          } catch {
+            failed = true;
+          }
+        }
       }
     }
 
-    if (myRequest !== selectRequestId) {
+    if (isStale()) {
       loadedRows = loadedRows.filter((r) => !isSyntheticRow(r));
       fetchingMore = false;
       return;
