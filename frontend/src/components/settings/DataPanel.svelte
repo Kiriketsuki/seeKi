@@ -22,7 +22,7 @@
     if (savingMode || mode === paginationMode) return;
     savingMode = true;
     try {
-      const entries = buildDataSettingsEntries({ pageSize: 50, paginationMode: mode });
+      const entries = buildDataSettingsEntries({ paginationMode: mode });
       await saveSettings(entries);
       onPaginationModeChange?.(mode);
     } catch {

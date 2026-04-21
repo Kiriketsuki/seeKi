@@ -108,9 +108,9 @@ export function parseDataSettings(settings: SettingsEntries): DataSettings {
   return { pageSize, paginationMode };
 }
 
-export function buildDataSettingsEntries(data: DataSettings): SettingsEntries {
-  return {
-    'data.page_size': data.pageSize,
-    'data.pagination_mode': data.paginationMode,
-  };
+export function buildDataSettingsEntries(data: Partial<DataSettings>): SettingsEntries {
+  const entries: SettingsEntries = {};
+  if (data.pageSize !== undefined) entries['data.page_size'] = data.pageSize;
+  if (data.paginationMode !== undefined) entries['data.pagination_mode'] = data.paginationMode;
+  return entries;
 }

@@ -161,7 +161,7 @@ async fn settings_accept_valid_page_size() {
         .method("POST")
         .uri("/preferences/settings")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"page_size":100}"#))
+        .body(Body::from(r#"{"data.page_size":100}"#))
         .unwrap();
     let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
@@ -177,7 +177,7 @@ async fn settings_reject_invalid_page_size() {
         .method("POST")
         .uri("/preferences/settings")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"page_size":99}"#))
+        .body(Body::from(r#"{"data.page_size":99}"#))
         .unwrap();
     let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

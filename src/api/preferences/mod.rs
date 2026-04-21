@@ -117,12 +117,12 @@ fn validate_known_setting(key: &str, value: &Value) -> Result<(), Err> {
                 return Err(Err::bad_request("appearance.row_density is not supported"));
             }
         }
-        "page_size" => {
+        "data.page_size" => {
             let Some(n) = value.as_u64() else {
-                return Err(Err::bad_request("page_size must be a number"));
+                return Err(Err::bad_request("data.page_size must be a number"));
             };
             if !matches!(n, 50 | 100 | 250 | 500) {
-                return Err(Err::bad_request("page_size must be 50, 100, 250, or 500"));
+                return Err(Err::bad_request("data.page_size must be 50, 100, 250, or 500"));
             }
         }
         "data.pagination_mode" => {
