@@ -540,6 +540,46 @@ test.describe('Data Grid — Infinite Scroll', () => {
       await pageSizeSelect.selectOption('50');
     }
   });
+
+  test('page-size preference survives round-trip navigation', async ({ page, seeki }) => {
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires infinite scroll mode');
+
+    const tableNames = await seeki.getSidebarTableNames();
+    test.skip(tableNames.length < 2, 'Test requires at least 2 tables');
+
+    const pageSizeSelect = page.locator('.statusbar select#sk-page-size');
+    await expect(pageSizeSelect).toBeVisible();
+
+    const original = await pageSizeSelect.inputValue();
+    const target = original === '100' ? '200' : '100';
+
+    // Change page size and wait for reload
+    let rowsLoaded = seeki.pendingRowsResponse();
+    await pageSizeSelect.selectOption(target);
+    await rowsLoaded;
+    expect(await pageSizeSelect.inputValue()).toBe(target);
+
+    // Navigate to a different table
+    rowsLoaded = seeki.pendingRowsResponse();
+    await seeki.selectTable(tableNames[1]);
+    await rowsLoaded;
+
+    // Navigate back to the first table
+    rowsLoaded = seeki.pendingRowsResponse();
+    await seeki.selectTable(tableNames[0]);
+    await rowsLoaded;
+
+    // Page size should be restored from saved preference
+    expect(await pageSizeSelect.inputValue()).toBe(target);
+
+    // Restore original to avoid polluting other tests
+    if (target !== original) {
+      rowsLoaded = seeki.pendingRowsResponse();
+      await pageSizeSelect.selectOption(original);
+      await rowsLoaded;
+    }
+  });
 });
 
 test.describe('Data Grid — RowCapWarning Banner', () => {

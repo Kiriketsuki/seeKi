@@ -32,7 +32,6 @@
     filters = {},
     filtersVisible = false,
     fetchingMore = false,
-    appendError = false,
     resetSignal = 0,
     onSortChange,
     onFilterChange,
@@ -46,7 +45,6 @@
     filters?: FilterState;
     filtersVisible?: boolean;
     fetchingMore?: boolean;
-    appendError?: boolean;
     resetSignal?: number;
     onSortChange?: (nextSortState: SortState) => void;
     onFilterChange?: (column: string, value: string) => void;

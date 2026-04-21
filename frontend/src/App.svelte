@@ -934,6 +934,7 @@
     lastLoadedPage = nextState.lastLoadedPage;
     rowCapState = nextState.capState;
     queryResult = result;
+    appendError = false;
     fetchingMore = false;
   }
 
@@ -946,6 +947,9 @@
       await resetAndLoadRows();
     } else {
       await loadRows(1);
+    }
+    if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
+      scheduleLastUsedSave(selectedSchema, selectedTable, sortState, filters, searchTerm);
     }
   }
 
@@ -1417,11 +1421,11 @@
                       {filters}
                       {filtersVisible}
                       {fetchingMore}
-                      {appendError}
+
                       {resetSignal}
                       onSortChange={handleSortChange}
                       onFilterChange={handleFilterChange}
-                      onNearBottom={() => { if (paginationMode === 'infinite') void loadMoreRows(); }}
+                      onNearBottom={() => { if (paginationMode === 'infinite' && !appendError) void loadMoreRows(); }}
                       onRetryAppend={() => { appendError = false; void loadMoreRows(); }}
                     />
                   </div>
