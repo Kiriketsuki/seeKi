@@ -1097,6 +1097,8 @@
     appSettings = { ...appSettings, ...entries };
     if (mode === 'infinite') {
       await resetAndLoadRows();
+    } else {
+      await loadRows(1);
     }
   }
 

@@ -582,6 +582,38 @@ test.describe('Data Grid — Infinite Scroll', () => {
       await rowsLoaded;
     }
   });
+
+  test('infinite→paged mode switch resets to page 1', async ({ page, seeki }) => {
+    const isInfinite = await seeki.isInfiniteMode();
+    test.skip(!isInfinite, 'Test requires starting in infinite scroll mode');
+
+    // Open settings and switch to paged mode
+    await page.locator('button[aria-label="Show settings workspace"]').click();
+    const pagedBtn = page.locator('.mode-toggle button', { hasText: 'Paged' });
+    await expect(pagedBtn).toBeVisible();
+
+    const rowsResponse = seeki.pendingRowsResponse();
+    await pagedBtn.click();
+    await rowsResponse;
+
+    // Close settings
+    await page.locator('button[aria-label="Close settings"]').click();
+
+    // Status bar should show paged format: "Showing X - Y of Z"
+    const statusText = await seeki.getStatusBarText();
+    expect(statusText).toMatch(/^Showing \d[\d,]* - \d[\d,]* of \d[\d,]*$/);
+
+    // Should be on page 1
+    const range = await seeki.getPageRange();
+    expect(range.start).toBe(1);
+
+    // Restore infinite mode to avoid polluting other tests
+    await page.locator('button[aria-label="Show settings workspace"]').click();
+    const infiniteBtn = page.locator('.mode-toggle button', { hasText: 'Infinite scroll' });
+    const restoreResponse = seeki.pendingRowsResponse();
+    await infiniteBtn.click();
+    await restoreResponse;
+  });
 });
 
 test.describe('Data Grid — RowCapWarning Banner', () => {
