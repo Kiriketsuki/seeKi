@@ -100,7 +100,7 @@ describe('isSyntheticRow', () => {
 describe('appendBatch', () => {
   it('merges new rows after existing real rows', () => {
     const state = createInitialState();
-    const result = appendBatch(state, [{ id: 1 }, { id: 2 }], 1, 10);
+    const result = appendBatch(state, [{ id: 1 }, { id: 2 }], 1);
     expect(result.rows).toHaveLength(2);
     expect(result.loadedCount).toBe(2);
     expect(result.lastLoadedPage).toBe(1);
@@ -114,7 +114,7 @@ describe('appendBatch', () => {
       lastLoadedPage: 1,
       capState: 'none' as const,
     };
-    const result = appendBatch(state, [{ id: 2 }], 2, 10);
+    const result = appendBatch(state, [{ id: 2 }], 2);
     expect(result.rows).toHaveLength(2);
     expect(result.rows.every((r) => !isSyntheticRow(r))).toBe(true);
   });
@@ -122,21 +122,21 @@ describe('appendBatch', () => {
   it('updates capState to soft when loadedCount reaches SOFT_CAP', () => {
     const state = createInitialState();
     const batch = Array.from({ length: SOFT_CAP }, (_, i) => ({ id: i }));
-    const result = appendBatch(state, batch, 1, 50_000);
+    const result = appendBatch(state, batch, 1);
     expect(result.capState).toBe('soft');
   });
 
   it('updates capState to hard when loadedCount reaches HARD_CAP', () => {
     const state = createInitialState();
     const batch = Array.from({ length: HARD_CAP }, (_, i) => ({ id: i }));
-    const result = appendBatch(state, batch, 1, 50_000);
+    const result = appendBatch(state, batch, 1);
     expect(result.capState).toBe('hard');
   });
 });
 
 describe('resetState', () => {
   it('returns empty initial state', () => {
-    const state = appendBatch(createInitialState(), [{ id: 1 }], 1, 10);
+    const state = appendBatch(createInitialState(), [{ id: 1 }], 1);
     const reset = resetState();
     expect(reset.rows).toHaveLength(0);
     expect(reset.loadedCount).toBe(0);

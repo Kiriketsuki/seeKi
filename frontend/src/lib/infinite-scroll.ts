@@ -67,7 +67,6 @@ export function appendBatch(
   state: InfiniteScrollState,
   newRows: Record<string, unknown>[],
   page: number,
-  totalRows: number,
 ): InfiniteScrollState {
   const cleanRows = state.rows.filter((r) => !isSyntheticRow(r));
   const merged = [...cleanRows, ...newRows];

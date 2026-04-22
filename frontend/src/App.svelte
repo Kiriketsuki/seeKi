@@ -732,7 +732,6 @@
           { rows: [], loadedCount: 0, lastLoadedPage: 0, capState: 'none' },
           result.rows,
           1,
-          result.total_rows,
         );
         loadedRows = nextState.rows;
         lastLoadedPage = nextState.lastLoadedPage;
@@ -786,7 +785,6 @@
           { rows: [], loadedCount: 0, lastLoadedPage: 0, capState: 'none' },
           result.rows,
           1,
-          result.total_rows,
         );
         loadedRows = nextState.rows;
         lastLoadedPage = nextState.lastLoadedPage;
@@ -827,7 +825,6 @@
           { rows: loadedRows.filter((r) => !isSyntheticRow(r)), loadedCount: cleanRowCount, lastLoadedPage: page - 1, capState: rowCapState },
           result.rows,
           page,
-          result.total_rows,
         );
         loadedRows = nextState.rows;
         lastLoadedPage = nextState.lastLoadedPage;
@@ -928,7 +925,6 @@
       },
       result.rows,
       nextPage,
-      result.total_rows,
     );
     loadedRows = nextState.rows;
     lastLoadedPage = nextState.lastLoadedPage;

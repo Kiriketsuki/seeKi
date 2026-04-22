@@ -535,9 +535,11 @@ test.describe('Data Grid — Infinite Scroll', () => {
     expect(newLoaded).toBeLessThanOrEqual(total);
 
     // Restore original selection to avoid polluting other tests
-    if (initialLoaded <= 50) {
-      await seeki.pendingRowsResponse();
+    const currentSize = await pageSizeSelect.inputValue();
+    if (currentSize !== '50') {
+      const rowsLoaded = seeki.pendingRowsResponse();
       await pageSizeSelect.selectOption('50');
+      await rowsLoaded;
     }
   });
 
@@ -552,7 +554,7 @@ test.describe('Data Grid — Infinite Scroll', () => {
     await expect(pageSizeSelect).toBeVisible();
 
     const original = await pageSizeSelect.inputValue();
-    const target = original === '100' ? '200' : '100';
+    const target = original === '100' ? '250' : '100';
 
     // Change page size and wait for reload
     let rowsLoaded = seeki.pendingRowsResponse();

@@ -254,6 +254,24 @@ async fn last_used_accepts_null_page_size() {
 }
 
 #[tokio::test]
+async fn last_used_rejects_invalid_page_size() {
+    let (store, _dir) = ephemeral_store().await;
+    let mode = initial_mode(None);
+    let app = setup_router(mode, store);
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/preferences/presets/last-used/public/vehicles")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"sort_columns":[],"filters":{},"page_size":99}"#,
+        ))
+        .unwrap();
+    let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn sort_preset_reject_oversized_name() {
     let (store, _dir) = ephemeral_store().await;
     let mode = initial_mode(None);
