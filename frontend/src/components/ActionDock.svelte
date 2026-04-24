@@ -305,7 +305,7 @@
     display: grid;
     grid-template-rows: 0fr auto;
     border: 1px solid var(--sk-border-light);
-    border-radius: calc(var(--sk-radius-lg) + 6px);
+    border-radius: calc(var(--sk-radius-lg) + 4px);
     background: rgba(255, 255, 255, 0.88);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
@@ -500,7 +500,7 @@
     }
 
     .dock-button {
-      padding: 0 6px;
+      padding: 0 4px;
       font-size: var(--sk-font-size-sm);
     }
   }

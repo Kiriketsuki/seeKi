@@ -319,7 +319,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sk-space-xs);
     border-radius: var(--sk-radius-md);
     border: 1px solid transparent;
     font: inherit;
@@ -327,15 +327,15 @@
   }
 
   .panel-action--primary {
-    padding: 6px 10px;
+    padding: var(--sk-space-xs) var(--sk-space-sm);
     border-color: rgba(0, 169, 165, 0.24);
     background: rgba(0, 169, 165, 0.08);
     color: var(--sk-accent);
   }
 
   .panel-action--icon {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     background: transparent;
     color: var(--sk-secondary-strong);
   }

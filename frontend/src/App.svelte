@@ -1463,31 +1463,33 @@
                   {/if}
                 </div>
               </div>
-              <StatusBar
-                mode={paginationMode}
-                total={queryResult?.total_rows ?? 0}
-                loadedCount={cleanRowCount}
-                start={
-                  queryResult && queryResult.total_rows > 0
-                    ? (queryResult.page - 1) * queryResult.page_size + 1
-                    : 0
-                }
-                end={
-                  queryResult && queryResult.total_rows > 0
-                    ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows)
-                    : 0
-                }
-                page={queryResult?.page ?? 1}
-                totalPages={
-                  queryResult
-                    ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size))
-                    : 1
-                }
-                {pageSize}
-                loading={tableLoading}
-                onPageChange={goToPage}
-                onPageSizeChange={handlePageSizeChange}
-              />
+              {#if paginationMode === 'paged'}
+                <StatusBar
+                  mode={paginationMode}
+                  total={queryResult?.total_rows ?? 0}
+                  loadedCount={cleanRowCount}
+                  start={
+                    queryResult && queryResult.total_rows > 0
+                      ? (queryResult.page - 1) * queryResult.page_size + 1
+                      : 0
+                  }
+                  end={
+                    queryResult && queryResult.total_rows > 0
+                      ? Math.min(queryResult.page * queryResult.page_size, queryResult.total_rows)
+                      : 0
+                  }
+                  page={queryResult?.page ?? 1}
+                  totalPages={
+                    queryResult
+                      ? Math.max(1, Math.ceil(queryResult.total_rows / queryResult.page_size))
+                      : 1
+                  }
+                  {pageSize}
+                  loading={tableLoading}
+                  onPageChange={goToPage}
+                  onPageSizeChange={handlePageSizeChange}
+                />
+              {/if}
             </main>
           {/if}
         {:else}
