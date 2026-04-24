@@ -70,12 +70,13 @@ export function appendBatch(
 ): InfiniteScrollState {
   const cleanRows = state.rows.filter((r) => !isSyntheticRow(r));
   const merged = [...cleanRows, ...newRows];
-  const loadedCount = merged.length;
+  const capState = computeRowCapState(merged.length);
+  const rows = capState === 'hard' ? merged.slice(0, HARD_CAP) : merged;
   return {
-    rows: merged,
-    loadedCount,
+    rows,
+    loadedCount: rows.length,
     lastLoadedPage: page,
-    capState: computeRowCapState(loadedCount),
+    capState,
   };
 }
 

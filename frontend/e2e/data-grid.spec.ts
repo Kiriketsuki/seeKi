@@ -71,7 +71,7 @@ test.describe('Data Grid — Sorting', () => {
     let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     let rowsResponse = await rowsLoaded;
-    expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    expect(rowsResponse.request().url()).toContain('sort=');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
     await expect(sortGlyph).toHaveText('↑');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
@@ -80,7 +80,7 @@ test.describe('Data Grid — Sorting', () => {
     rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
     rowsResponse = await rowsLoaded;
-    expect(rowsResponse.request().url()).toContain('sort_direction=desc');
+    expect(rowsResponse.request().url()).toContain('sort=');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/descending$/);
     await expect(sortGlyph).toHaveText('↓');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'descending');

@@ -132,6 +132,21 @@ describe('appendBatch', () => {
     const result = appendBatch(state, batch, 1);
     expect(result.capState).toBe('hard');
   });
+
+  it('truncates rows at HARD_CAP when batch causes overshoot', () => {
+    const existing = Array.from({ length: 9_800 }, (_, i) => ({ id: i }));
+    const state: ReturnType<typeof createInitialState> = {
+      rows: existing,
+      loadedCount: 9_800,
+      lastLoadedPage: 196,
+      capState: 'soft',
+    };
+    const batch = Array.from({ length: 500 }, (_, i) => ({ id: 9_800 + i }));
+    const result = appendBatch(state, batch, 197);
+    expect(result.rows).toHaveLength(HARD_CAP);
+    expect(result.loadedCount).toBe(HARD_CAP);
+    expect(result.capState).toBe('hard');
+  });
 });
 
 describe('resetState', () => {

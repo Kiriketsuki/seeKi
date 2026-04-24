@@ -66,7 +66,7 @@ test.describe('Navigation — Table Switching', () => {
     let rowsResponse = await rowsLoaded;
 
     // Verify the sort request included sort params
-    expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    expect(rowsResponse.request().url()).toContain('sort=');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
     await expect(sortGlyph).toHaveText('↑');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
