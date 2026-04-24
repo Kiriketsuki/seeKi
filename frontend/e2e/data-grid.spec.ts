@@ -456,6 +456,26 @@ test.describe('Data Grid — Infinite Scroll', () => {
     await seeki.waitForGridLoaded();
   });
 
+  test.afterEach(async ({ page, seeki }) => {
+    if (!(await seeki.isInfiniteMode())) {
+      await page.locator('button[aria-label="Show settings workspace"]').click();
+      const infiniteBtn = page.locator('.mode-toggle button', { hasText: 'Infinite scroll' });
+      const response = seeki.pendingRowsResponse();
+      await infiniteBtn.click();
+      await response;
+      await page.locator('button[aria-label="Close settings"]').click();
+    }
+    const pageSizeSelect = page.locator('.statusbar select#sk-page-size');
+    if (await pageSizeSelect.isVisible()) {
+      const size = await pageSizeSelect.inputValue();
+      if (size !== '50') {
+        const response = seeki.pendingRowsResponse();
+        await pageSizeSelect.selectOption('50');
+        await response;
+      }
+    }
+  });
+
   test('infinite mode: status bar shows "Loaded X of Y" format', async ({ seeki }) => {
     const isInfinite = await seeki.isInfiniteMode();
     test.skip(!isInfinite, 'Test requires infinite scroll mode');
@@ -534,14 +554,6 @@ test.describe('Data Grid — Infinite Scroll', () => {
     // After a reset the new first batch size should align with the chosen page size
     const total = await seeki.getTotalRows();
     expect(newLoaded).toBeLessThanOrEqual(total);
-
-    // Restore original selection to avoid polluting other tests
-    const currentSize = await pageSizeSelect.inputValue();
-    if (currentSize !== '50') {
-      const rowsLoaded = seeki.pendingRowsResponse();
-      await pageSizeSelect.selectOption('50');
-      await rowsLoaded;
-    }
   });
 
   test('page-size preference survives round-trip navigation', async ({ page, seeki }) => {
@@ -575,13 +587,6 @@ test.describe('Data Grid — Infinite Scroll', () => {
 
     // Page size should be restored from saved preference
     expect(await pageSizeSelect.inputValue()).toBe(target);
-
-    // Restore original to avoid polluting other tests
-    if (target !== original) {
-      rowsLoaded = seeki.pendingRowsResponse();
-      await pageSizeSelect.selectOption(original);
-      await rowsLoaded;
-    }
   });
 
   test('infinite→paged mode switch resets to page 1', async ({ page, seeki }) => {
@@ -616,13 +621,6 @@ test.describe('Data Grid — Infinite Scroll', () => {
     // Should be on page 1
     const range = await seeki.getPageRange();
     expect(range.start).toBe(1);
-
-    // Restore infinite mode to avoid polluting other tests
-    await page.locator('button[aria-label="Show settings workspace"]').click();
-    const infiniteBtn = page.locator('.mode-toggle button', { hasText: 'Infinite scroll' });
-    const restoreResponse = seeki.pendingRowsResponse();
-    await infiniteBtn.click();
-    await restoreResponse;
   });
 });
 
