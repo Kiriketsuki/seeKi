@@ -66,7 +66,16 @@
   let sorting = $derived(sortStateToConfig(sortState));
 
   function findViewportScroll(): Element | null {
-    return gridEl?.querySelector('revogr-viewport-scroll') ?? null;
+    const revoEl = gridEl?.querySelector('revo-grid');
+    if (!revoEl) return null;
+    const shadow = revoEl.shadowRoot;
+    if (!shadow) return null;
+    return (
+      shadow.querySelector('revogr-viewport-scroll') ??
+      shadow.querySelector('[data-type="rgScrollable"]') ??
+      shadow.querySelector('[class*="scroll"]') ??
+      null
+    );
   }
 
   function handleScroll(event: Event) {
@@ -92,9 +101,18 @@
     }
 
     const observer = new MutationObserver(() => {
-      if (tryAttach()) observer.disconnect();
+      if (tryAttach()) {
+        observer.disconnect();
+        return;
+      }
+      const revoEl = gridEl!.querySelector('revo-grid');
+      if (revoEl?.shadowRoot && !observingShadow) {
+        observingShadow = true;
+        observer.observe(revoEl.shadowRoot, { childList: true, subtree: true });
+      }
     });
 
+    let observingShadow = false;
     if (!tryAttach()) {
       observer.observe(gridEl, { childList: true, subtree: true });
     }
