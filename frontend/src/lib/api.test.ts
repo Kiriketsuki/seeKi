@@ -398,6 +398,84 @@ describe('UPDATE_STATUS_FIELDS response-shape agreement', () => {
   });
 });
 
+// ── Last-used state with page_size ───────────────────────────────────────────
+
+describe('fetchLastUsedState / saveLastUsedState with page_size', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('VITE_MOCK', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('fetchLastUsedState returns state including page_size', async () => {
+    const state = { sort_columns: [], filters: {}, search_term: null, page_size: 100 };
+    fetchMock.mockResolvedValueOnce(jsonResponse(state));
+    const { fetchLastUsedState } = await import('./api');
+
+    const result = await fetchLastUsedState('public', 'users');
+
+    expect(result).toEqual(state);
+    expect(result?.page_size).toBe(100);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/preferences/presets/last-used/public/users',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('fetchLastUsedState returns null on 404', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('not found', { status: 404 }));
+    const { fetchLastUsedState } = await import('./api');
+
+    expect(await fetchLastUsedState('public', 'users')).toBeNull();
+  });
+
+  it('saveLastUsedState posts body with page_size', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+    const { saveLastUsedState } = await import('./api');
+
+    const state = { sort_columns: [], filters: {}, search_term: null, page_size: 250 };
+    await saveLastUsedState('public', 'orders', state);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/preferences/presets/last-used/public/orders',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(state),
+      }),
+    );
+  });
+
+  it('round-trips page_size through save then fetch', async () => {
+    const savedState = { sort_columns: [], filters: {}, search_term: null, page_size: 500 };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(savedState));
+    const { saveLastUsedState, fetchLastUsedState } = await import('./api');
+
+    await saveLastUsedState('public', 'users', savedState);
+    const fetched = await fetchLastUsedState('public', 'users');
+
+    expect(fetched?.page_size).toBe(500);
+  });
+
+  it('page_size is optional — state without page_size is accepted', async () => {
+    const state = { sort_columns: [], filters: {}, search_term: null };
+    fetchMock.mockResolvedValueOnce(jsonResponse(state));
+    const { fetchLastUsedState } = await import('./api');
+
+    const result = await fetchLastUsedState('public', 'users');
+    expect(result?.page_size).toBeUndefined();
+  });
+});
+
 describe('custom views API helpers', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 

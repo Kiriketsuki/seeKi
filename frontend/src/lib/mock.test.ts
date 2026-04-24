@@ -88,6 +88,18 @@ describe('mockFetchRows', () => {
     expect(result.page_size).toBe(50);
   });
 
+  it.each([50, 100, 250, 500] as const)('echoes page_size=%d in the response', (size) => {
+    const result = mockFetchRows('public', 'users', { page: 1, page_size: size });
+    expect(result.page_size).toBe(size);
+    expect(result.rows.length).toBeLessThanOrEqual(size);
+  });
+
+  it('page_size=100 returns at most 100 rows', () => {
+    const result = mockFetchRows('public', 'users', { page: 1, page_size: 100 });
+    expect(result.page_size).toBe(100);
+    expect(result.rows.length).toBeLessThanOrEqual(100);
+  });
+
   it('supports multi-column sort', () => {
     const result = mockFetchRows('public', 'users', {
       page_size: 200,

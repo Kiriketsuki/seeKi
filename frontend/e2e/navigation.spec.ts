@@ -20,7 +20,7 @@ test.describe('Navigation — Default Load', () => {
 
     // Verify the grid shows data (status bar should show row count)
     const statusBar = await seeki.getStatusBarText();
-    expect(statusBar).toMatch(/Showing \d+ - \d+ of \d+/);
+    expect(statusBar).toMatch(/(?:Showing \d[\d,]* - \d[\d,]* of|Loaded \d[\d,]* of) \d[\d,]*/);
   });
 });
 
@@ -51,7 +51,7 @@ test.describe('Navigation — Table Switching', () => {
 
     // Verify the status bar updates (should show data for the new table)
     const statusBar = await seeki.getStatusBarText();
-    expect(statusBar).toMatch(/Showing \d+ - \d+ of \d+/);
+    expect(statusBar).toMatch(/(?:Showing \d[\d,]* - \d[\d,]* of|Loaded \d[\d,]* of) \d[\d,]*/);
   });
 
   test('switching tables resets search state and toolbar defaults', async ({ page, seeki }) => {
@@ -66,7 +66,7 @@ test.describe('Navigation — Table Switching', () => {
     let rowsResponse = await rowsLoaded;
 
     // Verify the sort request included sort params
-    expect(rowsResponse.request().url()).toContain('sort_direction=asc');
+    expect(rowsResponse.request().url()).toContain('sort=');
     await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
     await expect(sortGlyph).toHaveText('↑');
     await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');

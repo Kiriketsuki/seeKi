@@ -9,22 +9,27 @@
   import type {
     AppearanceSettings,
     BrandingSettings,
+    PaginationMode,
     UpdateStatus,
   } from '../lib/types';
 
   let {
     branding,
     appearance,
+    paginationMode = 'infinite',
     updateStatus,
     onSaveBranding,
     onSaveAppearance,
+    onPaginationModeChange,
     onUpdateStatusChange,
   }: {
     branding: BrandingSettings;
     appearance: AppearanceSettings;
+    paginationMode?: PaginationMode;
     updateStatus: UpdateStatus | null;
     onSaveBranding: (branding: BrandingSettings) => Promise<void>;
     onSaveAppearance: (appearance: AppearanceSettings) => Promise<void>;
+    onPaginationModeChange?: (mode: PaginationMode) => void;
     onUpdateStatusChange: (status: UpdateStatus) => void;
   } = $props();
 </script>
@@ -41,7 +46,7 @@
       {:else if $activeSettingsSection === 'connection'}
         <ConnectionPanel />
       {:else if $activeSettingsSection === 'data'}
-        <DataPanel />
+        <DataPanel {paginationMode} {onPaginationModeChange} />
       {:else}
         <AboutPanel />
       {/if}

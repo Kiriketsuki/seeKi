@@ -307,6 +307,90 @@ async function createScratchView(
   await expect(page.getByText('Read-only saved view')).toBeVisible();
 }
 
+test.describe.serial('Custom views — Infinite scroll', () => {
+  test('saved view loads and shows data in current pagination mode', async ({ page, seeki }) => {
+    const catalog = await loadTableCatalog(page);
+    const candidate = findScratchCandidate(catalog);
+    if (!candidate) {
+      test.skip(true, 'No table with a usable source column available for this test.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E Infinite Scroll View');
+
+    await page.goto('/');
+    await seeki.waitForAppReady();
+    await seeki.waitForGridLoaded();
+
+    await createScratchView(page, seeki, candidate, viewName);
+
+    // Status bar should be populated in whatever mode is active
+    const statusText = await seeki.getStatusBarText();
+    expect(statusText).toMatch(/(?:Showing \d[\d,]* - \d[\d,]* of|Loaded \d[\d,]* of) \d[\d,]*/);
+
+    const total = await seeki.getTotalRows();
+    expect(total).toBeGreaterThan(0);
+
+    // Cleanup
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
+  });
+
+  test('saved view: scroll appends next batch in infinite mode', async ({ page, seeki }) => {
+    const isInfinite = await (async () => {
+      await page.goto('/');
+      await seeki.waitForAppReady();
+      await seeki.waitForGridLoaded();
+      return seeki.isInfiniteMode();
+    })();
+    if (!isInfinite) {
+      test.skip(true, 'Test requires infinite scroll mode');
+      return;
+    }
+
+    const catalog = await loadTableCatalog(page);
+    const candidate = findScratchCandidate(catalog);
+    if (!candidate) {
+      test.skip(true, 'No table with a usable source column available.');
+      return;
+    }
+
+    const viewName = uniqueViewName('E2E View Scroll Append');
+
+    await createScratchView(page, seeki, candidate, viewName);
+
+    const initialLoaded = await seeki.getLoadedCount();
+    const total = await seeki.getTotalRows();
+
+    if (initialLoaded >= total) {
+      // All rows loaded on first page — still passes (nothing more to scroll)
+      expect(initialLoaded).toBeGreaterThan(0);
+    } else {
+      // Trigger scroll-to-bottom on the grid
+      const rowsResponse = seeki.pendingGridRowsResponse();
+      await seeki.scrollGridToBottom();
+      await rowsResponse;
+
+      await page.waitForFunction(
+        (prev) => {
+          const el = document.querySelector('.statusbar .showing');
+          const match = el?.textContent?.match(/Loaded\s+([\d,]+)\s+of/);
+          return match ? parseInt(match[1].replace(/,/g, ''), 10) > prev : false;
+        },
+        initialLoaded,
+        { timeout: 10_000 },
+      );
+
+      const newLoaded = await seeki.getLoadedCount();
+      expect(newLoaded).toBeGreaterThan(initialLoaded);
+    }
+
+    // Cleanup
+    await page.getByRole('button', { name: 'Delete view' }).click();
+    await waitForViewToDisappear(seeki, viewName);
+  });
+});
+
 test.describe.serial('Custom views', () => {
   test('create, reopen, and delete a saved view from the data panels scratch flow', async ({ page, seeki }) => {
     const catalog = await loadTableCatalog(page);

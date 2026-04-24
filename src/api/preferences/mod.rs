@@ -13,6 +13,9 @@ use serde_json::Value;
 use crate::app_mode::{AppMode, SharedAppMode};
 use crate::store::{Store, connection_id, presets, settings, ui_state};
 
+#[cfg(test)]
+mod tests;
+
 pub fn router() -> Router {
     Router::new()
         // Settings — available in both Setup and Normal mode
@@ -114,6 +117,24 @@ fn validate_known_setting(key: &str, value: &Value) -> Result<(), Err> {
                 return Err(Err::bad_request("appearance.row_density is not supported"));
             }
         }
+        "data.page_size" => {
+            let Some(n) = value.as_u64() else {
+                return Err(Err::bad_request("data.page_size must be a number"));
+            };
+            if !matches!(n, 50 | 100 | 250 | 500) {
+                return Err(Err::bad_request("data.page_size must be 50, 100, 250, or 500"));
+            }
+        }
+        "data.pagination_mode" => {
+            let Some(mode) = value.as_str() else {
+                return Err(Err::bad_request("data.pagination_mode must be a string"));
+            };
+            if !matches!(mode, "infinite" | "paged") {
+                return Err(Err::bad_request(
+                    "data.pagination_mode must be \"infinite\" or \"paged\"",
+                ));
+            }
+        }
         _ => {}
     }
 
@@ -154,6 +175,13 @@ async fn set_last_used(
         .map_err(|e| Err::internal(anyhow::Error::from(e)))?;
     if search_term_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
+    }
+    if let Some(ps) = body.page_size {
+        if !matches!(ps, 50 | 100 | 250 | 500) {
+            return Err(Err::bad_request(
+                "page_size must be 50, 100, 250, or 500",
+            ));
+        }
     }
     let conn_id = require_conn_id(&mode).await?;
     presets::set_last_used(store.pool(), &conn_id, &schema, &table, &body)
@@ -363,8 +391,6 @@ async fn require_conn_id(mode: &SharedAppMode) -> Result<String, Err> {
 }
 
 // ── Error type ────────────────────────────────────────────────────────────────
-// Mirrors AppError in src/api/mod.rs; kept local to avoid exposing a pub type
-// across modules for what is a small handler set.
 
 struct Err {
     status: StatusCode,
@@ -413,341 +439,4 @@ impl IntoResponse for Err {
         )
             .into_response()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::{Router, body::Body, http::Request};
-    use http_body_util::BodyExt;
-
-    use crate::app_mode::initial_mode;
-    use crate::store::testutil::ephemeral_store;
-
-    fn setup_router(mode: crate::app_mode::SharedAppMode, store: Store) -> Router {
-        Router::new()
-            .nest("/preferences", router())
-            .layer(Extension(store))
-            .layer(Extension(mode))
-    }
-
-    async fn body_json(resp: axum::response::Response) -> serde_json::Value {
-        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        serde_json::from_slice(&bytes).unwrap()
-    }
-
-    // ── Settings in Setup mode ─────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn settings_work_in_setup_mode() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None); // Setup mode
-        let app = setup_router(mode, store);
-
-        // POST settings
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/settings")
-            .header("content-type", "application/json")
-            .body(Body::from(r#"{"theme":"dark"}"#))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app.clone(), req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-
-        // GET settings
-        let req = Request::builder()
-            .uri("/preferences/settings")
-            .body(Body::empty())
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let json = body_json(resp).await;
-        assert_eq!(json["theme"], "dark");
-    }
-
-    // ── Presets return 503 in Setup mode ───────────────────────────────────
-
-    #[tokio::test]
-    async fn presets_unavailable_in_setup_mode() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let req = Request::builder()
-            .uri("/preferences/presets/sort/public/vehicles")
-            .body(Body::empty())
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
-    }
-
-    // ── HTTP 400 for oversized values ──────────────────────────────────────
-
-    #[tokio::test]
-    async fn settings_reject_oversized_value() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        // Value serialises to > MAX_VALUE_BYTES (64 KiB)
-        let big = "x".repeat(65 * 1024);
-        let body = serde_json::json!({ "theme": big }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/settings")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn settings_reject_oversized_key() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let long_key = "k".repeat(201);
-        let body = serde_json::json!({ long_key: "v" }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/settings")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn settings_reject_empty_branding_title() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/settings")
-            .header("content-type", "application/json")
-            .body(Body::from(r#"{"branding.title":"   "}"#))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn settings_reject_invalid_date_format() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/settings")
-            .header("content-type", "application/json")
-            .body(Body::from(r#"{"appearance.date_format":"RFC3339"}"#))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn settings_reject_invalid_row_density() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/settings")
-            .header("content-type", "application/json")
-            .body(Body::from(r#"{"appearance.row_density":"spacious"}"#))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn sort_preset_reject_oversized_name() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let long_name = "k".repeat(201);
-        let body = serde_json::json!({ "name": long_name, "columns": {} }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/sort/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn filter_preset_reject_oversized_name() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let long_name = "k".repeat(201);
-        let body = serde_json::json!({ "name": long_name, "filters": {} }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/filter/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn ui_state_reject_oversized_key() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let long_key = "k".repeat(201);
-        let body = serde_json::json!({ "value": "x" }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri(format!("/preferences/ui-state/{long_key}"))
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn last_used_reject_oversized_sort_columns() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let body =
-            serde_json::json!({ "sort_columns": "x".repeat(65 * 1024), "filters": {} }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/last-used/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn ui_state_reject_oversized_value() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let big_value = "x".repeat(65 * 1024);
-        let body = serde_json::json!({ "value": big_value }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/ui-state/my_key")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn last_used_reject_oversized_filters() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let body =
-            serde_json::json!({ "sort_columns": [], "filters": "x".repeat(65 * 1024) }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/last-used/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn last_used_reject_oversized_search_term() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let big_term = "x".repeat(65 * 1024);
-        let body =
-            serde_json::json!({ "sort_columns": [], "filters": {}, "search_term": big_term })
-                .to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/last-used/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn sort_preset_reject_oversized_columns() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let big_columns = "x".repeat(65 * 1024);
-        let body = serde_json::json!({ "name": "my_preset", "columns": big_columns }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/sort/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn filter_preset_reject_oversized_filters() {
-        let (store, _dir) = ephemeral_store().await;
-        let mode = initial_mode(None);
-        let app = setup_router(mode, store);
-
-        let big_filters = "x".repeat(65 * 1024);
-        let body = serde_json::json!({ "name": "my_preset", "filters": big_filters }).to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/preferences/presets/filter/public/vehicles")
-            .header("content-type", "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    // ── Delete non-existent preset returns 404 ─────────────────────────────
-    // The HTTP 404 path for delete_sort_preset (preferences.rs:138-142) is
-    // exercised indirectly: the store layer returns `false` for a missing row
-    // (covered by `delete_sort_preset_delete_nonexistent_returns_false` in
-    // store/presets.rs), and the handler converts that to 404. A full HTTP-level
-    // test would require a running Postgres to build a real AppState; that is out
-    // of scope for unit tests. See integration tests if added in future.
 }

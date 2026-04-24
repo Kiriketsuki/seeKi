@@ -34,6 +34,7 @@ pub struct LastUsedState {
     pub sort_columns: Value,
     pub filters: Value,
     pub search_term: Option<String>,
+    pub page_size: Option<u32>,
 }
 
 // ── Last-used state ───────────────────────────────────────────────────────────
@@ -44,8 +45,8 @@ pub async fn get_last_used(
     schema: &str,
     table: &str,
 ) -> Result<Option<LastUsedState>> {
-    let row: Option<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT sort_columns, filters, search_term
+    let row: Option<(String, String, Option<String>, Option<i64>)> = sqlx::query_as(
+        "SELECT sort_columns, filters, search_term, page_size
          FROM table_last_used_state
          WHERE connection_id = ? AND schema_name = ? AND table_name = ?",
     )
@@ -57,10 +58,11 @@ pub async fn get_last_used(
 
     match row {
         None => Ok(None),
-        Some((sort_json, filter_json, search)) => Ok(Some(LastUsedState {
+        Some((sort_json, filter_json, search, page_size)) => Ok(Some(LastUsedState {
             sort_columns: serde_json::from_str(&sort_json)?,
             filters: serde_json::from_str(&filter_json)?,
             search_term: search,
+            page_size: page_size.map(|v| v as u32),
         })),
     }
 }
@@ -83,12 +85,13 @@ pub async fn set_last_used(
     }
     sqlx::query(
         "INSERT INTO table_last_used_state
-             (connection_id, schema_name, table_name, sort_columns, filters, search_term)
-         VALUES (?, ?, ?, ?, ?, ?)
+             (connection_id, schema_name, table_name, sort_columns, filters, search_term, page_size)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(connection_id, schema_name, table_name) DO UPDATE SET
              sort_columns = excluded.sort_columns,
              filters      = excluded.filters,
              search_term  = excluded.search_term,
+             page_size    = excluded.page_size,
              updated_at   = datetime('now')",
     )
     .bind(conn_id)
@@ -97,6 +100,7 @@ pub async fn set_last_used(
     .bind(&sort_json)
     .bind(&filter_json)
     .bind(&state.search_term)
+    .bind(state.page_size.map(|v| v as i64))
     .execute(pool)
     .await?;
     Ok(())
@@ -302,6 +306,7 @@ mod tests {
             sort_columns: serde_json::json!([{"col": "id", "dir": "asc"}]),
             filters: serde_json::json!({"status": "active"}),
             search_term: Some("foo".into()),
+            page_size: None,
         };
         set_last_used(pool, CONN, SCHEMA, TABLE, &state)
             .await
@@ -325,11 +330,13 @@ mod tests {
             sort_columns: serde_json::json!([]),
             filters: serde_json::json!({}),
             search_term: None,
+            page_size: None,
         };
         let s2 = LastUsedState {
             sort_columns: serde_json::json!([{"col": "name", "dir": "desc"}]),
             filters: serde_json::json!({}),
             search_term: Some("bar".into()),
+            page_size: None,
         };
         set_last_used(pool, CONN, SCHEMA, TABLE, &s1).await.unwrap();
         set_last_used(pool, CONN, SCHEMA, TABLE, &s2).await.unwrap();
@@ -351,6 +358,7 @@ mod tests {
             sort_columns: serde_json::json!([]),
             filters: serde_json::json!({}),
             search_term: None,
+            page_size: None,
         };
         set_last_used(pool, "conn_a", SCHEMA, TABLE, &state)
             .await
@@ -358,6 +366,100 @@ mod tests {
 
         let result = get_last_used(pool, "conn_b", SCHEMA, TABLE).await.unwrap();
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn last_used_round_trip_with_page_size() {
+        let (store, _dir) = ephemeral_store().await;
+        let pool = store.pool();
+
+        let state = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: None,
+            page_size: Some(100),
+        };
+        set_last_used(pool, CONN, SCHEMA, TABLE, &state).await.unwrap();
+
+        let got = get_last_used(pool, CONN, SCHEMA, TABLE)
+            .await
+            .unwrap()
+            .expect("should exist");
+        assert_eq!(got.page_size, Some(100));
+    }
+
+    #[tokio::test]
+    async fn last_used_upsert_replaces_page_size() {
+        let (store, _dir) = ephemeral_store().await;
+        let pool = store.pool();
+
+        let s1 = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: None,
+            page_size: Some(50),
+        };
+        let s2 = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: None,
+            page_size: Some(250),
+        };
+        set_last_used(pool, CONN, SCHEMA, TABLE, &s1).await.unwrap();
+        set_last_used(pool, CONN, SCHEMA, TABLE, &s2).await.unwrap();
+
+        let got = get_last_used(pool, CONN, SCHEMA, TABLE)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(got.page_size, Some(250));
+    }
+
+    #[tokio::test]
+    async fn last_used_page_size_null_by_default() {
+        let (store, _dir) = ephemeral_store().await;
+        let pool = store.pool();
+
+        let state = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: None,
+            page_size: None,
+        };
+        set_last_used(pool, CONN, SCHEMA, TABLE, &state).await.unwrap();
+
+        let got = get_last_used(pool, CONN, SCHEMA, TABLE)
+            .await
+            .unwrap()
+            .expect("should exist");
+        assert_eq!(got.page_size, None);
+    }
+
+    #[tokio::test]
+    async fn last_used_page_size_null_to_value() {
+        let (store, _dir) = ephemeral_store().await;
+        let pool = store.pool();
+
+        let s1 = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: None,
+            page_size: None,
+        };
+        let s2 = LastUsedState {
+            sort_columns: serde_json::json!([]),
+            filters: serde_json::json!({}),
+            search_term: None,
+            page_size: Some(500),
+        };
+        set_last_used(pool, CONN, SCHEMA, TABLE, &s1).await.unwrap();
+        set_last_used(pool, CONN, SCHEMA, TABLE, &s2).await.unwrap();
+
+        let got = get_last_used(pool, CONN, SCHEMA, TABLE)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(got.page_size, Some(500));
     }
 
     // ── Sort presets ───────────────────────────────────────────────────────
@@ -453,6 +555,7 @@ mod tests {
             sort_columns: big,
             filters: serde_json::json!({}),
             search_term: None,
+            page_size: None,
         };
         let result = set_last_used(store.pool(), CONN, SCHEMA, TABLE, &state).await;
         assert!(result.is_err(), "oversized sort_columns must be rejected");
@@ -468,6 +571,7 @@ mod tests {
             sort_columns: serde_json::json!([]),
             filters: big,
             search_term: None,
+            page_size: None,
         };
         let result = set_last_used(store.pool(), CONN, SCHEMA, TABLE, &state).await;
         assert!(result.is_err(), "oversized filters must be rejected");
@@ -482,6 +586,7 @@ mod tests {
             sort_columns: serde_json::json!([]),
             filters: serde_json::json!({}),
             search_term: Some("x".repeat(65 * 1024)),
+            page_size: None,
         };
         let result = set_last_used(store.pool(), CONN, SCHEMA, TABLE, &state).await;
         assert!(result.is_err(), "oversized search_term must be rejected");

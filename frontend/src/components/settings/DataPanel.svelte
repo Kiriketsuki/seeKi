@@ -2,10 +2,23 @@
   import PanelFrame from './PanelFrame.svelte';
   import { clearAllPresets } from '../../lib/api';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from '../../lib/constants';
+  import type { PaginationMode } from '../../lib/types';
+
+  let {
+    paginationMode = 'infinite',
+    onPaginationModeChange,
+  }: {
+    paginationMode?: PaginationMode;
+    onPaginationModeChange?: (mode: PaginationMode) => void;
+  } = $props();
 
   let clearing = $state(false);
   let cleared = $state(false);
   let error = $state('');
+  function handleModeChange(mode: PaginationMode) {
+    if (mode === paginationMode) return;
+    onPaginationModeChange?.(mode);
+  }
 
   function clearLocalStorage() {
     if (typeof localStorage === 'undefined') return;
@@ -43,6 +56,35 @@
   title="Data"
   description="Manage the browsing state SeeKi stores locally — remembered sort orders, filters, search terms, column visibility, and presets."
 >
+  <div class="card">
+    <div class="row">
+      <div class="info">
+        <strong>Browsing mode</strong>
+        <p>Infinite scroll loads more rows as you scroll. Paged browsing uses Previous / Next controls and loads one page at a time.</p>
+      </div>
+      <div class="action">
+        <div class="mode-toggle" role="group" aria-label="Browsing mode">
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={paginationMode === 'infinite'}
+            onclick={() => handleModeChange('infinite')}
+          >
+            Infinite scroll
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={paginationMode === 'paged'}
+            onclick={() => handleModeChange('paged')}
+          >
+            Paged
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="row">
       <div class="info">
@@ -129,5 +171,43 @@
 
   .message.error {
     color: #b91c1c;
+  }
+
+  .mode-toggle {
+    display: flex;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    overflow: hidden;
+  }
+
+  .mode-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--sk-secondary-strong);
+    font: inherit;
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 100ms;
+  }
+
+  .mode-btn + .mode-btn {
+    border-left: 1px solid var(--sk-border-light);
+  }
+
+  .mode-btn.active {
+    background: var(--sk-accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .mode-btn:not(.active):hover:not(:disabled) {
+    background: rgba(47, 72, 88, 0.05);
+  }
+
+  .mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>
