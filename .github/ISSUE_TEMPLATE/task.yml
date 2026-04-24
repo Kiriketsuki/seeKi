@@ -10,6 +10,22 @@ body:
 
               Sub-issues (features or bugs) tracked inside a Task will automatically branch from the task branch.
 
+    - type: input
+      id: branch_off
+      attributes:
+          label: Branch off
+          description: |
+              Optional. The base branch this issue's branch and PR should target.
+              Leave as `main` for the default. Set to a specific branch name (e.g.
+              `feature/149-new-trip-flow`) when this work is a sub-task of an
+              existing in-flight branch and the auto-handler should slot it under
+              that branch instead of `main`.
+              Parsed by `.github/workflows/issue-branch-handler.yml`.
+          placeholder: main
+          value: main
+      validations:
+          required: false
+
     - type: textarea
       id: description
       attributes:
