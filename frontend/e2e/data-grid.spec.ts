@@ -587,6 +587,15 @@ test.describe('Data Grid — Infinite Scroll', () => {
     const isInfinite = await seeki.isInfiniteMode();
     test.skip(!isInfinite, 'Test requires starting in infinite scroll mode');
 
+    const total = await seeki.getTotalRows();
+    const loaded = await seeki.getLoadedCount();
+    test.skip(loaded >= total, 'All rows already loaded — cannot advance beyond page 1');
+
+    // Advance to page 2+ so the page-1 reset assertion is meaningful
+    const appendResponse = seeki.pendingRowsResponse();
+    await seeki.scrollGridToBottom();
+    await appendResponse;
+
     // Open settings and switch to paged mode
     await page.locator('button[aria-label="Show settings workspace"]').click();
     const pagedBtn = page.locator('.mode-toggle button', { hasText: 'Paged' });
