@@ -1,8 +1,7 @@
 <script lang="ts">
   import PanelFrame from './PanelFrame.svelte';
-  import { clearAllPresets, saveSettings } from '../../lib/api';
+  import { clearAllPresets } from '../../lib/api';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from '../../lib/constants';
-  import { buildDataSettingsEntries } from '../../lib/settings';
   import type { PaginationMode } from '../../lib/types';
 
   let {
@@ -16,21 +15,9 @@
   let clearing = $state(false);
   let cleared = $state(false);
   let error = $state('');
-  let savingMode = $state(false);
-
-  async function handleModeChange(mode: PaginationMode) {
-    if (savingMode || mode === paginationMode) return;
-    savingMode = true;
-    try {
-      const entries = buildDataSettingsEntries({ paginationMode: mode });
-      await saveSettings(entries);
-      onPaginationModeChange?.(mode);
-    } catch {
-      // Non-fatal — surface no error, the parent still applies the mode change.
-      onPaginationModeChange?.(mode);
-    } finally {
-      savingMode = false;
-    }
+  function handleModeChange(mode: PaginationMode) {
+    if (mode === paginationMode) return;
+    onPaginationModeChange?.(mode);
   }
 
   function clearLocalStorage() {
@@ -81,8 +68,7 @@
             type="button"
             class="mode-btn"
             class:active={paginationMode === 'infinite'}
-            disabled={savingMode}
-            onclick={() => void handleModeChange('infinite')}
+            onclick={() => handleModeChange('infinite')}
           >
             Infinite scroll
           </button>
@@ -90,8 +76,7 @@
             type="button"
             class="mode-btn"
             class:active={paginationMode === 'paged'}
-            disabled={savingMode}
-            onclick={() => void handleModeChange('paged')}
+            onclick={() => handleModeChange('paged')}
           >
             Paged
           </button>

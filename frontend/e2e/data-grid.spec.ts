@@ -525,6 +525,7 @@ test.describe('Data Grid — Infinite Scroll', () => {
     const rowsResponse = seeki.pendingRowsResponse();
     await pageSizeSelect.selectOption('100');
     await rowsResponse;
+    expect(rowsResponse.request().url()).toContain('page_size=100');
 
     // Loaded count should reflect the new batch size
     await seeki.waitForGridLoaded();
