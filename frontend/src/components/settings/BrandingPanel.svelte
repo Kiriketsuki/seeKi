@@ -217,7 +217,7 @@
   .preview-branding {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sk-space-xs);
     min-width: 0;
   }
 
@@ -245,7 +245,7 @@
   .preview-toggle {
     width: 18px;
     height: 18px;
-    border-radius: 4px;
+    border-radius: var(--sk-radius-sm);
     background: var(--sk-border);
   }
 
@@ -253,13 +253,13 @@
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--sk-space-sm);
     padding: var(--sk-space-md);
   }
 
   .preview-item {
     height: 28px;
-    border-radius: 4px;
+    border-radius: var(--sk-radius-sm);
     background: rgba(47, 72, 88, 0.06);
   }
 

@@ -113,7 +113,7 @@
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border-radius: 16px;
+    border-radius: var(--sk-radius-lg);
     padding: 40px;
     max-width: 520px;
     width: 100%;
@@ -154,14 +154,14 @@
   .dot.current {
     background: var(--sk-accent);
     width: 24px;
-    border-radius: 4px;
+    border-radius: var(--sk-radius-sm);
   }
 
   /* Step header */
   .step-header {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--sk-space-xs);
   }
   .step-label {
     margin: 0;

@@ -38,7 +38,7 @@
   .settings-nav {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sk-space-xs);
     padding: var(--sk-space-xs) 0;
   }
 
@@ -71,7 +71,7 @@
   .badge {
     width: 8px;
     height: 8px;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: var(--sk-accent);
     flex-shrink: 0;
   }

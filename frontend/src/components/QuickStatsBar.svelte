@@ -87,23 +87,23 @@
 <style>
   .quick-stats-bar {
     display: flex;
-    align-items: stretch;
-    gap: var(--sk-space-sm);
-    padding: 0 var(--sk-space-2xl);
+    align-items: center;
+    gap: var(--sk-space-xs);
     overflow-x: auto;
   }
 
   .stat-chip {
     display: inline-flex;
     align-items: center;
-    gap: var(--sk-space-sm);
+    gap: var(--sk-space-xs);
     min-width: 0;
-    padding: 10px 12px;
+    padding: var(--sk-space-xs) var(--sk-space-sm);
     border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-lg);
+    border-radius: var(--sk-radius-md);
     background: rgba(255, 255, 255, 0.78);
     color: var(--sk-text);
     white-space: nowrap;
+    font-size: var(--sk-font-size-xs);
   }
 
   .stat-chip--primary {
@@ -120,9 +120,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 999px;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--sk-radius-pill);
     background: rgba(255, 255, 255, 0.82);
     color: var(--sk-secondary-strong);
     flex-shrink: 0;
@@ -131,7 +131,6 @@
   .stat-chip__body {
     display: flex;
     flex-direction: column;
-    gap: 2px;
     min-width: 0;
   }
 
@@ -143,7 +142,7 @@
   }
 
   .stat-chip__value {
-    font-size: var(--sk-font-size-body);
+    font-size: var(--sk-font-size-sm);
   }
 
   .stat-chip__meta {

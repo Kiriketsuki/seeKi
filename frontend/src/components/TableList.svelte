@@ -126,7 +126,7 @@
   }
 
   .section-subtitle {
-    margin-top: 2px;
+    margin-top: var(--sk-space-xs);
     font-size: var(--sk-font-size-sm);
     color: var(--sk-muted);
   }
@@ -147,7 +147,7 @@
     color: var(--sk-text);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
-    padding: 6px 10px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
     outline: none;
   }
 
@@ -163,7 +163,7 @@
   .list-items {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sk-space-xs);
   }
 
   .table-item {

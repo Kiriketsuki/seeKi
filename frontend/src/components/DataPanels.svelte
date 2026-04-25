@@ -68,7 +68,7 @@
       return 'minmax(0, 1fr) var(--sk-data-panel-grip) var(--sk-data-panel-collapsed)';
     }
 
-    return `minmax(180px, ${$layoutStore.sizes[topPanel]}fr) var(--sk-data-panel-grip) minmax(180px, ${$layoutStore.sizes[bottomPanel]}fr)`;
+    return `minmax(120px, ${$layoutStore.sizes[topPanel]}fr) var(--sk-data-panel-grip) minmax(120px, ${$layoutStore.sizes[bottomPanel]}fr)`;
   });
 
   function handleHeaderDragStart(event: DragEvent, panelId: DataPanelId) {
@@ -380,7 +380,7 @@
   .data-panel__grip span {
     width: 56px;
     height: 4px;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: rgba(47, 72, 88, 0.12);
   }
 </style>
