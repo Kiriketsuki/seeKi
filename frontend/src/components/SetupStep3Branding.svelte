@@ -105,7 +105,7 @@
 
   .fields { display: flex; flex-direction: column; gap: var(--sk-space-lg); }
 
-  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field { display: flex; flex-direction: column; gap: var(--sk-space-xs); }
   .field label {
     font-size: var(--sk-font-size-body);
     font-weight: 500;
@@ -161,9 +161,9 @@
     padding: var(--sk-space-md);
     border-bottom: 1px solid var(--sk-border-light);
   }
-  .preview-branding { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .preview-branding { display: flex; flex-direction: column; gap: var(--sk-space-xs); min-width: 0; }
   .preview-title {
-    font-size: 12px;
+    font-size: var(--sk-font-size-body);
     font-weight: 600;
     color: var(--sk-text);
     white-space: nowrap;
@@ -172,7 +172,7 @@
     max-width: 110px;
   }
   .preview-subtitle {
-    font-size: 9px;
+    font-size: var(--sk-font-size-xs);
     color: var(--sk-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -182,7 +182,7 @@
   .preview-subtitle.placeholder { color: var(--sk-faded); font-style: italic; }
   .preview-toggle-btn {
     width: 16px; height: 16px;
-    border-radius: 3px;
+    border-radius: var(--sk-radius-sm);
     background: var(--sk-border);
     flex-shrink: 0;
   }
@@ -191,11 +191,11 @@
     padding: var(--sk-space-sm);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--sk-space-xs);
   }
   .preview-item {
     height: 24px;
-    border-radius: 4px;
+    border-radius: var(--sk-radius-sm);
     background: rgba(47,72,88,0.05);
   }
   .preview-item.active {
@@ -204,7 +204,7 @@
   }
   .preview-footer {
     padding: var(--sk-space-sm) var(--sk-space-md);
-    font-size: 9px;
+    font-size: var(--sk-font-size-xs);
     color: var(--sk-faded);
     border-top: 1px solid var(--sk-border-lighter);
   }

@@ -730,8 +730,8 @@
     display: inline-flex;
     align-items: center;
     gap: var(--sk-space-xs);
-    padding: 4px var(--sk-space-sm);
-    border-radius: 999px;
+    padding: var(--sk-space-xs) var(--sk-space-sm);
+    border-radius: var(--sk-radius-pill);
     font-size: var(--sk-font-size-sm);
     font-weight: 500;
   }
@@ -766,9 +766,9 @@
     width: 52px;
     height: 30px;
     border: none;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: rgba(148, 163, 184, 0.4);
-    padding: 4px;
+    padding: var(--sk-space-xs);
     cursor: pointer;
     transition: background 120ms ease;
   }
@@ -781,7 +781,7 @@
     display: block;
     width: 22px;
     height: 22px;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: white;
     transform: translateX(0);
     transition: transform 120ms ease;
@@ -885,7 +885,7 @@
     font-size: 0.9em;
     background: rgba(15, 23, 42, 0.06);
     padding: 0.1em 0.35em;
-    border-radius: 4px;
+    border-radius: var(--sk-radius-sm);
   }
 
   .drop-zone {
@@ -922,7 +922,7 @@
   .wip-meta {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sk-space-xs);
   }
 
   .wip-meta span {
@@ -940,7 +940,7 @@
     height: 32px;
     border: 3px solid rgba(73, 151, 208, 0.2);
     border-top-color: var(--sk-accent);
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     animation: spin 0.9s linear infinite;
   }
 

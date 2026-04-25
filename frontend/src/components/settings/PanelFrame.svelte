@@ -39,7 +39,7 @@
   }
 
   .panel-header h1 {
-    font-size: 24px;
+    font-size: var(--sk-font-size-xl);
     font-weight: 600;
     color: var(--sk-text);
   }

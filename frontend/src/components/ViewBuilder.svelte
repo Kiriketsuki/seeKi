@@ -1153,7 +1153,7 @@
     background: rgba(255, 255, 255, 0.84);
     color: var(--sk-text);
     font: inherit;
-    padding: 8px 12px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
   }
 
   .filter-row__hint,
@@ -1216,11 +1216,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sk-space-sm);
     border-radius: var(--sk-radius-md);
     font: inherit;
     cursor: pointer;
-    padding: 7px 14px;
+    padding: var(--sk-space-sm) var(--sk-space-md);
     font-size: var(--sk-font-size-body);
   }
 

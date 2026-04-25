@@ -186,7 +186,7 @@
   .branding {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sk-space-xs);
     min-width: 0;
   }
 
@@ -343,13 +343,13 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sk-space-sm);
   }
 
   .mode-badge {
     width: 8px;
     height: 8px;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: var(--sk-accent);
   }
 
@@ -361,8 +361,10 @@
 
   .content {
     flex: 1;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
     padding: var(--sk-space-sm);
   }
 

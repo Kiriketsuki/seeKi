@@ -744,7 +744,7 @@
     gap: var(--sk-space-lg);
     overflow: auto;
     border: 1px solid var(--sk-border-light);
-    border-radius: 24px;
+    border-radius: var(--sk-radius-lg);
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 28px 64px rgba(16, 27, 33, 0.24);
     padding: var(--sk-space-xl);
@@ -802,7 +802,7 @@
     background: rgba(255, 255, 255, 0.78);
     color: var(--sk-text);
     cursor: pointer;
-    padding: 8px 12px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
   }
 
   .step-pill.active,
@@ -861,7 +861,7 @@
     background: rgba(255, 255, 255, 0.84);
     color: var(--sk-text);
     font: inherit;
-    padding: 10px 12px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
   }
 
   .meta-row,
@@ -887,10 +887,10 @@
   }
 
   .sample-chip {
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: rgba(255, 255, 255, 0.86);
     color: var(--sk-text);
-    padding: 6px 10px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
   }
 
   .operation-chip {
@@ -932,10 +932,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--sk-space-sm);
     border-radius: var(--sk-radius-md);
     cursor: pointer;
-    padding: 8px 14px;
+    padding: var(--sk-space-sm) var(--sk-space-md);
   }
 
   .icon-btn {

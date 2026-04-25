@@ -237,10 +237,10 @@
   }
   .summary-value code {
     font-family: var(--sk-font-mono);
-    font-size: 11px;
+    font-size: var(--sk-font-size-sm);
     background: rgba(47,72,88,0.06);
-    padding: 1px 5px;
-    border-radius: 3px;
+    padding: var(--sk-space-xs) var(--sk-space-sm);
+    border-radius: var(--sk-radius-sm);
   }
   .subtitle-preview { color: var(--sk-muted); }
   .muted { color: var(--sk-muted); font-style: italic; }

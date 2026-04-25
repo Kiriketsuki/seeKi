@@ -742,8 +742,8 @@
     display: inline-flex;
     align-items: center;
     gap: var(--sk-space-xs);
-    padding: 3px var(--sk-space-sm);
-    border-radius: 100px;
+    padding: var(--sk-space-xs) var(--sk-space-sm);
+    border-radius: var(--sk-radius-pill);
     font-size: var(--sk-font-size-sm);
     font-weight: 500;
   }
@@ -852,7 +852,7 @@
     position: relative;
     width: 36px;
     height: 20px;
-    border-radius: 10px;
+    border-radius: var(--sk-radius-pill);
     border: 1px solid var(--sk-border);
     background: rgba(0, 0, 0, 0.06);
     cursor: pointer;

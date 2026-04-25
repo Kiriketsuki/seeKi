@@ -1381,27 +1381,28 @@
                   </div>
                 {/if}
               </div>
-              <GridRefreshToolbar
-                surfaceKey={selectedRefreshSurfaceKey ?? ''}
-                intervalMs={refreshSnapshot.intervalMs}
-                lastRefreshedAt={refreshSnapshot.lastRefreshedAt}
-                refreshing={refreshSnapshot.inFlight || tableLoading}
-                disabled={!hasSurfaceSelection || tablesSurface.kind === 'builder' || tableLoading}
-                onRefreshNow={() => void handleRefreshNow()}
-                onIntervalChange={(intervalMs) => refreshController.setIntervalMs(intervalMs)}
-              />
+              <div class="toolbar-row">
+                <QuickStatsBar
+                  totalRows={queryResult?.total_rows ?? 0}
+                  rows={queryResult?.rows ?? []}
+                  {visibleColumns}
+                  {focusedTextColumnName}
+                />
+                <GridRefreshToolbar
+                  surfaceKey={selectedRefreshSurfaceKey ?? ''}
+                  intervalMs={refreshSnapshot.intervalMs}
+                  refreshing={refreshSnapshot.inFlight || tableLoading}
+                  disabled={!hasSurfaceSelection || tablesSurface.kind === 'builder' || tableLoading}
+                  onRefreshNow={() => void handleRefreshNow()}
+                  onIntervalChange={(intervalMs) => refreshController.setIntervalMs(intervalMs)}
+                />
+              </div>
               {#if tableError}
                 <div class="table-error-banner">
                   <span>{tableError}</span>
                   <button class="dismiss-btn" onclick={() => (tableError = null)}>Dismiss</button>
                 </div>
               {/if}
-              <QuickStatsBar
-                totalRows={queryResult?.total_rows ?? 0}
-                rows={queryResult?.rows ?? []}
-                {visibleColumns}
-                {focusedTextColumnName}
-              />
               {#if paginationMode === 'infinite' && rowCapState !== 'none'}
                 <RowCapWarning
                   capState={rowCapState}
@@ -1547,6 +1548,8 @@
 
   .sidebar-panel-enter {
     animation: sk-fade-in 180ms ease-out;
+    height: 100%;
+    min-height: 0;
   }
 
   .tables-sidebar {
@@ -1607,10 +1610,10 @@
   .view-pill {
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: rgba(0, 169, 165, 0.1);
     color: var(--sk-accent);
-    padding: 4px 10px;
+    padding: var(--sk-space-xs) var(--sk-space-sm);
     font-weight: 600;
   }
 
@@ -1619,9 +1622,17 @@
     border-radius: var(--sk-radius-md);
     background: rgba(255, 255, 255, 0.78);
     color: var(--sk-secondary-strong);
-    padding: 8px 12px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
     font: inherit;
     cursor: pointer;
+  }
+
+  .toolbar-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sk-space-md);
+    padding: var(--sk-space-sm) var(--sk-space-2xl);
   }
 
   .view-action--danger:hover {
@@ -1633,7 +1644,7 @@
     flex: 1;
     min-height: 0;
     display: flex;
-    padding: var(--sk-space-lg) var(--sk-space-2xl);
+    padding: var(--sk-space-sm) var(--sk-space-2xl);
     overflow: hidden;
     align-items: stretch;
   }
@@ -1710,7 +1721,7 @@
     background: none;
     border: 1px solid rgba(220, 38, 38, 0.4);
     border-radius: var(--sk-radius-sm);
-    padding: 2px var(--sk-space-sm);
+    padding: var(--sk-space-xs) var(--sk-space-sm);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-sm);
     color: var(--sk-text);
@@ -1732,7 +1743,7 @@
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-lg);
     box-shadow: var(--sk-shadow-card);
-    padding: var(--sk-space-2xl) 40px;
+    padding: var(--sk-space-2xl);
     text-align: center;
     max-width: 420px;
   }
@@ -1762,9 +1773,14 @@
 
   @media (max-width: 900px) {
     .table-panel,
-    .grid-area {
+    .grid-area,
+    .toolbar-row {
       padding-left: var(--sk-space-lg);
       padding-right: var(--sk-space-lg);
+    }
+
+    .toolbar-row {
+      flex-wrap: wrap;
     }
 
     .view-toolbar {
@@ -1820,7 +1836,7 @@
     border-radius: var(--sk-radius-md);
     font: inherit;
     cursor: pointer;
-    padding: 7px 14px;
+    padding: var(--sk-space-sm) var(--sk-space-md);
     font-size: var(--sk-font-size-body);
   }
 

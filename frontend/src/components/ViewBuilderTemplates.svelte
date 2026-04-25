@@ -199,7 +199,7 @@
     justify-content: center;
     width: 40px;
     height: 40px;
-    border-radius: 12px;
+    border-radius: var(--sk-radius-lg);
     background: rgba(255, 255, 255, 0.76);
     color: var(--sk-accent);
     flex-shrink: 0;
@@ -227,6 +227,6 @@
     color: var(--sk-text);
     cursor: pointer;
     font: inherit;
-    padding: 8px 14px;
+    padding: var(--sk-space-sm) var(--sk-space-md);
   }
 </style>

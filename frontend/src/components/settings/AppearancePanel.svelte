@@ -155,7 +155,7 @@
   }
 
   ul {
-    padding-left: 18px;
+    padding-left: var(--sk-space-md);
     line-height: 1.6;
   }
 

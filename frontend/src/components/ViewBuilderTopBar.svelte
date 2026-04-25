@@ -221,7 +221,7 @@
     background: rgba(255, 255, 255, 0.84);
     color: var(--sk-text);
     font: inherit;
-    padding: 8px 12px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
   }
 
   .builder-pills {
@@ -233,11 +233,11 @@
   .pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    border-radius: 999px;
+    gap: var(--sk-space-sm);
+    border-radius: var(--sk-radius-pill);
     background: rgba(47, 72, 88, 0.08);
     color: var(--sk-secondary-strong);
-    padding: 6px 10px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
     font-size: var(--sk-font-size-xs);
     font-weight: 600;
   }
@@ -267,11 +267,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--sk-space-sm);
     border-radius: var(--sk-radius-md);
     cursor: pointer;
     font: inherit;
-    padding: 8px 14px;
+    padding: var(--sk-space-sm) var(--sk-space-md);
   }
 
   .toggle-chip,

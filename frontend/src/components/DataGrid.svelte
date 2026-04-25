@@ -420,7 +420,7 @@
   .grid-card :global(.sk-grid-header__sort) {
     flex: 0 0 auto;
     color: var(--sk-muted);
-    font-size: 10px;
+    font-size: var(--sk-font-size-xs);
   }
 
   .grid-card :global(.sk-grid-header__sort.is-active) {
@@ -509,7 +509,7 @@
     justify-content: center;
     min-width: 42px;
     padding: var(--sk-grid-badge-padding-y) var(--sk-grid-badge-padding-x);
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     font-size: var(--sk-font-size-sm);
     font-weight: 600;
     line-height: 1.4;

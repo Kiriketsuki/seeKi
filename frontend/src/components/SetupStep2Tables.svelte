@@ -293,7 +293,7 @@
     gap: var(--sk-space-xs);
     background: var(--sk-border);
     border-radius: var(--sk-radius-md);
-    padding: 3px;
+    padding: var(--sk-space-xs);
   }
   .tab {
     padding: var(--sk-space-xs) var(--sk-space-md);

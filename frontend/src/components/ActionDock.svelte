@@ -405,7 +405,7 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--sk-space-xs);
-    padding: var(--sk-space-xs);
+    padding: var(--sk-space-sm);
   }
 
   .dock-button {
@@ -466,8 +466,8 @@
     right: -9px;
     min-width: 16px;
     height: 16px;
-    padding: 0 4px;
-    border-radius: 999px;
+    padding: 0 var(--sk-space-xs);
+    border-radius: var(--sk-radius-pill);
     background: var(--sk-accent);
     color: #fff;
     display: inline-flex;
@@ -500,7 +500,7 @@
     }
 
     .dock-button {
-      padding: 0 4px;
+      padding: 0 var(--sk-space-xs);
       font-size: var(--sk-font-size-sm);
     }
   }

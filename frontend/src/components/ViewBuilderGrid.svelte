@@ -185,7 +185,7 @@
   .column-slot__actions {
     display: flex;
     justify-content: flex-end;
-    gap: 6px;
+    gap: var(--sk-space-sm);
     padding: 0 var(--sk-space-md) var(--sk-space-md);
   }
 
@@ -204,7 +204,7 @@
     width: 32px;
     height: 32px;
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--sk-radius-lg);
     background: rgba(255, 255, 255, 0.72);
     color: var(--sk-secondary-strong);
     cursor: pointer;
@@ -247,11 +247,11 @@
   .loading-chip {
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
+    border-radius: var(--sk-radius-pill);
     background: rgba(0, 169, 165, 0.1);
     color: var(--sk-accent);
     font-size: var(--sk-font-size-xs);
     font-weight: 700;
-    padding: 6px 10px;
+    padding: var(--sk-space-sm) var(--sk-space-sm);
   }
 </style>
