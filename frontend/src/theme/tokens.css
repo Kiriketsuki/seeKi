@@ -29,7 +29,7 @@
   --sk-border-light: rgba(47, 72, 88, 0.05);
   --sk-border-lighter: rgba(47, 72, 88, 0.03);
 
-  /* Spacing (8pt grid) */
+  /* Spacing (8pt grid — md=lg=16px, xl=2xl=24px intentional; reserved for future divergence) */
   --sk-space-xs: 4px;
   --sk-space-sm: 8px;
   --sk-space-md: 16px;
@@ -47,10 +47,10 @@
   --sk-shadow-card: 0 2px 16px rgba(47, 72, 88, 0.04);
   --sk-shadow-accent: 0 2px 8px rgba(255, 149, 0, 0.2);
 
-  /* Typography */
+  /* Typography (sm=body=12px, md=lg=16px intentional on 8pt grid; xs kept at 9px for 1× legibility) */
   --sk-font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --sk-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', monospace;
-  --sk-font-size-xs: 8px;
+  --sk-font-size-xs: 9px;
   --sk-font-size-sm: 12px;
   --sk-font-size-body: 12px;
   --sk-font-size-md: 16px;
