@@ -138,6 +138,11 @@
     opacity: 0.5;
   }
 
+  .page-btn:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
+  }
+
   /* "X of Y" — mirrors .sk-sb-page-info */
   .page-info {
     font-size: var(--sk-font-size-sm);

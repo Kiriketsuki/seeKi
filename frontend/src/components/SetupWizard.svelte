@@ -101,7 +101,7 @@
     position: fixed;
     inset: 0;
     z-index: 1000;
-    background: rgba(15, 25, 35, 0.92);
+    background: rgba(var(--marble-vein-rgb), 0.92);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     display: flex;
@@ -122,7 +122,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-xl);
-    box-shadow: 0 24px 80px rgba(15, 25, 35, 0.3), 0 4px 16px rgba(15, 25, 35, 0.15);
+    box-shadow: 0 24px 80px rgba(var(--marble-vein-rgb), 0.30), 0 4px 16px rgba(var(--marble-vein-rgb), 0.15);
     max-height: calc(100vh - 48px);
     overflow-y: auto;
     border: 1px solid var(--sk-border-light);

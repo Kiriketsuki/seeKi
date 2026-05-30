@@ -224,7 +224,7 @@
     border: none;
     border-radius: var(--sk-radius-md);
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     box-shadow: var(--sk-shadow-accent);
     padding: var(--sk-space-sm) var(--sk-space-lg);
     font: inherit;
@@ -293,7 +293,7 @@
     flex-wrap: wrap;
     gap: var(--sk-space-xs);
     padding: var(--sk-space-xs);
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(var(--marble-vein-rgb), 0.05);
     border-radius: var(--sk-radius-md);
   }
 
@@ -310,9 +310,9 @@
     white-space: nowrap;
   }
 
-  /* sk-seg-btn.active — white pill, ink text */
+  /* sk-seg-btn.active — lifted glass pill, ink text */
   .palette-btn.active {
-    background: #fff;
+    background: var(--sk-glass-button);
     color: var(--sk-text);
     box-shadow: 0 1px 3px rgba(var(--marble-vein-rgb), 0.1);
     font-weight: 500;
@@ -321,6 +321,11 @@
   .palette-btn:not(.active):hover {
     background: rgba(255, 255, 255, 0.5);
     color: var(--sk-text);
+  }
+
+  .palette-btn:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
   }
 
   @media (max-width: 1100px) {

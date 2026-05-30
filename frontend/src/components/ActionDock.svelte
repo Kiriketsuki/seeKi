@@ -199,7 +199,8 @@
       {/if}
     </div>
 
-    <div class="dock-actions" onkeydown={handleActionsKeydown}>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="dock-actions" role="group" aria-label="Data actions" onkeydown={handleActionsKeydown}>
       <button
         type="button"
         class="dock-button"
@@ -461,7 +462,7 @@
   }
 
   .dock-button:focus-visible {
-    outline: 2px solid var(--sk-data);
+    outline: 2px solid var(--sk-data-strong);
     outline-offset: 2px;
   }
 
@@ -487,7 +488,7 @@
     padding: 0 var(--sk-space-xs);
     border-radius: var(--sk-radius-pill);
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     display: inline-flex;
     align-items: center;
     justify-content: center;

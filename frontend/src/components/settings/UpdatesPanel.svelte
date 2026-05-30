@@ -633,14 +633,14 @@
   }
 
   .banner-error {
-    border: 1px solid rgba(185, 28, 28, 0.2);
-    background: rgba(185, 28, 28, 0.08);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.2);
+    background: rgba(var(--sk-danger-rgb), 0.08);
     color: var(--sk-danger);
   }
 
   .banner-success {
-    border: 1px solid rgba(21, 128, 61, 0.2);
-    background: rgba(21, 128, 61, 0.08);
+    border: 1px solid rgba(var(--sk-boolean-true-rgb), 0.2);
+    background: rgba(var(--sk-boolean-true-rgb), 0.08);
     color: var(--sk-boolean-true);
   }
 
@@ -667,7 +667,7 @@
     position: fixed;
     inset: 0;
     z-index: 1000;
-    background: rgba(21, 33, 38, 0.4);
+    background: rgba(var(--sk-ink-rgb), 0.4);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     display: flex;
@@ -778,7 +778,7 @@
   }
 
   .status-pill--ok {
-    background: rgba(21, 128, 61, 0.1);
+    background: rgba(var(--sk-boolean-true-rgb), 0.1);
     color: var(--sk-boolean-true);
   }
 
@@ -882,7 +882,7 @@
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #fff;
+    background: var(--sk-glass-button);
     border-color: rgba(var(--marble-active-rgb), 0.24);
     box-shadow: var(--sk-shadow-card);
   }
@@ -891,7 +891,7 @@
   .btn-accent {
     border: none;
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     box-shadow: var(--sk-shadow-accent);
   }
 

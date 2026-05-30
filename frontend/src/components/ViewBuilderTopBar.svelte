@@ -309,7 +309,7 @@
   }
 
   .secondary:hover:not(:disabled) {
-    background: #fff;
+    background: var(--sk-glass-button);
     border-color: rgba(var(--sk-accent-active-rgb), 0.24);
     box-shadow: var(--sk-shadow-card);
   }
@@ -318,7 +318,7 @@
   .primary {
     border: none;
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     box-shadow: var(--sk-shadow-accent);
   }
 

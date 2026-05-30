@@ -135,7 +135,7 @@
   }
 
   .field input[aria-invalid="true"] {
-    border-color: rgba(185, 28, 28, 0.4);
+    border-color: rgba(var(--sk-danger-rgb), 0.4);
   }
 
   /* Preview sidebar */
@@ -260,7 +260,7 @@
   }
 
   .btn-back:hover {
-    background: #fff;
+    background: var(--sk-glass-button);
     border-color: rgba(var(--marble-active-rgb), 0.24);
     box-shadow: var(--sk-shadow-card);
   }
@@ -269,7 +269,7 @@
   .btn-next {
     padding: var(--sk-space-sm) var(--sk-space-2xl);
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     border: none;
     border-radius: var(--sk-radius-md);
     font-size: var(--sk-font-size-md);

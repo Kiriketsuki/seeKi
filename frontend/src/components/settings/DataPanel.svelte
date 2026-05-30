@@ -156,9 +156,9 @@
     display: inline-flex;
     align-items: center;
     gap: var(--sk-space-sm);
-    border: 1px solid rgba(185, 28, 28, 0.3);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
     border-radius: var(--sk-radius-md);
-    background: rgba(185, 28, 28, 0.08);
+    background: rgba(var(--sk-danger-rgb), 0.08);
     color: var(--sk-danger);
     padding: var(--sk-space-sm) var(--sk-space-lg);
     font: inherit;
@@ -170,7 +170,7 @@
   }
 
   .danger:hover:not(:disabled) {
-    background: rgba(185, 28, 28, 0.14);
+    background: rgba(var(--sk-danger-rgb), 0.14);
   }
 
   .danger:disabled {
@@ -217,7 +217,7 @@
   /* sk-modetoggle-btn.active — amber fill */
   .mode-btn.active {
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     font-weight: 600;
   }
 

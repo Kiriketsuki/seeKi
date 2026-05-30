@@ -189,8 +189,8 @@
     display: flex;
     align-items: flex-start;
     gap: var(--sk-space-md);
-    background: rgba(185, 28, 28, 0.07);
-    border: 1px solid rgba(185, 28, 28, 0.2);
+    background: rgba(var(--sk-danger-rgb), 0.07);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.2);
     border-radius: var(--sk-radius-lg);
     padding: var(--sk-space-md) var(--sk-space-lg);
     color: var(--sk-danger);
@@ -202,8 +202,8 @@
   .btn-go-back {
     align-self: flex-start;
     padding: var(--sk-space-xs) var(--sk-space-md);
-    background: rgba(185, 28, 28, 0.1);
-    border: 1px solid rgba(185, 28, 28, 0.2);
+    background: rgba(var(--sk-danger-rgb), 0.1);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.2);
     border-radius: var(--sk-radius-sm);
     font-size: var(--sk-font-size-sm);
     color: var(--sk-danger);
@@ -211,7 +211,7 @@
     transition: background 0.15s;
   }
 
-  .btn-go-back:hover { background: rgba(185, 28, 28, 0.16); }
+  .btn-go-back:hover { background: rgba(var(--sk-danger-rgb), 0.16); }
 
   /* sk-confirm-grid */
   .summary {
@@ -276,7 +276,7 @@
   }
 
   .btn-back:hover:not(:disabled) {
-    background: #fff;
+    background: var(--sk-glass-button);
     border-color: rgba(var(--marble-active-rgb), 0.24);
     box-shadow: var(--sk-shadow-card);
   }
@@ -290,7 +290,7 @@
     gap: var(--sk-space-sm);
     padding: var(--sk-space-sm) var(--sk-space-2xl);
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     border: none;
     border-radius: var(--sk-radius-md);
     font-size: var(--sk-font-size-md);

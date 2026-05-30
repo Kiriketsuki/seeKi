@@ -313,7 +313,7 @@
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     padding: var(--sk-space-sm) var(--sk-space-sm);
     font: inherit;
@@ -361,6 +361,12 @@
     padding: 7px var(--sk-space-sm);
     border-radius: var(--sk-radius-md);
     cursor: pointer;
+  }
+
+  /* keyboard nav: consistent focus ring matching re-skin palette */
+  .view-item:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
   }
 
   /* hover = teal soft wash */
@@ -413,7 +419,7 @@
     padding: var(--sk-space-sm);
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.96);
+    background: var(--sk-glass-popup);
     box-shadow: var(--sk-shadow-pop);
   }
 
@@ -439,6 +445,11 @@
     font-weight: 600;
   }
 
+  .create-btn:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
+  }
+
   .icon-btn {
     width: 30px;
     height: 30px;
@@ -449,7 +460,7 @@
 
   .icon-btn:hover {
     border-color: var(--sk-border-light);
-    background: rgba(255, 255, 255, 0.7);
+    background: var(--sk-glass-button);
   }
 
   .actions-menu-item {
@@ -487,7 +498,7 @@
   .dialog-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(21, 33, 38, 0.4);
+    background: rgba(var(--sk-ink-rgb), 0.4);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -500,7 +511,7 @@
   .dialog-card {
     max-width: 400px;
     width: 100%;
-    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    background: var(--sk-bg, var(--sk-glass-popup));
     border-radius: var(--sk-radius-md);
     padding: var(--sk-space-lg);
     box-shadow: var(--sk-shadow-pop);
@@ -580,13 +591,13 @@
   }
 
   .dialog-btn-danger {
-    border: 1px solid rgba(185, 28, 28, 0.3);
-    background: rgba(185, 28, 28, 0.08);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
+    background: rgba(var(--sk-danger-rgb), 0.08);
     color: var(--sk-danger);
   }
 
   .dialog-btn-danger:hover:not(:disabled) {
-    background: rgba(185, 28, 28, 0.16);
+    background: rgba(var(--sk-danger-rgb), 0.16);
   }
 
   @keyframes dialog-fade {

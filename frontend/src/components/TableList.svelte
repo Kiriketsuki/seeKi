@@ -144,7 +144,7 @@
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
@@ -185,6 +185,12 @@
     text-align: left;
     white-space: nowrap;
     overflow: hidden;
+  }
+
+  /* keyboard nav: consistent focus ring matching re-skin palette */
+  .table-item:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
   }
 
   /* hover: teal soft wash */

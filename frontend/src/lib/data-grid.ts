@@ -15,8 +15,11 @@ const NUMBER_TYPES = new Set([
 
 // Types where the backend sends a full-precision string to avoid JS float truncation.
 // Display as right-aligned numbers with tabular-nums but skip Number() casting.
+// 'money' included here so non-null money values right-align (kind:'number') to match
+// null money cells already right-aligned via isNumericCol in DataGrid.svelte.
 const NUMERIC_TEXT_TYPES = new Set([
   'numeric',
+  'money',
 ]);
 
 const DATE_ONLY_TYPES = new Set([

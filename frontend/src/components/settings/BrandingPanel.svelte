@@ -156,7 +156,7 @@
   }
 
   .fields input[aria-invalid="true"] {
-    border-color: rgba(185, 28, 28, 0.4);
+    border-color: rgba(var(--sk-danger-rgb), 0.4);
   }
 
   /* sk-set-actions */
@@ -174,7 +174,7 @@
     border: none;
     border-radius: var(--sk-radius-md);
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     box-shadow: var(--sk-shadow-accent);
     padding: var(--sk-space-sm) var(--sk-space-lg);
     font: inherit;

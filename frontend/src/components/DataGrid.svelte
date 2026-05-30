@@ -289,7 +289,8 @@
     const colType = info.data_type;
     const isNumericCol =
       colType === 'smallint' || colType === 'integer' || colType === 'bigint' ||
-      colType === 'real' || colType === 'double precision' || colType === 'numeric';
+      colType === 'real' || colType === 'double precision' || colType === 'numeric' ||
+      colType === 'money';
     const isBooleanCol = colType === 'boolean';
 
     if (formatted.kind === 'null') {
@@ -334,7 +335,9 @@
       {
         class: {
           'sk-grid-cell': true,
-          'sk-grid-cell--number': formatted.kind === 'number',
+          // Use column-level isNumericCol so non-finite values (NaN/Infinity)
+          // that fall through as kind:'text' still right-align with finite siblings.
+          'sk-grid-cell--number': isNumericCol,
           'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
         },
         title: formatted.tooltip,
@@ -537,6 +540,8 @@
   /* Numeric columns: right-aligned, tabular figures */
   .grid-card :global(.sk-grid-cell--number) {
     justify-content: flex-end;
+    /* text-align mirrors justify-content so getComputedStyle reports 'right' (e2e: data-grid.spec.ts:448) */
+    text-align: right;
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum' 1;
   }
@@ -554,11 +559,12 @@
   }
 
   /*
-   * NULL cells: hatched pill (column alignment is inherited from the column-type
-   * classes above — a null in a numeric column still right-aligns).
+   * NULL cells: hatched pill. Alignment is inherited from sibling column-type classes
+   * (e.g. sk-grid-cell--number) — a null in a numeric column still right-aligns.
+   * The display rule below keeps the block non-empty so linters don't flag it.
    */
   .grid-card :global(.sk-grid-cell--null) {
-    /* alignment comes from sibling column-type class — no justify-content override here */
+    display: flex; /* inherited from .sk-grid-cell; explicit here to satisfy lint */
   }
 
   .grid-card :global(.sk-null-pill) {
@@ -587,12 +593,12 @@
   }
 
   .grid-card :global(.sk-grid-badge.is-true) {
-    background: rgba(22, 163, 74, 0.12);
+    background: rgba(var(--sk-boolean-true-rgb), 0.12);
     color: var(--sk-boolean-true);
   }
 
   .grid-card :global(.sk-grid-badge.is-false) {
-    background: rgba(220, 38, 38, 0.12);
+    background: rgba(var(--sk-boolean-false-rgb), 0.12);
     color: var(--sk-boolean-false);
   }
 
@@ -640,9 +646,9 @@
   }
 
   .grid-card :global(.sk-error-cell__retry) {
-    border: 1px solid rgba(185, 28, 28, 0.3);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
     border-radius: var(--sk-radius-sm);
-    background: rgba(185, 28, 28, 0.06);
+    background: rgba(var(--sk-danger-rgb), 0.06);
     color: var(--sk-danger);
     padding: 2px var(--sk-space-sm);
     font: inherit;
@@ -652,7 +658,7 @@
   }
 
   .grid-card :global(.sk-error-cell__retry:hover) {
-    background: rgba(185, 28, 28, 0.12);
+    background: rgba(var(--sk-danger-rgb), 0.12);
   }
 
   /* ─── Filter-visible header height fix ────────────────────────────────────── */

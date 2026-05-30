@@ -574,6 +574,11 @@
     box-shadow: var(--sk-shadow-card);
   }
 
+  .close-btn:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
+  }
+
   /* ── Body ── */
   .panel-body {
     flex: 1;
@@ -626,14 +631,14 @@
   }
 
   .banner-error {
-    background: rgba(185, 28, 28, 0.08);
-    border: 1px solid rgba(185, 28, 28, 0.2);
+    background: rgba(var(--sk-danger-rgb), 0.08);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.2);
     color: var(--sk-danger);
   }
 
   .banner-success {
-    background: rgba(21, 128, 61, 0.08);
-    border: 1px solid rgba(21, 128, 61, 0.2);
+    background: rgba(var(--sk-boolean-true-rgb), 0.08);
+    border: 1px solid rgba(var(--sk-boolean-true-rgb), 0.2);
     color: var(--sk-boolean-true);
   }
 
@@ -754,7 +759,7 @@
   }
 
   .badge-ok {
-    background: rgba(21, 128, 61, 0.1);
+    background: rgba(var(--sk-boolean-true-rgb), 0.1);
     color: var(--sk-boolean-true);
   }
 
@@ -801,7 +806,7 @@
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #fff;
+    background: var(--sk-glass-button);
     border-color: rgba(var(--marble-active-rgb), 0.24);
     box-shadow: var(--sk-shadow-card);
   }
@@ -809,7 +814,7 @@
   /* sk-btn-accent — amber CTA */
   .btn-accent {
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     border-color: var(--sk-accent);
     box-shadow: var(--sk-shadow-accent);
   }

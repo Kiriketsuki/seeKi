@@ -285,7 +285,7 @@
 
   /* sk-mode-tab.active */
   .mode-tab.active {
-    background: #fff;
+    background: var(--sk-glass-button);
     color: var(--sk-text);
     font-weight: 500;
     box-shadow: 0 1px 4px rgba(var(--marble-vein-rgb), 0.08);
@@ -434,7 +434,7 @@
   }
 
   .btn-test:hover:not(:disabled) {
-    background: #fff;
+    background: var(--sk-glass-button);
     border-color: rgba(var(--marble-active-rgb), 0.24);
     box-shadow: var(--sk-shadow-card);
   }
@@ -463,7 +463,7 @@
   .btn-next {
     padding: var(--sk-space-sm) var(--sk-space-2xl);
     background: var(--sk-accent);
-    color: #fff;
+    color: var(--sk-on-accent);
     border: none;
     border-radius: var(--sk-radius-md);
     font-size: var(--sk-font-size-md);

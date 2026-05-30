@@ -179,7 +179,7 @@ test.describe('Navigation — Sidebar Collapse', () => {
     await expect(sidebar).not.toHaveClass(/collapsed/);
 
     // Get initial toggle button label
-    const toggleButton = page.locator('button.toggle');
+    const toggleButton = page.locator('[data-testid="sidebar-toggle"]');
     await expect(toggleButton).toHaveAttribute('aria-label', 'Collapse sidebar');
 
     // Click to collapse — expect() auto-retries until class appears

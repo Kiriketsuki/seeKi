@@ -329,12 +329,18 @@
     cursor: pointer;
   }
 
-  /* Primary action (Create view): teal-tinted border + teal ink — mirrors .sk-create-btn */
+  /* keyboard nav: consistent focus ring matching re-skin palette */
+  .panel-action:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Primary action (Create view): teal-tinted border + dark-teal ink — mirrors .sk-create-btn */
   .panel-action--primary {
     padding: var(--sk-space-xs) var(--sk-space-sm);
     border-color: rgba(var(--sk-accent-active-rgb), 0.24);
     background: rgba(var(--sk-accent-active-rgb), 0.08);
-    color: var(--sk-data);
+    color: var(--sk-data-ink);
   }
 
   .panel-action--icon {
@@ -347,7 +353,7 @@
   /* Icon action hover: faint white glass, vein hairline border */
   .panel-action--icon:hover {
     border-color: var(--sk-border-light);
-    background: rgba(255, 255, 255, 0.78);
+    background: var(--sk-glass-button);
   }
 
   .panel-action:disabled {

@@ -99,15 +99,20 @@
     color: var(--sk-muted);
   }
 
-  /* "Show All" button — teal ink (data-strong), mirrors .sk-col-showall */
+  /* "Show All" button — dark teal ink for AA contrast, mirrors .sk-col-showall */
   .show-all {
     border: none;
     background: none;
-    color: var(--sk-data-strong);
+    color: var(--sk-data-ink);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     cursor: pointer;
     flex-shrink: 0;
+  }
+
+  .show-all:hover:not(:disabled) {
+    background: var(--sk-active-tint-soft);
+    border-radius: var(--sk-radius-sm);
   }
 
   .show-all:disabled {
@@ -151,7 +156,7 @@
     color: var(--sk-muted);
   }
 
-  /* Checkbox icon — teal (interaction/data accent) — mirrors .sk-col-item input accent-color */
+  /* Checkbox icon — dark teal for AA contrast — mirrors .sk-col-item input accent-color */
   .checkbox {
     width: 14px;
     height: 14px;
@@ -159,7 +164,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--sk-data);
+    color: var(--sk-data-ink);
   }
 
   /* Column name — mono type label for the data type variant would go here */

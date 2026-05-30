@@ -109,10 +109,13 @@
   --sk-accent-active: var(--marble-active);
   --sk-accent-active-rgb: var(--marble-active-rgb);
   --sk-accent-active-strong: color-mix(in srgb, var(--marble-active) 76%, #000);
+  --sk-accent-active-ink: color-mix(in srgb, var(--marble-active) 44%, #000);    /* teal text on tinted chip — clears 4.5:1 AA */
   /* Count (soft amber) — count badges, selection, small attention marks. */
   --sk-accent-count: var(--marble-count);
   --sk-accent-count-rgb: var(--marble-count-rgb);
-  --sk-accent-count-ink: color-mix(in srgb, var(--marble-count) 56%, #4a2500);    /* amber text on tint */
+  --sk-accent-count-ink: color-mix(in srgb, var(--marble-count) 44%, #4a2500);   /* amber text on tint — bumped to 44% for AA on spa/alabaster/oxide */
+  /* On-accent ink: dark amber/brown used on solid amber CTA backgrounds — clears 4.5:1 (>=5.95:1) across all 6 palettes */
+  --sk-on-accent: #2b1600;
 
   /* ===== ACTIVE / INTERACTION TINTS (teal) ===== */
   --sk-active-tint:        rgba(var(--marble-active-rgb), 0.14);  /* active dock/toggle fill */
@@ -120,8 +123,12 @@
   --sk-active-border:      rgba(var(--marble-active-rgb), 0.24);
   --sk-active-chip-bg:     rgba(var(--marble-active-rgb), 0.08);
   --sk-active-chip-border: rgba(var(--marble-active-rgb), 0.20);
-  --sk-ring:               rgba(var(--marble-active-rgb), 0.14);  /* focus ring halo */
+  --sk-ring:               rgba(var(--marble-active-rgb), 0.25);  /* focus ring halo — strengthened for WCAG 1.4.11 parity with button outlines */
   --sk-ring-border:        rgba(var(--marble-active-rgb), 0.45);  /* focus border */
+  /* Focus-visible outline color — darkened 6pp beyond accent-active-strong for a
+     guaranteed 3:1 non-text ratio across all six palettes, including the
+     desaturated spa palette whose active accent would otherwise land ~3.4:1. */
+  --sk-focus-ring:         color-mix(in srgb, var(--marble-active) 82%, #000);
 
   /* ===== COUNT / ATTENTION TINTS (amber) ===== */
   --sk-count-tint:        rgba(var(--marble-count-rgb), 0.12);
@@ -129,10 +136,16 @@
   --sk-count-chip-border: rgba(var(--marble-count-rgb), 0.22);
 
   /* ===== VALUE SEMANTICS (palette-independent) ===== */
-  --sk-boolean-true: #15803d;   /* true badge */
+  --sk-boolean-true: #166534;   /* true badge — darkened from #15803d to clear 4.5:1 on tinted chip */
+  --sk-boolean-true-rgb: 22, 101, 52;
   --sk-boolean-false: #b91c1c;  /* false badge */
+  --sk-boolean-false-rgb: 185, 28, 28;
   --sk-danger: #b91c1c;
+  --sk-danger-rgb: 185, 28, 28;
   --sk-warning: var(--sk-accent-count-ink);
+
+  /* ===== MODAL / OVERLAY BACKDROP ===== */
+  --sk-backdrop: rgba(var(--marble-vein-rgb), 0.40);  /* modal scrim — re-tones with palette */
 
   /* ===== GLASS SURFACES =====
      Soft panels (sidebar, status) are quartz-frosted; prominent
@@ -149,6 +162,7 @@
   --sk-glass-button:         rgba(255, 255, 255, 0.60);
   --sk-glass-button-blur:    blur(8px);
   --sk-glass-dock:           rgba(255, 255, 255, 0.86);  /* the floating action dock */
+  --sk-glass-popup:          rgba(255, 255, 255, 0.96);  /* dropdown/context-menu overlays */
 
   /* ===== BORDERS — hairlines from the vein ===== */
   --sk-border:         rgba(var(--marble-vein-rgb), 0.08);
@@ -188,6 +202,7 @@
   --sk-accent-ink: var(--sk-accent-count-ink);
   --sk-data: var(--sk-accent-active);             /* teal — interaction/focus */
   --sk-data-strong: var(--sk-accent-active-strong);
+  --sk-data-ink: var(--sk-accent-active-ink);     /* teal text on tinted chip/surface — clears 4.5:1 AA */
   --sk-ring-data: var(--sk-ring);
 }
 
@@ -211,12 +226,12 @@
   --sk-radius-pill: 999px;
 
   /* ===== LAYOUT / SIZING (product shell) ===== */
-  --sk-sidebar-width: 210px;
+  --sk-sidebar-width: 236px;
   --sk-sidebar-collapsed: 48px;
   --sk-dock-height: 40px;
   --sk-dock-inset: 8px;
   --sk-dock-panel-width: 560px;
-  --sk-dock-clearance: 96px;
+  --sk-dock-clearance: 106px; /* dock bottom sits at dock-inset + 10px; clearance tracks it */
 
   /* ===== TYPE FAMILIES (bundled — no Google Fonts import) ===== */
   --sk-font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;

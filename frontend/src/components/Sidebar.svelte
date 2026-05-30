@@ -155,9 +155,8 @@
 </aside>
 
 <style>
-  /* ── Sidebar redesign: 236px frosted-quartz slab ── */
+  /* ── Sidebar redesign: frosted-quartz slab (width from tokens.css --sk-sidebar-width) ── */
   .sidebar {
-    --sk-sidebar-width: 236px;
     width: var(--sk-sidebar-width);
     min-width: var(--sk-sidebar-width);
     height: 100vh;
@@ -262,6 +261,11 @@
     color: var(--sk-text);
   }
 
+  .toggle:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
+  }
+
   /* collapsed: mark-toggle wraps the logo and acts as the expand button */
   .mark-toggle {
     display: flex;
@@ -282,6 +286,11 @@
     box-shadow: inset 0 0 0 1px var(--sk-border-light);
   }
 
+  .mark-toggle:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
+  }
+
   /* ── Mode switch (expanded) — amber sliding pill ── */
   .mode-switch {
     position: relative;
@@ -289,7 +298,7 @@
     grid-template-columns: repeat(2, 1fr);
     gap: var(--sk-space-xs);
     padding: var(--sk-space-xs);
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(var(--marble-vein-rgb), 0.05);
     border-radius: var(--sk-radius-lg);
     margin: var(--sk-space-sm) var(--sk-space-sm) 0;
   }
@@ -326,6 +335,11 @@
 
   .mode-button.active {
     color: var(--sk-text);
+  }
+
+  .mode-button:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
   }
 
   /* ── Mode switch (collapsed) ── */
@@ -371,6 +385,11 @@
 
   .mode-icon.active {
     color: var(--sk-text);
+  }
+
+  .mode-icon:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {

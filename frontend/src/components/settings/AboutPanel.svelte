@@ -93,9 +93,9 @@
   .error {
     color: var(--sk-danger);
     padding: var(--sk-space-xl);
-    border: 1px solid rgba(185, 28, 28, 0.2);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.2);
     border-radius: var(--sk-radius-lg);
-    background: rgba(185, 28, 28, 0.05);
+    background: rgba(var(--sk-danger-rgb), 0.05);
   }
 
   /* sk-kv-link hover */
