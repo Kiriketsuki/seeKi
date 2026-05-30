@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 test.describe('Error States — API Errors', () => {
   test('request for non-existent table returns 404', async ({ page }) => {
-    const response = await page.request.get('/api/tables/nonexistent_table_xyz/rows');
+    const response = await page.request.get('/api/tables/nonexistent_schema/nonexistent_table_xyz/rows');
     
     expect(response.status()).toBe(404);
     
@@ -19,7 +19,7 @@ test.describe('Error States — API Errors', () => {
   });
 
   test('404 response does not leak internal details', async ({ page }) => {
-    const response = await page.request.get('/api/tables/nonexistent_table_xyz/columns');
+    const response = await page.request.get('/api/tables/nonexistent_schema/nonexistent_table_xyz/columns');
     
     expect(response.status()).toBe(404);
     
@@ -50,13 +50,12 @@ test.describe('Error States — SQL Injection Prevention', () => {
     // Get the current table name dynamically from the API
     const tablesResponse = await page.request.get('/api/tables');
     expect(tablesResponse.ok()).toBeTruthy();
-    const tablesData = await tablesResponse.json() as { tables: { name: string }[] };
+    const tablesData = await tablesResponse.json() as { tables: { name: string; schema: string }[] };
     expect(tablesData.tables.length).toBeGreaterThan(0);
     const currentTable = tablesData.tables[0].name;
 
     // Open filters
-    const filterButton = page.locator('button.tool-button[aria-label*="filter" i]').first();
-    await filterButton.click();
+    await seeki.clickFilterToggle();
 
     // Find the first filter input
     const filterInput = page.locator('input[aria-label^="Filter "]').first();
@@ -125,13 +124,13 @@ test.describe('Error States — SQL Injection Prevention', () => {
     const tablesResponse = await page.request.get('/api/tables');
     expect(tablesResponse.ok()).toBeTruthy();
     
-    const tablesData = await tablesResponse.json() as { tables: { name: string }[] };
+    const tablesData = await tablesResponse.json() as { tables: { name: string; schema: string }[] };
     expect(tablesData.tables.length).toBeGreaterThan(0);
     
-    const firstTableName = tablesData.tables[0].name;
+    const firstTable = tablesData.tables[0];
     
     // Attempt SQL injection via URL params
-    const maliciousUrl = `/api/tables/${firstTableName}/rows?filter.id=%27%3B+DROP+TABLE+test--`;
+    const maliciousUrl = `/api/tables/${firstTable.schema}/${firstTable.name}/rows?filter.id=%27%3B+DROP+TABLE+test--`;
     const response = await page.request.get(maliciousUrl);
     
     // Should either succeed with 0 rows or return 400, but never 500
@@ -162,8 +161,7 @@ test.describe('Error States — Edge Cases', () => {
 
   test('very long filter value does not crash', async ({ page, seeki }) => {
     // Open filters
-    const filterButton = page.locator('button.tool-button[aria-label*="filter" i]').first();
-    await filterButton.click();
+    await seeki.clickFilterToggle();
 
     // Find the first filter input
     const filterInput = page.locator('input[aria-label^="Filter "]').first();
@@ -229,7 +227,7 @@ test.describe('Error States — Edge Cases', () => {
 
       // Close search for next iteration — wait for panel to disappear
       await page.keyboard.press('Escape');
-      await expect(page.locator('div#search-panel')).not.toBeVisible();
+      await expect(page.locator('#dock-search-panel')).not.toBeVisible();
     }
     
     // Final check: app is still functional

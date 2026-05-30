@@ -52,3 +52,6 @@ council-fix-manifest.json
 
 # Internal deploy docs — never commit
 /docs/deploy-*.md
+
+# Local design handoff reference (not committed)
+.design-reference/

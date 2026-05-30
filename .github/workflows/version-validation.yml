@@ -13,7 +13,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
-              uses: actions/checkout@v6
+              uses: actions/checkout@v4
               with:
                   fetch-depth: 0
 
@@ -81,11 +81,27 @@ jobs:
 
                   if [ -n "$LATEST_TAG" ]; then
                     LATEST_VERSION="${LATEST_TAG#v}"
-                    if [ "$VERSION" = "$LATEST_VERSION" ]; then
-                      echo "Error: Version $VERSION is the same as latest tag $LATEST_TAG"
+
+                    # Normalize a version string so historical leading-zero-year
+                    # tags (e.g. v26.01.0.0) compare equal to canonical ones
+                    # (e.g. 26.1.0.0). Strip a leading 'v', then for each
+                    # dot-separated segment strip leading zeros from the numeric
+                    # prefix while preserving any trailing alphabetic suffix.
+                    # The python3 -c body stays on one logical line (list
+                    # comprehension), so it never dedents to column 0 and the
+                    # surrounding YAML block scalar remains valid.
+                    normalize_version() {
+                      python3 -c 'import re, sys; raw = sys.argv[1].strip(); raw = raw[1:] if raw[:1] in ("v", "V") else raw; segs = [(lambda m: (str(int(m.group(1))) if m.group(1) else "") + m.group(2) if m and (m.group(1) or m.group(2)) else s)(re.match(r"^(\d*)([A-Za-z]*)$", s)) for s in raw.split(".")]; print(".".join(segs))' "$1"
+                    }
+
+                    NORM_VERSION="$(normalize_version "$VERSION")"
+                    NORM_LATEST="$(normalize_version "$LATEST_VERSION")"
+
+                    if [ "$NORM_VERSION" = "$NORM_LATEST" ]; then
+                      echo "Error: Version $VERSION is the same as latest tag $LATEST_TAG (normalized: $NORM_VERSION == $NORM_LATEST)"
                       exit 1
                     fi
-                    echo "Version $VERSION differs from latest tag $LATEST_TAG"
+                    echo "Version $VERSION differs from latest tag $LATEST_TAG (normalized: $NORM_VERSION != $NORM_LATEST)"
                   else
                     echo "No previous tags found, skipping comparison."
                   fi

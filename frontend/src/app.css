@@ -1,11 +1,159 @@
 @import './theme/tokens.css';
+@import './theme/animations.css';
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   font-family: var(--sk-font-ui);
-  background: var(--sk-bg);
+  /* Layer 0 — warm marble ground. Large soft clouding, almost no veins. */
+  background-color: var(--sk-bg);
+  background-image:
+    radial-gradient(135% 95% at 4% -14%, rgba(var(--marble-frost-rgb), .42), transparent 52%),
+    radial-gradient(120% 100% at 104% 116%, rgba(var(--marble-frost-rgb), .30), transparent 50%),
+    radial-gradient(90% 70% at 60% 50%, rgba(255,255,255,.30), transparent 60%);
+  background-attachment: fixed;
   color: var(--sk-text);
-  font-size: var(--sk-font-size-md);
+  font-size: var(--sk-font-size-body);
   -webkit-font-smoothing: antialiased;
 }
+
+/* ════════════════════════════════════════════════════════════
+   SEMANTIC TYPE CLASSES  (global — usable across all components)
+   ════════════════════════════════════════════════════════════ */
+.sk-h1 {
+  font-family: var(--h1-font);
+  font-size: var(--h1-size);
+  font-weight: var(--h1-weight);
+  letter-spacing: var(--h1-spacing);
+  line-height: var(--h1-leading);
+  color: var(--sk-text);
+  text-wrap: balance;
+}
+.sk-h2 {
+  font-family: var(--sk-font-ui);
+  font-size: var(--h2-size);
+  font-weight: var(--h2-weight);
+  letter-spacing: var(--h2-spacing);
+  line-height: var(--h2-leading);
+  color: var(--sk-text);
+  text-wrap: balance;
+}
+.sk-h3 {
+  font-family: var(--sk-font-ui);
+  font-size: var(--h3-size);
+  font-weight: var(--h3-weight);
+  letter-spacing: var(--h3-spacing);
+  line-height: var(--h3-leading);
+  color: var(--sk-text);
+}
+.sk-eyebrow {
+  font-family: var(--sk-font-ui);
+  font-size: var(--eyebrow-size);
+  font-weight: var(--eyebrow-weight);
+  letter-spacing: var(--eyebrow-spacing);
+  text-transform: uppercase;
+  color: var(--sk-secondary-strong);
+}
+.sk-body {
+  font-family: var(--sk-font-ui);
+  font-size: var(--body-size);
+  font-weight: var(--body-weight);
+  line-height: var(--body-leading);
+  color: var(--sk-text);
+  text-wrap: pretty;
+}
+.sk-small {
+  font-family: var(--sk-font-ui);
+  font-size: var(--small-size);
+  color: var(--sk-muted);
+}
+.sk-code, .sk-mono {
+  font-family: var(--sk-font-mono);
+  font-size: var(--code-size);
+  font-weight: var(--code-weight);
+  color: var(--sk-secondary-strong);
+  font-variant-numeric: tabular-nums;
+}
+/* Numeric / data cells always use tabular figures */
+.sk-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ════════════════════════════════════════════════════════════
+   MATERIAL / TEXTURE  ·  the frosted-quartz slab
+   Works alongside the palette: the lifted surfaces (action dock,
+   drawer, popovers) are not flat white panels — they are semi-
+   translucent frosted slabs with internal mineral variation.
+
+   ── Layer order (bottom → top) ──────────────────────────────
+     0  base glass        background: var(--sk-glass-dock)
+     1  ::before          quartz clouding + soft marble veins + micro-grain
+     2  ::after           glass sheen / edge-lift
+     3  .sk-material__content   the actual controls (always on top)
+
+   Every colour is a marble token (--sk-frost / --sk-ink / --sk-
+   surface), so the texture re-tones with the palette automatically.
+   Strength scales with surface importance via the per-mode hooks —
+   compact toolbar stays cleaner than the large drawer; badges,
+   inputs and active buttons stay flat. Mask aggressively so no
+   texture crosses labels, badges, or input text.
+   ════════════════════════════════════════════════════════════ */
+
+/* component hooks — overall + per-layer strength (set per mode) */
+:root {
+  --sk-mat-texture-opacity: 0.46;   /* master texture multiplier   */
+  --sk-mat-cloud-opacity:   0.92;   /* frost clouding strength      */
+  --sk-mat-vein-opacity:    0.05;   /* marble vein ink alpha        */
+  --sk-mat-grain-opacity:   0.5;    /* micro-grain (scaled by master) */
+  --sk-mat-sheen-opacity:   0.5;    /* glass lift / top sheen       */
+  /* readability mask — texture fades through the centre control
+     band, stays richer at the edges. Override per surface. */
+  --sk-mat-mask: linear-gradient(90deg, #000 0%, rgba(0,0,0,.18) 34%, rgba(0,0,0,.18) 66%, #000 100%);
+  /* fine micro-grain — fractal noise, "felt more than seen" */
+  --sk-mat-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
+}
+
+.sk-material {
+  position: relative;
+  overflow: hidden;
+  background: var(--sk-glass-dock);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border: 1px solid var(--sk-border-light);
+  box-shadow: var(--sk-shadow-pop);
+}
+/* (1) quartz clouding + (2) soft marble veins + (4) micro-grain */
+.sk-material::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  opacity: var(--sk-mat-texture-opacity);
+  background:
+    var(--sk-mat-grain),
+    radial-gradient(135% 95% at 10% -12%, rgba(var(--sk-frost-rgb), var(--sk-mat-cloud-opacity)), transparent 56%),
+    radial-gradient(120% 110% at 94% 118%, rgba(var(--sk-frost-rgb), calc(var(--sk-mat-cloud-opacity) * 0.8)), transparent 52%),
+    radial-gradient(70% 90% at 64% 46%, rgba(255,255,255,.5), transparent 62%),
+    linear-gradient(116deg, transparent 35.5%, rgba(var(--sk-ink-rgb), var(--sk-mat-vein-opacity)) 37%, transparent 39%),
+    linear-gradient(124deg, transparent 51%, rgba(var(--sk-ink-rgb), calc(var(--sk-mat-vein-opacity) * 0.8)) 52.4%, transparent 54%);
+  -webkit-mask: var(--sk-mat-mask); mask: var(--sk-mat-mask);
+}
+/* (5) glass lift — top sheen so the slab reads as raised, not glossy */
+.sk-material::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,.5) 0%, transparent 34%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+  opacity: var(--sk-mat-sheen-opacity);
+}
+/* (6) content — controls always sit above all texture */
+.sk-material__content { position: relative; z-index: 1; }
+
+/* ── per-mode strength · compact stays cleaner than the drawer ── */
+.sk-material--floating { --sk-mat-texture-opacity: .42; --sk-mat-vein-opacity: .045; --sk-mat-sheen-opacity: .46; }
+.sk-material--expanded { --sk-mat-texture-opacity: .56; --sk-mat-vein-opacity: .05;  --sk-mat-sheen-opacity: .5;  }
+.sk-material--drawer {
+  --sk-mat-texture-opacity: .78; --sk-mat-vein-opacity: .075; --sk-mat-sheen-opacity: .52;
+  /* content-fade mask: rich header, calm under the controls */
+  --sk-mat-mask: linear-gradient(180deg, #000 0%, rgba(0,0,0,.5) 22%, rgba(0,0,0,.16) 46%, rgba(0,0,0,.16) 100%);
+}
+/* flat surfaces — badges, search input, active buttons: no marble */
+.sk-material--flat { --sk-mat-texture-opacity: 0; --sk-mat-sheen-opacity: .3; }

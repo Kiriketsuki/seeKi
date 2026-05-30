@@ -15,6 +15,21 @@ export { expect };
 export class SeekiHelpers {
   constructor(public readonly page: Page) {}
 
+  /** Locate the bottom action dock. */
+  getActionDock() {
+    return this.page.locator('.action-dock[aria-label="Table actions"]');
+  }
+
+  /** Locate the dock search panel. */
+  getDockSearchPanel() {
+    return this.getActionDock().locator('#dock-search-panel');
+  }
+
+  /** Locate the dock columns panel. */
+  getColumnsPanel() {
+    return this.getActionDock().locator('#columns-panel');
+  }
+
   /**
    * Returns a promise that resolves when the next /api/tables/.../rows response arrives.
    * Must be called BEFORE the action that triggers the request.
@@ -23,6 +38,17 @@ export class SeekiHelpers {
     return this.page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/tables/') &&
+        resp.url().includes('/rows') &&
+        resp.ok(),
+      { timeout: 10_000 },
+    );
+  }
+
+  /** Wait for the next table or saved-view rows response. */
+  pendingGridRowsResponse(): Promise<import('@playwright/test').Response> {
+    return this.page.waitForResponse(
+      (resp) =>
+        (resp.url().includes('/api/tables/') || resp.url().includes('/api/views/')) &&
         resp.url().includes('/rows') &&
         resp.ok(),
       { timeout: 10_000 },
@@ -43,13 +69,27 @@ export class SeekiHelpers {
     );
   }
 
+  /** Like pendingGridRowsResponse but accepts any non-500 status. */
+  pendingGridRowsResponseAny(): Promise<import('@playwright/test').Response> {
+    return this.page.waitForResponse(
+      (resp) =>
+        (resp.url().includes('/api/tables/') || resp.url().includes('/api/views/')) &&
+        resp.url().includes('/rows') &&
+        resp.status() < 500,
+      { timeout: 10_000 },
+    );
+  }
+
   /** Wait for the app to finish loading (spinner gone, grid or wizard visible). */
   async waitForAppReady(): Promise<void> {
-    // Wait for either the grid layout or the setup wizard to be visible
+    // Wait for either the main grid layout or the setup wizard to be visible.
+    // .grid-area renders unconditionally in the non-setup branch, so it resolves
+    // before table auto-selection completes (unlike .action-dock which is gated
+    // on {#if selectedTable}).
     await this.page.waitForFunction(() => {
-      const grid = document.querySelector('.grid-card');
+      const gridArea = document.querySelector('.grid-area');
       const wizard = document.querySelector('[aria-label="Setup wizard"]');
-      return grid !== null || wizard !== null;
+      return gridArea !== null || wizard !== null;
     }, { timeout: 15_000 });
   }
 
@@ -66,14 +106,27 @@ export class SeekiHelpers {
     return await this.page.locator('.statusbar .showing').textContent() ?? '';
   }
 
-  /** Parse the total row count from the status bar. */
+  /** Parse the total row count from the status bar (works for both paged and infinite modes). */
   async getTotalRows(): Promise<number> {
     const text = await this.getStatusBarText();
     const match = text.match(/of\s+([\d,]+)/);
     return match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
   }
 
-  /** Parse the current page range from the status bar. */
+  /** Parse how many rows are loaded in infinite-scroll mode ("Loaded X of Y"). */
+  async getLoadedCount(): Promise<number> {
+    const text = await this.getStatusBarText();
+    const match = text.match(/Loaded\s+([\d,]+)\s+of/);
+    return match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
+  }
+
+  /** Returns true when the status bar shows infinite-scroll mode text. */
+  async isInfiniteMode(): Promise<boolean> {
+    const text = await this.getStatusBarText();
+    return text.startsWith('Loaded');
+  }
+
+  /** Parse the current page range from the status bar (paged mode only). */
   async getPageRange(): Promise<{ start: number; end: number }> {
     const text = await this.getStatusBarText();
     const match = text.match(/([\d,]+)\s*-\s*([\d,]+)/);
@@ -89,6 +142,12 @@ export class SeekiHelpers {
     await this.waitForGridLoaded();
   }
 
+  /** Click a saved view in the sidebar to navigate to it. */
+  async selectView(displayName: string): Promise<void> {
+    await this.page.locator('.view-item', { hasText: displayName }).click();
+    await this.waitForGridLoaded();
+  }
+
   /** Get visible column header labels from the RevoGrid (light DOM). */
   async getVisibleColumnHeaders(): Promise<string[]> {
     const labels = this.page.locator('.sk-grid-header__label');
@@ -96,24 +155,24 @@ export class SeekiHelpers {
     return await labels.allTextContents();
   }
 
-  /** Click the toolbar search button. */
+  /** Click the dock search button. */
   async clickSearchToggle(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="search" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /search/i }).click();
   }
 
-  /** Click the toolbar filter button. */
+  /** Click the dock filter button. */
   async clickFilterToggle(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="filter" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /filters?/i }).click();
   }
 
-  /** Click the toolbar columns button. */
+  /** Click the dock columns button. */
   async clickColumnsToggle(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="column" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /columns?/i }).click();
   }
 
-  /** Click the toolbar export button. */
+  /** Click the dock export button. */
   async clickExport(): Promise<void> {
-    await this.page.locator('.toolbar button[aria-label*="export" i]').first().click();
+    await this.getActionDock().getByRole('button', { name: /export/i }).click();
   }
 
   /** Get sidebar table names. */
@@ -121,14 +180,86 @@ export class SeekiHelpers {
     return await this.page.locator('.table-item .table-item-name').allTextContents();
   }
 
+  /** Get sidebar saved view names. */
+  async getSidebarViewNames(): Promise<string[]> {
+    return await this.page.locator('.view-item .view-item-name').allTextContents();
+  }
+
+  /** Get the text content of the ActionDock sort announcement live region. */
+  getSortAnnouncement() {
+    return this.getActionDock().locator('[aria-live]');
+  }
+
+  /** Get the four dock action buttons in order: Search, Filters, Columns, Export. */
+  getDockButtons() {
+    return this.getActionDock().locator('.dock-button');
+  }
+
   /** Toggle sidebar collapse/expand. */
   async toggleSidebar(): Promise<void> {
-    await this.page.locator('.sidebar .toggle').click();
+    await this.page.locator('[data-testid="sidebar-toggle"]').click();
+  }
+
+  /** Switch the sidebar workspace to Settings. */
+  async openSettings(): Promise<void> {
+    const settingsButton = this.page.locator('button', { hasText: 'Settings' }).first();
+    if (await settingsButton.isVisible()) {
+      await settingsButton.click();
+      return;
+    }
+
+    await this.page.locator('.collapsed-modes button[aria-label="Show settings workspace"]').click();
+  }
+
+  /** Switch the sidebar workspace back to the Data workspace. */
+  async openTables(): Promise<void> {
+    const tablesButton = this.page.locator('button', { hasText: 'Data' }).first();
+    if (await tablesButton.isVisible()) {
+      await tablesButton.click();
+      return;
+    }
+
+    await this.page.locator('.collapsed-modes button[aria-label="Show data workspace"]').click();
   }
 
   /** Check if sidebar is collapsed. */
   async isSidebarCollapsed(): Promise<boolean> {
     const sidebar = this.page.locator('.sidebar');
     return await sidebar.evaluate((el) => el.classList.contains('collapsed'));
+  }
+
+  /** Scroll the RevoGrid container to the bottom to trigger infinite scroll. */
+  async scrollGridToBottom(): Promise<void> {
+    await this.page.locator('revo-grid').evaluate((el) => {
+      const inner: Element | null =
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[data-type="rgScrollable"]') ??
+        (el.shadowRoot as ShadowRoot | null)?.querySelector('[class*="scroll"]') ??
+        el;
+      (inner as HTMLElement).scrollTop = (inner as HTMLElement).scrollHeight;
+    });
+  }
+
+  /** Replace window.open with a recorder before page load. */
+  async installWindowOpenRecorder(): Promise<void> {
+    await this.page.addInitScript(() => {
+      const openedUrls: string[] = [];
+      Object.defineProperty(window, '__seekiOpenedUrls', {
+        value: openedUrls,
+        writable: false,
+      });
+      window.open = ((url?: string | URL | undefined) => {
+        if (url != null) {
+          openedUrls.push(String(url));
+        }
+        return null;
+      }) as typeof window.open;
+    });
+  }
+
+  /** Read URLs recorded by installWindowOpenRecorder. */
+  async getOpenedUrls(): Promise<string[]> {
+    return await this.page.evaluate(
+      () => (window as unknown as { __seekiOpenedUrls?: string[] }).__seekiOpenedUrls ?? [],
+    );
   }
 }

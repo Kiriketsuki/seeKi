@@ -6,6 +6,10 @@ test.describe('Navigation — Default Load', () => {
     await seeki.waitForAppReady();
   });
 
+  test('sidebar shows the Data workspace label', async ({ page }) => {
+    await expect(page.locator('[data-testid="sidebar-mode-data"]').first()).toContainText('Data');
+  });
+
   test('default table loads on app start', async ({ page, seeki }) => {
     // Wait for the grid to be loaded
     await seeki.waitForGridLoaded();
@@ -16,7 +20,7 @@ test.describe('Navigation — Default Load', () => {
 
     // Verify the grid shows data (status bar should show row count)
     const statusBar = await seeki.getStatusBarText();
-    expect(statusBar).toMatch(/Showing \d+ - \d+ of \d+/);
+    expect(statusBar).toMatch(/(?:Showing \d[\d,]* - \d[\d,]* of|Loaded \d[\d,]* of) \d[\d,]*/);
   });
 });
 
@@ -47,30 +51,63 @@ test.describe('Navigation — Table Switching', () => {
 
     // Verify the status bar updates (should show data for the new table)
     const statusBar = await seeki.getStatusBarText();
-    expect(statusBar).toMatch(/Showing \d+ - \d+ of \d+/);
+    expect(statusBar).toMatch(/(?:Showing \d[\d,]* - \d[\d,]* of|Loaded \d[\d,]* of) \d[\d,]*/);
   });
 
-  test('switching tables resets sort and filters', async ({ page, seeki }) => {
+  test('switching tables resets search state and toolbar defaults', async ({ page, seeki }) => {
     const tableNames = await seeki.getSidebarTableNames();
     test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
 
-    // Sort a column on the first table — wait for sorted data
     const firstHeader = page.locator('[role="columnheader"]').first();
-    const rowsLoaded = seeki.pendingRowsResponse();
+    const firstHeaderState = firstHeader.locator('.sk-grid-header');
+    const sortGlyph = firstHeader.locator('.sk-grid-header__sort');
+    let rowsLoaded = seeki.pendingRowsResponse();
     await firstHeader.click();
-    await rowsLoaded;
+    let rowsResponse = await rowsLoaded;
 
-    // Verify sort is active via the toolbar sort indicator (light DOM)
-    const sortIndicator = page.locator('.tool-indicator');
-    await expect(sortIndicator).toHaveAttribute('aria-label', / asc$/);
+    // Verify the sort request included sort params
+    expect(rowsResponse.request().url()).toContain('sort=');
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText(/ascending$/);
+    await expect(sortGlyph).toHaveText('↑');
+    await expect(firstHeaderState).toHaveAttribute('aria-sort', 'ascending');
 
-    // Switch to the second table
+    const secondTableName = tableNames[1];
+    rowsLoaded = seeki.pendingRowsResponse();
+    await seeki.selectTable(secondTableName);
+    rowsResponse = await rowsLoaded;
+
+    // Verify sort is reset on table switch — the new rows request should be clean
+    expect(rowsResponse.request().url()).not.toContain('sort_direction=');
+    expect(rowsResponse.request().url()).not.toContain('sort_column=');
+    // sort cleared on table switch — live region should be empty
+    await expect(page.locator('.action-dock [aria-live]')).toHaveText('');
+    await expect(page.locator('.sk-grid-header__sort')).toHaveCount(0);
+    await expect(page.locator('[role="columnheader"]').first().locator('.sk-grid-header')).not.toHaveAttribute('aria-sort');
+  });
+
+  test('switching to settings and back preserves the current table workspace', async ({ page, seeki }) => {
+    const tableNames = await seeki.getSidebarTableNames();
+    test.skip(tableNames.length < 2, 'Test requires at least 2 tables in the database');
+
     const secondTableName = tableNames[1];
     await seeki.selectTable(secondTableName);
+
+    await seeki.clickSearchToggle();
+    const searchInput = page.locator('.search-input');
+    await expect(searchInput).toBeVisible();
+    const rowsLoaded = seeki.pendingRowsResponse();
+    await searchInput.fill('a');
+    await rowsLoaded;
+    await expect(searchInput).toHaveValue('a');
+
+    await seeki.openSettings();
+    await expect(page.locator('h1')).toContainText('Updates');
+
+    await seeki.openTables();
     await seeki.waitForGridLoaded();
 
-    // Verify sort is reset — toolbar indicator should show "No active sort"
-    await expect(sortIndicator).toHaveAttribute('aria-label', 'No active sort');
+    await expect(page.locator('button.table-item.active')).toContainText(secondTableName);
+    await expect(page.locator('.search-input')).toHaveValue('a');
   });
 });
 
@@ -142,7 +179,7 @@ test.describe('Navigation — Sidebar Collapse', () => {
     await expect(sidebar).not.toHaveClass(/collapsed/);
 
     // Get initial toggle button label
-    const toggleButton = page.locator('button.toggle');
+    const toggleButton = page.locator('[data-testid="sidebar-toggle"]');
     await expect(toggleButton).toHaveAttribute('aria-label', 'Collapse sidebar');
 
     // Click to collapse — expect() auto-retries until class appears

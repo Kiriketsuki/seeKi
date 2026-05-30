@@ -1,0 +1,232 @@
+<script lang="ts">
+  import PanelFrame from './PanelFrame.svelte';
+  import { clearAllPresets } from '../../lib/api';
+  import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from '../../lib/constants';
+  import type { PaginationMode } from '../../lib/types';
+
+  let {
+    paginationMode = 'infinite',
+    onPaginationModeChange,
+  }: {
+    paginationMode?: PaginationMode;
+    onPaginationModeChange?: (mode: PaginationMode) => void;
+  } = $props();
+
+  let clearing = $state(false);
+  let cleared = $state(false);
+  let error = $state('');
+  function handleModeChange(mode: PaginationMode) {
+    if (mode === paginationMode) return;
+    onPaginationModeChange?.(mode);
+  }
+
+  function clearLocalStorage() {
+    if (typeof localStorage === 'undefined') return;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith(COLUMN_VISIBILITY_KEY_PREFIX) || key === SIDEBAR_COLLAPSED_KEY)) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+  }
+
+  async function handleClear() {
+    if (clearing) return;
+    clearing = true;
+    cleared = false;
+    error = '';
+    try {
+      await clearAllPresets();
+      clearLocalStorage();
+      cleared = true;
+      setTimeout(() => { cleared = false; }, 3000);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to clear data';
+    } finally {
+      clearing = false;
+    }
+  }
+</script>
+
+<PanelFrame
+  title="Data"
+  description="Manage the browsing state SeeKi stores locally — remembered sort orders, filters, search terms, column visibility, and presets."
+>
+  <div class="card">
+    <div class="row">
+      <div class="info">
+        <strong>Browsing mode</strong>
+        <p>Infinite scroll loads more rows as you scroll. Paged browsing uses Previous / Next controls and loads one page at a time.</p>
+      </div>
+      <div class="action">
+        <div class="mode-toggle" role="group" aria-label="Browsing mode">
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={paginationMode === 'infinite'}
+            onclick={() => handleModeChange('infinite')}
+          >
+            Infinite scroll
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={paginationMode === 'paged'}
+            onclick={() => handleModeChange('paged')}
+          >
+            Paged
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="info">
+        <strong>Clear browsing data</strong>
+        <p>Removes remembered sort orders, filters, search terms, column visibility, and saved presets. Saved views stay intact. Configuration (branding, appearance) is not affected.</p>
+      </div>
+      <div class="action">
+        <button type="button" class="danger" onclick={handleClear} disabled={clearing}>
+          {clearing ? 'Clearing…' : 'Clear all data'}
+        </button>
+        {#if cleared}
+          <span class="hint success">Cleared</span>
+        {/if}
+      </div>
+    </div>
+    {#if error}
+      <p class="message error">{error}</p>
+    {/if}
+  </div>
+</PanelFrame>
+
+<style>
+  /* sk-set-card */
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-space-md);
+    padding: var(--sk-space-xl);
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-lg);
+    background: var(--sk-glass-input);
+    backdrop-filter: var(--sk-glass-grid-blur);
+    -webkit-backdrop-filter: var(--sk-glass-grid-blur);
+    box-shadow: var(--sk-shadow-card);
+  }
+
+  /* sk-set-row */
+  .row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sk-space-xl);
+  }
+
+  /* sk-set-info */
+  .info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-space-xs);
+  }
+
+  .info p {
+    color: var(--sk-secondary-strong);
+    line-height: 1.5;
+    max-width: 50ch;
+    margin: 0;
+  }
+
+  /* sk-set-actions */
+  .action {
+    display: flex;
+    align-items: center;
+    gap: var(--sk-space-md);
+    flex-shrink: 0;
+  }
+
+  /* sk-btn-danger */
+  .danger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
+    border-radius: var(--sk-radius-md);
+    background: rgba(var(--sk-danger-rgb), 0.08);
+    color: var(--sk-danger);
+    padding: var(--sk-space-sm) var(--sk-space-lg);
+    font: inherit;
+    font-size: var(--sk-font-size-body);
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+  }
+
+  .danger:hover:not(:disabled) {
+    background: rgba(var(--sk-danger-rgb), 0.14);
+  }
+
+  .danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .hint.success {
+    color: var(--sk-boolean-true);
+    font-size: var(--sk-font-size-body);
+  }
+
+  .message.error {
+    color: var(--sk-danger);
+    margin: 0;
+  }
+
+  /* sk-modetoggle */
+  .mode-toggle {
+    display: flex;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* sk-modetoggle-btn */
+  .mode-btn {
+    border: none;
+    background: transparent;
+    color: var(--sk-secondary-strong);
+    font: inherit;
+    font-size: var(--sk-font-size-body);
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s ease;
+  }
+
+  .mode-btn + .mode-btn {
+    border-left: 1px solid var(--sk-border-light);
+  }
+
+  /* sk-modetoggle-btn.active — amber fill */
+  .mode-btn.active {
+    background: var(--sk-accent);
+    color: var(--sk-on-accent);
+    font-weight: 600;
+  }
+
+  .mode-btn:not(.active):hover:not(:disabled) {
+    background: rgba(var(--marble-vein-rgb), 0.05);
+  }
+
+  .mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+</style>

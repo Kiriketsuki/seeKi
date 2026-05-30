@@ -425,17 +425,25 @@ pub fn build_config_toml(
 ) -> Result<String, String> {
     let mut root = toml::value::Table::new();
 
+    // Normalize empties — the frontend may POST `""` / `0` when the user
+    // doesn't override the defaults, and serde's `#[serde(default)]` only
+    // fires for missing fields, not empty ones.
+    let host = if req.server.host.trim().is_empty() {
+        default_host()
+    } else {
+        req.server.host.clone()
+    };
+    let port = if req.server.port == 0 {
+        default_port()
+    } else {
+        req.server.port
+    };
+
     root.insert(
         "server".to_string(),
         toml::Value::Table(toml::value::Table::from_iter([
-            (
-                "host".to_string(),
-                toml::Value::String(req.server.host.clone()),
-            ),
-            (
-                "port".to_string(),
-                toml::Value::Integer(req.server.port as i64),
-            ),
+            ("host".to_string(), toml::Value::String(host)),
+            ("port".to_string(), toml::Value::Integer(port as i64)),
         ])),
     );
 
@@ -1007,6 +1015,62 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["success"], false);
         assert!(json["error"].as_str().unwrap().contains("Unsupported"));
+    }
+
+    #[test]
+    fn build_config_toml_normalizes_empty_host_and_zero_port() {
+        // Regression test: the frontend may POST `host: ""` / `port: 0` when the user
+        // doesn't override defaults. serde's `#[serde(default)]` only fills in MISSING
+        // fields, not empty ones — so the write path must normalize these to the
+        // sentinel defaults or the resulting config will fail DNS resolution at startup.
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "".to_string(),
+                port: 0,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+                schemas: None,
+            },
+            ssh: None,
+            tables: None,
+            branding: None,
+        };
+
+        let toml_str = build_config_toml(&req, &None).expect("should build toml");
+        assert!(
+            toml_str.contains(r#"host = "127.0.0.1""#),
+            "empty host should be normalized to default; got:\n{toml_str}"
+        );
+        assert!(
+            toml_str.contains("port = 3141"),
+            "zero port should be normalized to default; got:\n{toml_str}"
+        );
+    }
+
+    #[test]
+    fn build_config_toml_normalizes_whitespace_only_host() {
+        let req = SaveConfigRequest {
+            server: SaveServerConfig {
+                host: "   ".to_string(),
+                port: 8080,
+            },
+            database: SaveDatabaseConfig {
+                kind: "postgres".to_string(),
+                url: "postgres://u:p@localhost/db".to_string(),
+                max_connections: 5,
+                schemas: None,
+            },
+            ssh: None,
+            tables: None,
+            branding: None,
+        };
+
+        let toml_str = build_config_toml(&req, &None).expect("should build toml");
+        assert!(toml_str.contains(r#"host = "127.0.0.1""#));
+        assert!(toml_str.contains("port = 8080"));
     }
 
     #[tokio::test]

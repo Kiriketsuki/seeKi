@@ -9,38 +9,54 @@
   import type { VNode } from '@revolist/revogrid';
   import type {
     ColumnInfo,
+    DateFormatPreference,
     FilterState,
-    SortDirection,
     SortState,
   } from '../lib/types';
+  import { onMount } from 'svelte';
   import {
     buildSortableColumn,
+    cycleSort,
     formatCellValue,
     getColumnDisplayName,
+    replaceSort,
     sortStateToConfig,
   } from '../lib/data-grid';
+  import { SKELETON_ROW_MARKER } from '../lib/infinite-scroll';
 
   let {
     columns = [],
     rows = [],
-    sortState,
+    dateFormat = 'system',
+    sortState = [],
     filters = {},
     filtersVisible = false,
+    fetchingMore = false,
+    resetSignal = 0,
     onSortChange,
     onFilterChange,
+    onNearBottom,
+    onRetryAppend,
   }: {
     columns: ColumnInfo[];
     rows: Record<string, unknown>[];
-    sortState: SortState;
+    dateFormat?: DateFormatPreference;
+    sortState?: SortState;
     filters?: FilterState;
     filtersVisible?: boolean;
-    onSortChange?: (column: string, direction: SortDirection | null) => void;
+    fetchingMore?: boolean;
+    resetSignal?: number;
+    onSortChange?: (nextSortState: SortState) => void;
     onFilterChange?: (column: string, value: string) => void;
+    onNearBottom?: () => void;
+    onRetryAppend?: () => void;
   } = $props();
+
+  let gridEl: HTMLDivElement | undefined = $state(undefined);
 
   type SortEventDetail = {
     column: ColumnRegular;
-    order?: SortDirection;
+    order?: 'asc' | 'desc';
     additive: boolean;
   };
 
@@ -48,6 +64,61 @@
     new Map(columns.map((column) => [column.name, column]))
   );
   let sorting = $derived(sortStateToConfig(sortState));
+
+  function findViewportScroll(): Element | null {
+    return (
+      gridEl?.querySelector('revogr-scroll-virtual.vertical') ??
+      gridEl?.querySelector('.vertical-inner.scroll-rgRow') ??
+      gridEl?.querySelector('revogr-viewport-scroll') ??
+      null
+    );
+  }
+
+  function handleScroll(event: Event) {
+    const el = event.target as Element;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 200) {
+      onNearBottom?.();
+    }
+  }
+
+  $effect(() => {
+    if (!gridEl) return;
+
+    let scrollEl: Element | null = null;
+
+    function tryAttach(): boolean {
+      scrollEl = findViewportScroll();
+      if (scrollEl) {
+        scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+        return true;
+      }
+      return false;
+    }
+
+    const observer = new MutationObserver(() => {
+      if (tryAttach()) observer.disconnect();
+    });
+
+    if (!tryAttach()) {
+      observer.observe(gridEl, { childList: true, subtree: true });
+    }
+
+    return () => {
+      observer.disconnect();
+      scrollEl?.removeEventListener('scroll', handleScroll);
+    };
+  });
+
+  $effect(() => {
+    // Track resetSignal — scroll to top whenever it changes (including on initial mount).
+    // The parent only increments this counter when a genuine reset occurs.
+    void resetSignal;
+    const scrollEl = findViewportScroll();
+    if (scrollEl) {
+      (scrollEl as HTMLElement).scrollTop = 0;
+    }
+  });
 
   function renderHeader(
     h: HyperFunc<VNode>,
@@ -61,11 +132,34 @@
     const filterValue = String(
       (props as ColumnTemplateProp & { filterValue?: string }).filterValue ?? ''
     );
-    const isSorted = props.order != null;
+    const activeSortIndex = sortState.findIndex(
+      (entry) => entry.column === String(props.prop)
+    );
+    const activeOrder = activeSortIndex >= 0 ? sortState[activeSortIndex].direction : null;
+    const isSorted = activeOrder != null;
+    const sortRank = activeSortIndex >= 0 ? activeSortIndex + 1 : null;
+    const sortAriaLabel =
+      activeOrder != null
+        ? sortState.length > 1 && sortRank != null
+          ? `Sort ${activeOrder === 'asc' ? 'ascending' : 'descending'}, priority ${sortRank} of ${sortState.length}`
+          : `Sort ${activeOrder === 'asc' ? 'ascending' : 'descending'}`
+        : undefined;
 
-    const ariaSortValue = props.order === 'asc'
+    // `aria-sort="ascending"` on multiple columns is ambiguous; add a visually-hidden
+    // text node inside the header so screen readers announce which position this column
+    // holds in the sort stack (primary, secondary, etc.).
+    const priorityAnnouncement =
+      isSorted && sortRank != null && sortState.length > 1
+        ? sortRank === 1
+          ? 'Primary sort.'
+          : sortRank === 2
+            ? 'Secondary sort.'
+            : `Sort priority ${sortRank} of ${sortState.length}.`
+        : null;
+
+    const ariaSortValue = activeOrder === 'asc'
       ? 'ascending'
-      : props.order === 'desc'
+      : activeOrder === 'desc'
         ? 'descending'
         : undefined;
 
@@ -89,21 +183,37 @@
           },
           [
             h('span', { class: { 'sk-grid-header__label': true } }, label),
-            h(
-              'span',
-              {
-                class: {
-                  'sk-grid-header__sort': true,
-                  'is-active': isSorted,
-              },
-              'aria-hidden': 'true',
-            },
-              props.order === 'asc'
-                ? '▲'
-                : props.order === 'desc'
-                  ? '▼'
-                  : ''
-            ),
+            priorityAnnouncement
+              ? h('span', { class: { 'sk-sr-only': true } }, priorityAnnouncement)
+              : null,
+            isSorted
+              ? h(
+                  'span',
+                  {
+                    class: {
+                      'sk-grid-header__sort': true,
+                      'is-active': true,
+                    },
+                    role: 'img',
+                    ...(sortAriaLabel ? { 'aria-label': sortAriaLabel, title: sortAriaLabel } : {}),
+                  },
+                  [
+                    h('span', { 'aria-hidden': 'true' }, activeOrder === 'asc' ? '↑' : '↓'),
+                    sortRank != null && sortState.length > 1
+                      ? h(
+                          'sup',
+                          {
+                            class: {
+                              'sk-grid-header__sort-rank': true,
+                            },
+                            'aria-hidden': 'true',
+                          },
+                          String(sortRank)
+                        )
+                      : null,
+                  ]
+                )
+              : null,
           ]
         ),
         showFilters
@@ -136,6 +246,33 @@
     h: HyperFunc<VNode>,
     props: CellTemplateProp,
   ): VNode {
+    const model = props.model as Record<string | symbol, unknown> | undefined;
+    const markerVal = model?.[SKELETON_ROW_MARKER];
+
+    if (markerVal === 'skeleton') {
+      return h('div', { class: { 'sk-skeleton-cell': true } }, [
+        h('div', { class: { 'sk-skeleton-shimmer': true } }, ''),
+      ]);
+    }
+
+    if (markerVal === 'error') {
+      const isFirstCol = (props as CellTemplateProp & { colIndex?: number }).colIndex === 0;
+      if (isFirstCol) {
+        return h('div', { class: { 'sk-error-cell': true } }, [
+          h('span', { class: { 'sk-error-cell__msg': true } }, 'Failed to load'),
+          h(
+            'button',
+            {
+              class: { 'sk-error-cell__retry': true },
+              onclick: (e: Event) => { e.stopPropagation(); onRetryAppend?.(); },
+            },
+            'Retry',
+          ),
+        ]);
+      }
+      return h('div', { class: { 'sk-error-cell': true } }, '');
+    }
+
     const info = columnsByName.get(String(props.prop));
     if (!info) {
       return h(
@@ -145,7 +282,16 @@
       );
     }
 
-    const formatted = formatCellValue(info, props.value);
+    const formatted = formatCellValue(info, props.value, dateFormat);
+
+    // Determine column-level alignment from data type so every cell in the column
+    // (including nulls) lines up consistently regardless of the individual value.
+    const colType = info.data_type;
+    const isNumericCol =
+      colType === 'smallint' || colType === 'integer' || colType === 'bigint' ||
+      colType === 'real' || colType === 'double precision' || colType === 'numeric' ||
+      colType === 'money';
+    const isBooleanCol = colType === 'boolean';
 
     if (formatted.kind === 'null') {
       return h(
@@ -154,9 +300,13 @@
           class: {
             'sk-grid-cell': true,
             'sk-grid-cell--null': true,
+            // Null cells inherit the column's alignment so the hatch pill
+            // sits on the same side as the other data in the column.
+            'sk-grid-cell--number': isNumericCol,
+            'sk-grid-cell--boolean': isBooleanCol,
           },
         },
-        formatted.display
+        [h('span', { class: { 'sk-null-pill': true } }, 'NULL')]
       );
     }
 
@@ -185,7 +335,9 @@
       {
         class: {
           'sk-grid-cell': true,
-          'sk-grid-cell--number': formatted.kind === 'number',
+          // Use column-level isNumericCol so non-finite values (NaN/Infinity)
+          // that fall through as kind:'text' still right-align with finite siblings.
+          'sk-grid-cell--number': isNumericCol,
           'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
         },
         title: formatted.tooltip,
@@ -197,28 +349,16 @@
   function handleBeforeSorting(event: CustomEvent<SortEventDetail>) {
     event.preventDefault();
     const column = String(event.detail.column.prop);
-
-    // RevoGrid's internal cycle doesn't advance when we preventDefault(),
-    // so we implement our own: unsorted → asc → desc → unsorted
-    let nextDirection: SortDirection | null;
-    if (sortState.column !== column) {
-      nextDirection = 'asc';
-    } else if (sortState.direction === 'asc') {
-      nextDirection = 'desc';
-    } else if (sortState.direction === 'desc') {
-      nextDirection = null;
-    } else {
-      nextDirection = 'asc';
-    }
-
-    onSortChange?.(column, nextDirection);
+    const next = event.detail.additive
+      ? cycleSort(sortState, column)
+      : replaceSort(sortState, column);
+    onSortChange?.(next);
   }
 
   let gridColumns: ColumnRegular[] = $derived(
     columns.map((column) =>
       buildSortableColumn(column, {
-        order:
-          sortState.column === column.name ? sortState.direction ?? undefined : undefined,
+        order: sortState.find((entry) => entry.column === column.name)?.direction,
         filterValue: filters[column.name] ?? '',
         showFilters: filtersVisible,
         columnTemplate: renderHeader,
@@ -228,7 +368,7 @@
   );
 </script>
 
-<div class="grid-card" class:filters-visible={filtersVisible}>
+<div id="data-grid" class="grid-card" class:filters-visible={filtersVisible} bind:this={gridEl}>
   <RevoGrid
     columns={gridColumns}
     source={rows}
@@ -241,36 +381,65 @@
 </div>
 
 <style>
+  /* ─── Grid card shell ──────────────────────────────────────────────────────── */
   .grid-card {
     background: var(--sk-glass-grid);
     backdrop-filter: var(--sk-glass-grid-blur);
     -webkit-backdrop-filter: var(--sk-glass-grid-blur);
-    border: 1px solid var(--sk-border-light);
+    border: 1px solid var(--sk-border);
     border-radius: var(--sk-radius-lg);
-    box-shadow: var(--sk-shadow-card);
+    box-shadow: var(--sk-shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.55);
     overflow: hidden;
     height: 100%;
   }
 
+  /* ─── RevoGrid CSS-variable overrides ─────────────────────────────────────── */
   .grid-card :global(revo-grid) {
     --revo-grid-background: transparent;
-    --revo-grid-header-bg: rgba(255, 255, 255, 0.6);
-    --revo-grid-header-color: var(--sk-text);
-    --revo-grid-header-border: rgba(47, 72, 88, 0.08);
-    --revo-grid-cell-border: rgba(47, 72, 88, 0.06);
-    --revo-grid-row-hover: rgba(0, 169, 165, 0.08);
-    --revo-grid-text: var(--sk-text);
-    --revo-grid-focused-bg: rgba(0, 169, 165, 0.08);
+    /* Header: opaque frosted marble-frost slab — scrolling rows NEVER bleed through */
+    --revo-grid-header-bg: transparent;
+    --revo-grid-header-color: var(--sk-ink-strong);
+    --revo-grid-header-border: rgba(var(--sk-ink-rgb), 0.14);
+    --revo-grid-cell-border: var(--sk-border-lighter);
+    --revo-grid-row-hover: rgba(var(--sk-accent-active-rgb), 0.08);
+    --revo-grid-text: var(--sk-ink);
+    --revo-grid-focused-bg: rgba(var(--sk-accent-active-rgb), 0.10);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
+    color: var(--sk-ink);
   }
 
+  /*
+   * Sticky frosted marble-frost header slab. Applied via :global so it targets
+   * the shadow-DOM header element inside revo-grid. The gradient + backdrop-filter
+   * ensures scrolling rows never bleed through (matches kit.css .sk-grid-table thead th).
+   * A low-alpha vein wash (6–10%) is layered on top of the frost base so the header
+   * re-tones across data-palette presets — deepvein reads visibly deeper/cooler while
+   * alabaster stays light, without overwhelming the frosted-lift appearance.
+   */
+  .grid-card :global(revogr-header) {
+    background:
+      linear-gradient(180deg, rgba(var(--marble-vein-rgb), 0.06) 0%, rgba(var(--marble-vein-rgb), 0.10) 100%),
+      linear-gradient(180deg, rgba(var(--marble-frost-rgb), 0.93) 0%, rgba(var(--marble-frost-rgb), 0.88) 100%);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  }
+
+  /*
+   * Zebra rows — applied to the RevoGrid odd row via CSS. RevoGrid uses its own
+   * row class; we override its background on even data rows to match --sk-row-alt.
+   */
+  .grid-card :global(revogr-data .rgRow:nth-child(even) .rgCell) {
+    background: var(--sk-row-alt);
+  }
+
+  /* ─── Column header ────────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-header) {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sk-grid-header-gap);
     width: 100%;
     color: inherit;
   }
@@ -278,29 +447,56 @@
   .grid-card :global(.sk-grid-header__top) {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: var(--sk-space-sm);
     width: 100%;
     min-height: 18px;
+    font-weight: 600;
+    color: var(--sk-ink-strong);
+    letter-spacing: 0.005em;
   }
 
   .grid-card :global(.sk-grid-header__label) {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* Sort arrow — muted when no active sort */
   .grid-card :global(.sk-grid-header__sort) {
-    min-width: 1ch;
-    color: var(--sk-muted);
-    font-size: 10px;
+    flex: 0 0 auto;
+    color: var(--sk-ink-muted);
+    font-size: var(--sk-font-size-xs);
+    display: inline-flex;
+    align-items: flex-start;
   }
 
+  /* Active sort arrow — amber (count accent = selection/attention per token semantics) */
   .grid-card :global(.sk-grid-header__sort.is-active) {
-    color: var(--sk-accent);
+    color: var(--sk-accent-count);
   }
 
+  .grid-card :global(.sk-sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .grid-card :global(.sk-grid-header__sort-rank) {
+    font-size: 0.7em;
+    line-height: 1;
+    vertical-align: super;
+  }
+
+  /* ─── Per-column filter row ────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-filter) {
     width: 100%;
   }
@@ -309,24 +505,25 @@
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-sm);
-    background: rgba(255, 255, 255, 0.8);
-    color: var(--sk-text);
+    background: var(--sk-glass-input);
+    color: var(--sk-ink);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     line-height: 1.3;
-    padding: 4px 8px;
+    padding: var(--sk-grid-filter-padding-y) var(--sk-grid-filter-padding-x);
     outline: none;
   }
 
   .grid-card :global(.sk-grid-filter__input:focus) {
-    border-color: rgba(0, 169, 165, 0.45);
-    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+    border-color: var(--sk-ring-border);
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
   }
 
   .grid-card :global(.sk-grid-filter__input::placeholder) {
-    color: var(--sk-muted);
+    color: var(--sk-ink-muted);
   }
 
+  /* ─── Data cells ───────────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-cell) {
     display: flex;
     align-items: center;
@@ -335,58 +532,142 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    color: var(--sk-ink);
+    /* Default: left-aligned text */
+    justify-content: flex-start;
   }
 
+  /* Numeric columns: right-aligned, tabular figures */
   .grid-card :global(.sk-grid-cell--number) {
     justify-content: flex-end;
+    /* text-align mirrors justify-content so getComputedStyle reports 'right' (e2e: data-grid.spec.ts:448) */
+    text-align: right;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
+  /* Timestamp columns: secondary color, tabular figures, left-aligned */
   .grid-card :global(.sk-grid-cell--timestamp) {
-    color: var(--sk-secondary-strong);
+    color: var(--sk-ink-soft);
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
+  /* Boolean columns: center-aligned */
   .grid-card :global(.sk-grid-cell--boolean) {
     justify-content: center;
   }
 
+  /*
+   * NULL cells: hatched pill. Alignment is inherited from sibling column-type classes
+   * (e.g. sk-grid-cell--number) — a null in a numeric column still right-aligns.
+   * The display rule below keeps the block non-empty so linters don't flag it.
+   */
   .grid-card :global(.sk-grid-cell--null) {
-    justify-content: center;
-    border-radius: var(--sk-radius-sm);
-    background-image: var(--sk-null-hatch);
-    color: var(--sk-muted);
-    font-style: italic;
+    display: flex; /* inherited from .sk-grid-cell; explicit here to satisfy lint */
   }
 
+  .grid-card :global(.sk-null-pill) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 10px;
+    border-radius: var(--sk-radius-sm);
+    background-image: var(--sk-null-hatch);
+    color: var(--sk-ink-muted);
+    font-style: italic;
+    font-size: var(--sk-font-size-sm);
+  }
+
+  /* ─── Boolean badges ───────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-badge) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 42px;
-    padding: 2px 8px;
-    border-radius: 999px;
+    min-width: 50px;
+    padding: var(--sk-grid-badge-padding-y) var(--sk-grid-badge-padding-x);
+    border-radius: var(--sk-radius-pill);
     font-size: var(--sk-font-size-sm);
     font-weight: 600;
     line-height: 1.4;
   }
 
   .grid-card :global(.sk-grid-badge.is-true) {
-    background: rgba(22, 163, 74, 0.12);
+    background: rgba(var(--sk-boolean-true-rgb), 0.12);
     color: var(--sk-boolean-true);
   }
 
   .grid-card :global(.sk-grid-badge.is-false) {
-    background: rgba(220, 38, 38, 0.12);
+    background: rgba(var(--sk-boolean-false-rgb), 0.12);
     color: var(--sk-boolean-false);
   }
 
+  /* ─── Skeleton loading cells ───────────────────────────────────────────────── */
+  .grid-card :global(.sk-skeleton-cell) {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0 var(--sk-space-sm);
+  }
+
+  .grid-card :global(.sk-skeleton-shimmer) {
+    width: 70%;
+    height: 12px;
+    border-radius: var(--sk-radius-sm);
+    background: linear-gradient(
+      90deg,
+      rgba(var(--sk-ink-rgb), 0.06) 25%,
+      rgba(var(--sk-ink-rgb), 0.12) 50%,
+      rgba(var(--sk-ink-rgb), 0.06) 75%
+    );
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ─── Error / retry cells ──────────────────────────────────────────────────── */
+  .grid-card :global(.sk-error-cell) {
+    display: flex;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    width: 100%;
+    height: 100%;
+    padding: 0 var(--sk-space-sm);
+  }
+
+  .grid-card :global(.sk-error-cell__msg) {
+    color: var(--sk-danger);
+    font-size: var(--sk-font-size-sm);
+  }
+
+  .grid-card :global(.sk-error-cell__retry) {
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
+    border-radius: var(--sk-radius-sm);
+    background: rgba(var(--sk-danger-rgb), 0.06);
+    color: var(--sk-danger);
+    padding: 2px var(--sk-space-sm);
+    font: inherit;
+    font-size: var(--sk-font-size-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .grid-card :global(.sk-error-cell__retry:hover) {
+    background: rgba(var(--sk-danger-rgb), 0.12);
+  }
+
+  /* ─── Filter-visible header height fix ────────────────────────────────────── */
   .filters-visible :global(revo-grid[theme='compact'] revogr-header) {
     line-height: normal;
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header .header-rgRow) {
-    height: 72px;
+    height: var(--sk-grid-filter-header-height);
   }
 
   .filters-visible :global(revo-grid[theme='compact'] revogr-header .rgHeaderCell) {

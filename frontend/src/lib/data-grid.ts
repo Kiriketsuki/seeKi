@@ -1,5 +1,5 @@
 import type { ColumnRegular } from '@revolist/svelte-datagrid';
-import type { ColumnInfo, SortState } from './types';
+import type { ColumnInfo, DateFormatPreference, SortDirection, SortState } from './types';
 
 const INTEGER_TYPES = new Set([
   'smallint',
@@ -15,8 +15,11 @@ const NUMBER_TYPES = new Set([
 
 // Types where the backend sends a full-precision string to avoid JS float truncation.
 // Display as right-aligned numbers with tabular-nums but skip Number() casting.
+// 'money' included here so non-null money values right-align (kind:'number') to match
+// null money cells already right-aligned via isNumericCol in DataGrid.svelte.
 const NUMERIC_TEXT_TYPES = new Set([
   'numeric',
+  'money',
 ]);
 
 const DATE_ONLY_TYPES = new Set([
@@ -39,6 +42,11 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: 'short',
   day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
 });
@@ -83,14 +91,42 @@ export function columnWidth(col: ColumnInfo): number {
 
 export function sortStateToConfig(
   sortState: SortState,
-): Record<string, SortState['direction']> | undefined {
-  if (!sortState.column || !sortState.direction) {
+): Record<string, SortDirection> | undefined {
+  if (sortState.length === 0) {
     return undefined;
   }
 
-  return {
-    [sortState.column]: sortState.direction,
-  };
+  return Object.fromEntries(
+    sortState.map((entry) => [entry.column, entry.direction]),
+  ) as Record<string, SortDirection>;
+}
+
+export function cycleSort(sortState: SortState, column: string): SortState {
+  const index = sortState.findIndex((entry) => entry.column === column);
+
+  if (index === -1) {
+    return [{ column, direction: 'asc' }, ...sortState];
+  }
+
+  const current = sortState[index];
+  if (current.direction === 'asc') {
+    return [
+      { column, direction: 'desc' },
+      ...sortState.slice(0, index),
+      ...sortState.slice(index + 1),
+    ];
+  }
+
+  return sortState.filter((entry) => entry.column !== column);
+}
+
+// Single-column cycle: replaces any existing multi-sort with a cycle of just this column.
+// Used for non-shift clicks so users can return to a single-column sort after stacking.
+export function replaceSort(sortState: SortState, column: string): SortState {
+  const current = sortState.find((entry) => entry.column === column);
+  if (!current) return [{ column, direction: 'asc' }];
+  if (current.direction === 'asc') return [{ column, direction: 'desc' }];
+  return [];
 }
 
 export function getColumnDisplayName(column: ColumnInfo): string {
@@ -100,6 +136,7 @@ export function getColumnDisplayName(column: ColumnInfo): string {
 export function formatCellValue(
   column: ColumnInfo,
   value: unknown,
+  dateFormat: DateFormatPreference = 'system',
 ): FormattedCellValue {
   if (value == null) {
     return {
@@ -126,7 +163,7 @@ export function formatCellValue(
     if (!Number.isNaN(parsed.getTime())) {
       return {
         kind: 'timestamp',
-        display: dateFormatter.format(parsed),
+        display: formatDate(parsed, dateFormat),
         tooltip: raw,
       };
     }
@@ -143,7 +180,7 @@ export function formatCellValue(
     if (!Number.isNaN(parsed.getTime())) {
       return {
         kind: 'timestamp',
-        display: formatter.format(parsed),
+        display: formatDateTime(parsed, dateFormat),
         tooltip: raw,
       };
     }
@@ -171,6 +208,35 @@ export function formatCellValue(
     kind: 'text',
     display: String(value),
   };
+}
+
+function formatDate(date: Date, dateFormat: DateFormatPreference): string {
+  if (dateFormat === 'system') {
+    return dateFormatter.format(date);
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  switch (dateFormat) {
+    case 'YYYY-MM-DD':
+      return `${year}-${month}-${day}`;
+    case 'DD/MM/YYYY':
+      return `${day}/${month}/${year}`;
+    case 'MM/DD/YYYY':
+      return `${month}/${day}/${year}`;
+    default:
+      return dateFormatter.format(date);
+  }
+}
+
+function formatDateTime(date: Date, dateFormat: DateFormatPreference): string {
+  if (dateFormat === 'system') {
+    return formatter.format(date);
+  }
+
+  return `${formatDate(date, dateFormat)} ${timeFormatter.format(date)}`;
 }
 
 export function buildSortableColumn(
