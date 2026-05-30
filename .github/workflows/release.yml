@@ -353,13 +353,45 @@ jobs:
             git push origin "$TAG_NAME"
           fi
 
+      - name: Generate changelog with git-cliff
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --github-repo "${{ github.repository }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose release body
+        id: release-body
+        env:
+          SEEKI_BODY: ${{ needs.metadata.outputs.release_body }}
+          CLIFF_CONTENT: ${{ steps.git-cliff.outputs.content }}
+        run: |
+          set -euo pipefail
+
+          BODY_FILE="$(mktemp)"
+          printf '%s\n' "$SEEKI_BODY" > "$BODY_FILE"
+
+          # Append the git-cliff curated changelog when it produced content.
+          if [ -n "${CLIFF_CONTENT//[[:space:]]/}" ]; then
+            {
+              echo
+              echo "## Changelog"
+              echo
+              printf '%s\n' "$CLIFF_CONTENT"
+            } >> "$BODY_FILE"
+          fi
+
+          echo "body_path=$BODY_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.metadata.outputs.tag_name }}
           target_commitish: ${{ needs.metadata.outputs.target_sha }}
           name: ${{ needs.metadata.outputs.release_name }}
-          body: ${{ needs.metadata.outputs.release_body }}
+          body_path: ${{ steps.release-body.outputs.body_path }}
           draft: false
           prerelease: ${{ needs.metadata.outputs.prerelease == 'true' }}
           fail_on_unmatched_files: true
