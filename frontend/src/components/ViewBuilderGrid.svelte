@@ -257,7 +257,7 @@
     justify-content: center;
     border: 1px dashed var(--sk-border-light);
     border-radius: var(--sk-radius-lg);
-    background: rgba(255, 255, 255, 0.6);
+    background: var(--sk-glass-input);
     color: var(--sk-secondary-strong);
     text-align: center;
     padding: var(--sk-space-xl);

@@ -103,7 +103,7 @@
     padding: 6px 12px 6px 8px;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.6);
+    background: var(--sk-glass-button);
     color: var(--sk-text);
     white-space: nowrap;
   }

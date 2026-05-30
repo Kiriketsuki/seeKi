@@ -748,7 +748,7 @@
     overflow: auto;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-lg);
-    background: rgba(255, 255, 255, 0.96);
+    background: var(--sk-glass-popup);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     box-shadow: var(--sk-shadow-pop);

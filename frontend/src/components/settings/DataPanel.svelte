@@ -115,7 +115,7 @@
     padding: var(--sk-space-xl);
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-lg);
-    background: rgba(255, 255, 255, 0.6);
+    background: var(--sk-glass-input);
     backdrop-filter: var(--sk-glass-grid-blur);
     -webkit-backdrop-filter: var(--sk-glass-grid-blur);
     box-shadow: var(--sk-shadow-card);
