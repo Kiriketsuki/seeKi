@@ -410,13 +410,14 @@
    * Sticky frosted marble-frost header slab. Applied via :global so it targets
    * the shadow-DOM header element inside revo-grid. The gradient + backdrop-filter
    * ensures scrolling rows never bleed through (matches kit.css .sk-grid-table thead th).
+   * A low-alpha vein wash (6–10%) is layered on top of the frost base so the header
+   * re-tones across data-palette presets — deepvein reads visibly deeper/cooler while
+   * alabaster stays light, without overwhelming the frosted-lift appearance.
    */
   .grid-card :global(revogr-header) {
-    background: linear-gradient(
-      180deg,
-      rgba(var(--marble-frost-rgb), 0.93) 0%,
-      rgba(var(--marble-frost-rgb), 0.88) 100%
-    );
+    background:
+      linear-gradient(180deg, rgba(var(--marble-vein-rgb), 0.06) 0%, rgba(var(--marble-vein-rgb), 0.10) 100%),
+      linear-gradient(180deg, rgba(var(--marble-frost-rgb), 0.93) 0%, rgba(var(--marble-frost-rgb), 0.88) 100%);
     backdrop-filter: blur(18px) saturate(1.4);
     -webkit-backdrop-filter: blur(18px) saturate(1.4);
   }
