@@ -331,14 +331,14 @@ jobs:
                       }
 
             - name: Comment on issue
-              if: (github.event.action == 'opened' || github.event.action == 'labeled') && github.event.issue.state == 'open' && steps.create-pr.outputs.result != 'null'
+              if: (github.event.action == 'opened' || github.event.action == 'labeled') && github.event.issue.state == 'open' && steps.create-pr.outputs.pr_number
               uses: actions/github-script@v8
               env:
                   BRANCH_NAME: ${{ env.BRANCH_NAME }}
                   BASE_BRANCH: ${{ env.BASE_BRANCH }}
                   BASE_SOURCE: ${{ env.BASE_SOURCE }}
                   BASE_OVERRIDE_MISSING: ${{ env.BASE_OVERRIDE_MISSING }}
-                  PR_NUMBER: ${{ steps.create-pr.outputs.result }}
+                  PR_NUMBER: ${{ steps.create-pr.outputs.pr_number }}
               with:
                   script: |
                       const branchName = process.env.BRANCH_NAME;
@@ -379,7 +379,7 @@ jobs:
                         issue_number: context.issue.number,
                         owner: context.repo.owner,
                         repo: context.repo.repo,
-                        assignees: ['Kiriketsuki']
+                        assignees: ['${{ vars.ISSUE_ASSIGNEE || github.repository_owner }}']
                       });
 
             - name: Handle issue close

@@ -12,6 +12,7 @@ on:
                     - major
                     - minor
                     - patch
+                    - hotfix
                     - exact
             exact_version:
                 description: "Exact version (only used when bump_type is 'exact')"
@@ -69,6 +70,7 @@ jobs:
                     MAJOR="${BASH_REMATCH[2]}"
                     MINOR="${BASH_REMATCH[3]}"
                     PATCH="${BASH_REMATCH[4]}"
+                    SUFFIX="${BASH_REMATCH[5]}"
                   else
                     echo "Error: Invalid version format: $CURRENT"
                     exit 1
@@ -94,6 +96,28 @@ jobs:
                     patch)
                       PATCH=$((PATCH + 1))
                       NEW_VERSION="$YY.$MAJOR.$MINOR.$PATCH"
+                      ;;
+                    hotfix)
+                      if [ -z "$SUFFIX" ]; then
+                        SUFFIX="a"
+                      else
+                        # Increment suffix as base-26: a..z, aa..az, ba..zz, aaa...
+                        SUFFIX=$(python3 -c "
+                  def inc(s):
+                      chars = list(s)
+                      i = len(chars) - 1
+                      while i >= 0:
+                          if chars[i] == 'z':
+                              chars[i] = 'a'
+                              i -= 1
+                          else:
+                              chars[i] = chr(ord(chars[i]) + 1)
+                              return ''.join(chars)
+                      return 'a' + ''.join(chars)
+                  print(inc('$SUFFIX'))
+                  ")
+                      fi
+                      NEW_VERSION="$YY.$MAJOR.$MINOR.$PATCH$SUFFIX"
                       ;;
                   esac
 
