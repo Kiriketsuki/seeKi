@@ -284,6 +284,14 @@
 
     const formatted = formatCellValue(info, props.value, dateFormat);
 
+    // Determine column-level alignment from data type so every cell in the column
+    // (including nulls) lines up consistently regardless of the individual value.
+    const colType = info.data_type;
+    const isNumericCol =
+      colType === 'smallint' || colType === 'integer' || colType === 'bigint' ||
+      colType === 'real' || colType === 'double precision' || colType === 'numeric';
+    const isBooleanCol = colType === 'boolean';
+
     if (formatted.kind === 'null') {
       return h(
         'div',
@@ -291,9 +299,13 @@
           class: {
             'sk-grid-cell': true,
             'sk-grid-cell--null': true,
+            // Null cells inherit the column's alignment so the hatch pill
+            // sits on the same side as the other data in the column.
+            'sk-grid-cell--number': isNumericCol,
+            'sk-grid-cell--boolean': isBooleanCol,
           },
         },
-        formatted.display
+        [h('span', { class: { 'sk-null-pill': true } }, 'NULL')]
       );
     }
 
@@ -366,30 +378,58 @@
 </div>
 
 <style>
+  /* ─── Grid card shell ──────────────────────────────────────────────────────── */
   .grid-card {
     background: var(--sk-glass-grid);
     backdrop-filter: var(--sk-glass-grid-blur);
     -webkit-backdrop-filter: var(--sk-glass-grid-blur);
-    border: 1px solid var(--sk-border-light);
+    border: 1px solid var(--sk-border);
     border-radius: var(--sk-radius-lg);
-    box-shadow: var(--sk-shadow-card);
+    box-shadow: var(--sk-shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.55);
     overflow: hidden;
     height: 100%;
   }
 
+  /* ─── RevoGrid CSS-variable overrides ─────────────────────────────────────── */
   .grid-card :global(revo-grid) {
     --revo-grid-background: transparent;
-    --revo-grid-header-bg: rgba(255, 255, 255, 0.6);
-    --revo-grid-header-color: var(--sk-text);
-    --revo-grid-header-border: rgba(47, 72, 88, 0.08);
-    --revo-grid-cell-border: rgba(47, 72, 88, 0.06);
-    --revo-grid-row-hover: rgba(0, 169, 165, 0.08);
-    --revo-grid-text: var(--sk-text);
-    --revo-grid-focused-bg: rgba(0, 169, 165, 0.08);
+    /* Header: opaque frosted marble-frost slab — scrolling rows NEVER bleed through */
+    --revo-grid-header-bg: transparent;
+    --revo-grid-header-color: var(--sk-ink-strong);
+    --revo-grid-header-border: rgba(var(--sk-ink-rgb), 0.14);
+    --revo-grid-cell-border: var(--sk-border-lighter);
+    --revo-grid-row-hover: rgba(var(--sk-accent-active-rgb), 0.08);
+    --revo-grid-text: var(--sk-ink);
+    --revo-grid-focused-bg: rgba(var(--sk-accent-active-rgb), 0.10);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
+    color: var(--sk-ink);
   }
 
+  /*
+   * Sticky frosted marble-frost header slab. Applied via :global so it targets
+   * the shadow-DOM header element inside revo-grid. The gradient + backdrop-filter
+   * ensures scrolling rows never bleed through (matches kit.css .sk-grid-table thead th).
+   */
+  .grid-card :global(revogr-header) {
+    background: linear-gradient(
+      180deg,
+      rgba(var(--marble-frost-rgb), 0.93) 0%,
+      rgba(var(--marble-frost-rgb), 0.88) 100%
+    );
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  }
+
+  /*
+   * Zebra rows — applied to the RevoGrid odd row via CSS. RevoGrid uses its own
+   * row class; we override its background on even data rows to match --sk-row-alt.
+   */
+  .grid-card :global(revogr-data .rgRow:nth-child(even) .rgCell) {
+    background: var(--sk-row-alt);
+  }
+
+  /* ─── Column header ────────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-header) {
     display: flex;
     flex-direction: column;
@@ -407,6 +447,9 @@
     gap: var(--sk-space-sm);
     width: 100%;
     min-height: 18px;
+    font-weight: 600;
+    color: var(--sk-ink-strong);
+    letter-spacing: 0.005em;
   }
 
   .grid-card :global(.sk-grid-header__label) {
@@ -417,14 +460,18 @@
     white-space: nowrap;
   }
 
+  /* Sort arrow — muted when no active sort */
   .grid-card :global(.sk-grid-header__sort) {
     flex: 0 0 auto;
-    color: var(--sk-muted);
+    color: var(--sk-ink-muted);
     font-size: var(--sk-font-size-xs);
+    display: inline-flex;
+    align-items: flex-start;
   }
 
+  /* Active sort arrow — amber (count accent = selection/attention per token semantics) */
   .grid-card :global(.sk-grid-header__sort.is-active) {
-    color: var(--sk-accent);
+    color: var(--sk-accent-count);
   }
 
   .grid-card :global(.sk-sr-only) {
@@ -440,11 +487,12 @@
   }
 
   .grid-card :global(.sk-grid-header__sort-rank) {
-    font-size: 0.75em;
+    font-size: 0.7em;
     line-height: 1;
     vertical-align: super;
   }
 
+  /* ─── Per-column filter row ────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-filter) {
     width: 100%;
   }
@@ -453,8 +501,8 @@
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-sm);
-    background: rgba(255, 255, 255, 0.8);
-    color: var(--sk-text);
+    background: var(--sk-glass-input);
+    color: var(--sk-ink);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     line-height: 1.3;
@@ -463,14 +511,15 @@
   }
 
   .grid-card :global(.sk-grid-filter__input:focus) {
-    border-color: rgba(0, 169, 165, 0.45);
-    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+    border-color: var(--sk-ring-border);
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
   }
 
   .grid-card :global(.sk-grid-filter__input::placeholder) {
-    color: var(--sk-muted);
+    color: var(--sk-ink-muted);
   }
 
+  /* ─── Data cells ───────────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-cell) {
     display: flex;
     align-items: center;
@@ -479,35 +528,56 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    color: var(--sk-ink);
+    /* Default: left-aligned text */
+    justify-content: flex-start;
   }
 
+  /* Numeric columns: right-aligned, tabular figures */
   .grid-card :global(.sk-grid-cell--number) {
     justify-content: flex-end;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
+  /* Timestamp columns: secondary color, tabular figures, left-aligned */
   .grid-card :global(.sk-grid-cell--timestamp) {
-    color: var(--sk-secondary-strong);
+    color: var(--sk-ink-soft);
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
+  /* Boolean columns: center-aligned */
   .grid-card :global(.sk-grid-cell--boolean) {
     justify-content: center;
   }
 
+  /*
+   * NULL cells: hatched pill (column alignment is inherited from the column-type
+   * classes above — a null in a numeric column still right-aligns).
+   */
   .grid-card :global(.sk-grid-cell--null) {
-    justify-content: center;
-    border-radius: var(--sk-radius-sm);
-    background-image: var(--sk-null-hatch);
-    color: var(--sk-muted);
-    font-style: italic;
+    /* alignment comes from sibling column-type class — no justify-content override here */
   }
 
+  .grid-card :global(.sk-null-pill) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 10px;
+    border-radius: var(--sk-radius-sm);
+    background-image: var(--sk-null-hatch);
+    color: var(--sk-ink-muted);
+    font-style: italic;
+    font-size: var(--sk-font-size-sm);
+  }
+
+  /* ─── Boolean badges ───────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-badge) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 42px;
+    min-width: 50px;
     padding: var(--sk-grid-badge-padding-y) var(--sk-grid-badge-padding-x);
     border-radius: var(--sk-radius-pill);
     font-size: var(--sk-font-size-sm);
@@ -525,6 +595,7 @@
     color: var(--sk-boolean-false);
   }
 
+  /* ─── Skeleton loading cells ───────────────────────────────────────────────── */
   .grid-card :global(.sk-skeleton-cell) {
     display: flex;
     align-items: center;
@@ -539,9 +610,9 @@
     border-radius: var(--sk-radius-sm);
     background: linear-gradient(
       90deg,
-      rgba(47, 72, 88, 0.06) 25%,
-      rgba(47, 72, 88, 0.12) 50%,
-      rgba(47, 72, 88, 0.06) 75%
+      rgba(var(--sk-ink-rgb), 0.06) 25%,
+      rgba(var(--sk-ink-rgb), 0.12) 50%,
+      rgba(var(--sk-ink-rgb), 0.06) 75%
     );
     background-size: 200% 100%;
     animation: sk-shimmer 1.4s ease-in-out infinite;
@@ -552,6 +623,7 @@
     100% { background-position: -200% 0; }
   }
 
+  /* ─── Error / retry cells ──────────────────────────────────────────────────── */
   .grid-card :global(.sk-error-cell) {
     display: flex;
     align-items: center;
@@ -562,7 +634,7 @@
   }
 
   .grid-card :global(.sk-error-cell__msg) {
-    color: #b91c1c;
+    color: var(--sk-danger);
     font-size: var(--sk-font-size-sm);
   }
 
@@ -570,7 +642,7 @@
     border: 1px solid rgba(185, 28, 28, 0.3);
     border-radius: var(--sk-radius-sm);
     background: rgba(185, 28, 28, 0.06);
-    color: #b91c1c;
+    color: var(--sk-danger);
     padding: 2px var(--sk-space-sm);
     font: inherit;
     font-size: var(--sk-font-size-sm);
@@ -582,6 +654,7 @@
     background: rgba(185, 28, 28, 0.12);
   }
 
+  /* ─── Filter-visible header height fix ────────────────────────────────────── */
   .filters-visible :global(revo-grid[theme='compact'] revogr-header) {
     line-height: normal;
   }

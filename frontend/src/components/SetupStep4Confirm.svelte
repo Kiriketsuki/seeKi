@@ -189,59 +189,71 @@
     display: flex;
     align-items: flex-start;
     gap: var(--sk-space-md);
-    background: rgba(220,38,38,0.07);
-    border: 1px solid rgba(220,38,38,0.2);
+    background: rgba(185, 28, 28, 0.07);
+    border: 1px solid rgba(185, 28, 28, 0.2);
     border-radius: var(--sk-radius-lg);
     padding: var(--sk-space-md) var(--sk-space-lg);
-    color: #991b1b;
+    color: var(--sk-danger);
   }
+
   .error-content { display: flex; flex-direction: column; gap: var(--sk-space-sm); flex: 1; }
   .error-msg { font-size: var(--sk-font-size-body); line-height: 1.4; }
+
   .btn-go-back {
     align-self: flex-start;
     padding: var(--sk-space-xs) var(--sk-space-md);
-    background: rgba(220,38,38,0.1);
-    border: 1px solid rgba(220,38,38,0.2);
+    background: rgba(185, 28, 28, 0.1);
+    border: 1px solid rgba(185, 28, 28, 0.2);
     border-radius: var(--sk-radius-sm);
     font-size: var(--sk-font-size-sm);
-    color: #991b1b;
+    color: var(--sk-danger);
     cursor: pointer;
     transition: background 0.15s;
   }
-  .btn-go-back:hover { background: rgba(220,38,38,0.16); }
 
+  .btn-go-back:hover { background: rgba(185, 28, 28, 0.16); }
+
+  /* sk-confirm-grid */
   .summary {
-    background: rgba(255,255,255,0.5);
-    border: 1px solid var(--sk-border);
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-lg);
     overflow: hidden;
+    box-shadow: var(--sk-shadow-card);
   }
+
+  /* sk-confirm-row */
   .summary-item {
     display: flex;
     gap: var(--sk-space-lg);
     align-items: baseline;
     padding: var(--sk-space-md) var(--sk-space-lg);
-    border-bottom: 1px solid var(--sk-border);
+    border-bottom: 1px solid var(--sk-border-light);
   }
+
   .summary-item:last-child { border-bottom: none; }
+
   .summary-label {
-    font-size: var(--sk-font-size-body);
+    font-size: var(--sk-font-size-sm);
     font-weight: 500;
     color: var(--sk-muted);
     min-width: 80px;
     flex-shrink: 0;
   }
+
   .summary-value {
     font-size: var(--sk-font-size-body);
     color: var(--sk-text);
   }
+
   .summary-value code {
     font-family: var(--sk-font-mono);
     font-size: var(--sk-font-size-sm);
-    background: rgba(47,72,88,0.06);
+    background: rgba(var(--marble-vein-rgb), 0.06);
     padding: var(--sk-space-xs) var(--sk-space-sm);
     border-radius: var(--sk-radius-sm);
   }
+
   .subtitle-preview { color: var(--sk-muted); }
   .muted { color: var(--sk-muted); font-style: italic; }
 
@@ -250,35 +262,45 @@
     align-items: center;
     justify-content: space-between;
   }
+
+  /* sk-btn-test (ghost back button) */
   .btn-back {
     padding: var(--sk-space-sm) var(--sk-space-lg);
-    background: transparent;
-    border: 1px solid rgba(47,72,88,0.14);
+    background: var(--sk-glass-button);
+    border: 1px solid var(--sk-border-input);
     border-radius: var(--sk-radius-md);
     font-size: var(--sk-font-size-body);
-    color: var(--sk-muted);
+    color: var(--sk-text);
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
-  .btn-back:hover:not(:disabled) { background: rgba(47,72,88,0.06); color: var(--sk-text); }
+
+  .btn-back:hover:not(:disabled) {
+    background: #fff;
+    border-color: rgba(var(--marble-active-rgb), 0.24);
+    box-shadow: var(--sk-shadow-card);
+  }
+
   .btn-back:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  /* sk-btn-next — amber CTA */
   .btn-save {
     display: inline-flex;
     align-items: center;
     gap: var(--sk-space-sm);
     padding: var(--sk-space-sm) var(--sk-space-2xl);
     background: var(--sk-accent);
-    color: white;
+    color: #fff;
     border: none;
     border-radius: var(--sk-radius-md);
     font-size: var(--sk-font-size-md);
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.15s, box-shadow 0.15s;
+    transition: opacity 0.15s ease, box-shadow 0.15s ease;
     box-shadow: var(--sk-shadow-accent);
   }
-  .btn-save:hover:not(:disabled) { opacity: 0.9; box-shadow: 0 4px 12px rgba(0,169,165,0.3); }
+
+  .btn-save:hover:not(:disabled) { opacity: 0.92; }
   .btn-save:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
 
   :global(.spin) { animation: spin 1s linear infinite; }

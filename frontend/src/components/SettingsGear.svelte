@@ -48,7 +48,7 @@
     right: -2px;
     width: 8px;
     height: 8px;
-    background: var(--sk-accent);
+    background: var(--sk-accent-count);
     border-radius: 50%;
     border: 1.5px solid var(--sk-bg);
     animation: badge-pulse 2s ease-in-out infinite;
@@ -56,10 +56,10 @@
 
   @keyframes badge-pulse {
     0%, 100% {
-      box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.4);
+      box-shadow: 0 0 0 0 rgba(var(--marble-count-rgb), 0.4);
     }
     50% {
-      box-shadow: 0 0 0 4px rgba(255, 149, 0, 0);
+      box-shadow: 0 0 0 4px rgba(var(--marble-count-rgb), 0);
     }
   }
 </style>

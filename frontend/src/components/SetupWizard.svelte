@@ -96,6 +96,7 @@
 </div>
 
 <style>
+  /* sk-wizard-overlay */
   .overlay {
     position: fixed;
     inset: 0;
@@ -109,6 +110,7 @@
     padding: var(--sk-space-lg);
   }
 
+  /* sk-wizard-card */
   .card {
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(24px);
@@ -120,12 +122,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-xl);
-    box-shadow: 0 24px 80px rgba(15,25,35,0.3), 0 4px 16px rgba(15,25,35,0.15);
+    box-shadow: 0 24px 80px rgba(15, 25, 35, 0.3), 0 4px 16px rgba(15, 25, 35, 0.15);
     max-height: calc(100vh - 48px);
     overflow-y: auto;
+    border: 1px solid var(--sk-border-light);
   }
 
-  /* Progress dots */
+  /* sk-progress */
   .progress {
     display: flex;
     align-items: center;
@@ -133,36 +136,44 @@
     justify-content: center;
   }
 
+  /* sk-dot */
   .dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     border: none;
-    background: rgba(47, 72, 88, 0.15);
+    background: rgba(var(--marble-vein-rgb), 0.15);
     padding: 0;
     transition: background 0.2s, transform 0.2s, width 0.2s;
     cursor: default;
   }
+
+  /* sk-dot.completed */
   .dot.completed {
     background: var(--sk-muted);
     cursor: pointer;
   }
+
   .dot.completed:hover {
     background: var(--sk-secondary-strong);
     transform: scale(1.2);
   }
+
+  /* sk-dot.current — amber pill */
   .dot.current {
     background: var(--sk-accent);
     width: 24px;
     border-radius: var(--sk-radius-sm);
   }
 
-  /* Step header */
+  /* sk-step-header */
   .step-header {
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-xs);
   }
+
+  /* sk-step-label */
   .step-label {
     margin: 0;
     font-size: var(--sk-font-size-sm);
@@ -171,6 +182,8 @@
     letter-spacing: 0.06em;
     font-weight: 500;
   }
+
+  /* sk-step-title */
   .step-title {
     margin: 0;
     font-size: var(--sk-font-size-xl);
@@ -179,7 +192,6 @@
     line-height: 1.2;
   }
 
-  /* Step content area */
   .step-content {
     flex: 1;
   }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { type Snippet } from 'svelte';
-  import { ChevronLeft, ChevronRight, LayoutGrid, Settings } from 'lucide-svelte';
+  import { ChevronLeft, LayoutGrid, Settings } from 'lucide-svelte';
   import { SIDEBAR_COLLAPSED_KEY } from '../lib/constants';
   import type { SidebarMode } from '../lib/types';
 
@@ -43,32 +43,36 @@
 
 <aside class="sidebar" class:collapsed data-testid="app-sidebar">
   <div class="header">
-    {#if !collapsed}
+    {#if collapsed}
+      <!-- collapsed: logo mark IS the expand button — no separate chevron -->
+      <button
+        class="mark-toggle"
+        onclick={handleToggle}
+        aria-label="Expand sidebar"
+        data-testid="sidebar-toggle"
+      >
+        <img class="mark mark-collapsed" src="/logo-mark.svg" alt="SeeKi" width="22" height="22" />
+      </button>
+    {:else}
       <div class="branding">
         <div class="title-row">
-          <img class="mark" src="/logo-mark.svg" alt="" aria-hidden="true" width="20" height="20" />
+          <img class="mark" src="/logo-mark.svg" alt="" aria-hidden="true" width="22" height="22" />
           <span class="title">{title}</span>
         </div>
         {#if subtitle}
           <span class="subtitle">{subtitle}</span>
         {/if}
       </div>
-    {:else}
-      <img class="mark mark-collapsed" src="/logo-mark.svg" alt="SeeKi" width="20" height="20" />
-    {/if}
-
-    <button
-      class="toggle"
-      onclick={handleToggle}
-      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      data-testid="sidebar-toggle"
-    >
-      {#if collapsed}
-        <ChevronRight size={16} />
-      {:else}
+      <!-- expanded: chevron to collapse -->
+      <button
+        class="toggle"
+        onclick={handleToggle}
+        aria-label="Collapse sidebar"
+        data-testid="sidebar-toggle"
+      >
         <ChevronLeft size={16} />
-      {/if}
-    </button>
+      </button>
+    {/if}
   </div>
 
   {#if showModeSwitch}
@@ -151,16 +155,23 @@
 </aside>
 
 <style>
+  /* ── Sidebar redesign: 236px frosted-quartz slab ── */
   .sidebar {
+    --sk-sidebar-width: 236px;
     width: var(--sk-sidebar-width);
     min-width: var(--sk-sidebar-width);
     height: 100vh;
+    position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--sk-glass-sidebar);
+    /* frosted quartz: gradient overlay on glass base */
+    background:
+      linear-gradient(180deg, rgba(var(--marble-frost-rgb), 0.26) 0%, rgba(var(--marble-frost-rgb), 0.10) 100%),
+      var(--sk-glass-sidebar);
     backdrop-filter: var(--sk-glass-sidebar-blur);
     -webkit-backdrop-filter: var(--sk-glass-sidebar-blur);
     border-right: 1px solid var(--sk-border);
+    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.45), 8px 0 28px rgba(var(--marble-vein-rgb), 0.045);
     transition: width 0.2s ease, min-width 0.2s ease;
     overflow: hidden;
   }
@@ -170,6 +181,7 @@
     min-width: var(--sk-sidebar-collapsed);
   }
 
+  /* ── Header ── */
   .header {
     display: flex;
     align-items: center;
@@ -202,6 +214,11 @@
     display: block;
   }
 
+  /* collapsed: logo mark IS the expand button (hover affordance) */
+  .mark-collapsed {
+    display: block;
+  }
+
   .title {
     font-size: var(--sk-font-size-lg);
     font-weight: 600;
@@ -229,6 +246,7 @@
     cursor: pointer;
   }
 
+  /* expanded: chevron to collapse */
   .toggle {
     width: 24px;
     height: 24px;
@@ -236,6 +254,7 @@
     color: var(--sk-muted);
     border-radius: var(--sk-radius-sm);
     flex-shrink: 0;
+    transition: background 0.12s ease, color 0.12s ease;
   }
 
   .toggle:hover {
@@ -243,6 +262,27 @@
     color: var(--sk-text);
   }
 
+  /* collapsed: mark-toggle wraps the logo and acts as the expand button */
+  .mark-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--sk-radius-md);
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .mark-toggle:hover {
+    background: var(--sk-border);
+    box-shadow: inset 0 0 0 1px var(--sk-border-light);
+  }
+
+  /* ── Mode switch (expanded) — amber sliding pill ── */
   .mode-switch {
     position: relative;
     display: grid;
@@ -261,9 +301,9 @@
     left: var(--sk-space-xs);
     width: calc(50% - var(--sk-space-xs) * 1.5);
     height: calc(100% - var(--sk-space-xs) * 2);
-    background: rgba(255, 149, 0, 0.18);
+    background: rgba(var(--marble-count-rgb), 0.18);
     border-radius: var(--sk-radius-md);
-    box-shadow: 0 1px 3px rgba(255, 149, 0, 0.15);
+    box-shadow: 0 1px 3px rgba(var(--marble-count-rgb), 0.15);
     transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 0;
   }
@@ -288,6 +328,7 @@
     color: var(--sk-text);
   }
 
+  /* ── Mode switch (collapsed) ── */
   .collapsed-modes {
     position: relative;
     display: flex;
@@ -305,9 +346,9 @@
     transform: translateX(-50%) translateY(0);
     width: 32px;
     height: 32px;
-    background: rgba(255, 149, 0, 0.18);
+    background: rgba(var(--marble-count-rgb), 0.18);
     border-radius: var(--sk-radius-md);
-    box-shadow: 0 1px 3px rgba(255, 149, 0, 0.15);
+    box-shadow: 0 1px 3px rgba(var(--marble-count-rgb), 0.15);
     transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 0;
   }
@@ -339,6 +380,7 @@
     }
   }
 
+  /* ── Badge dot on mode buttons ── */
   .badge-wrapper {
     position: relative;
     display: inline-flex;
@@ -359,15 +401,19 @@
     right: -4px;
   }
 
+  /* ── Content area — roomier padding, room for expandable sections ── */
   .content {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
-    padding: var(--sk-space-sm);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--sk-space-md) var(--sk-space-sm);
+    gap: var(--sk-space-lg);
   }
 
+  /* ── Footer ── */
   .footer {
     padding: var(--sk-space-md) var(--sk-space-lg);
     font-size: var(--sk-font-size-xs);

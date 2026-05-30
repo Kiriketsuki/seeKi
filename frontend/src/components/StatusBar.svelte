@@ -86,6 +86,7 @@
 </div>
 
 <style>
+  /* ── StatusBar — mirrors .sk-statusbar from app/app.css ── */
   .statusbar {
     display: flex;
     align-items: center;
@@ -95,30 +96,41 @@
     backdrop-filter: var(--sk-glass-statusbar-blur);
     -webkit-backdrop-filter: var(--sk-glass-statusbar-blur);
     border-top: 1px solid var(--sk-border-light);
+    flex-shrink: 0;
   }
 
+  /* "Showing X–Y of Z" / "Loaded N of M" — mirrors .sk-sb-showing */
   .showing {
     font-size: var(--sk-font-size-sm);
     color: var(--sk-muted);
+    font-variant-numeric: tabular-nums;
   }
 
+  /* pagination cluster — mirrors .sk-sb-pagination */
   .pagination {
     display: flex;
     align-items: center;
     gap: var(--sk-space-sm);
   }
 
+  /* prev/next buttons — mirrors .sk-sb-page-btn (teal hover) */
   .page-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-sm);
     background: var(--sk-glass-button);
     color: var(--sk-muted);
     cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .page-btn:hover:not(:disabled) {
+    color: var(--sk-text);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.24);
   }
 
   .page-btn:disabled {
@@ -126,33 +138,47 @@
     opacity: 0.5;
   }
 
+  /* "X of Y" — mirrors .sk-sb-page-info */
   .page-info {
     font-size: var(--sk-font-size-sm);
-    color: var(--sk-secondary);
+    color: var(--sk-secondary-strong);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
+  /* rows-per-fetch cluster — mirrors .sk-sb-pagesize */
   .page-size-control {
     display: flex;
     align-items: center;
     gap: var(--sk-space-sm);
   }
 
+  /* label — mirrors .sk-sb-pagesize-label */
   .page-size-label {
     font-size: var(--sk-font-size-sm);
     color: var(--sk-muted);
     white-space: nowrap;
   }
 
+  /* select — mirrors .sk-sb-select (app.css: .sk-select/.sk-sb-select rules) */
   .page-size-select {
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-sm);
-    background: var(--sk-glass-button);
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid var(--sk-border-input);
+    border-radius: var(--sk-radius-md);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-sm);
-    padding: 2px var(--sk-space-sm);
+    padding: 3px calc(var(--sk-space-lg) + 4px) 3px var(--sk-space-sm);
     cursor: pointer;
+    outline: none;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .page-size-select:focus {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.45);
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
   }
 
   .page-size-select:disabled {

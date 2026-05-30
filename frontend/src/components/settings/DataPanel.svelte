@@ -107,6 +107,7 @@
 </PanelFrame>
 
 <style>
+  /* sk-set-card */
   .card {
     display: flex;
     flex-direction: column;
@@ -115,9 +116,12 @@
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-lg);
     background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: var(--sk-glass-grid-blur);
+    -webkit-backdrop-filter: var(--sk-glass-grid-blur);
     box-shadow: var(--sk-shadow-card);
   }
 
+  /* sk-set-row */
   .row {
     display: flex;
     align-items: flex-start;
@@ -125,6 +129,7 @@
     gap: var(--sk-space-xl);
   }
 
+  /* sk-set-info */
   .info {
     display: flex;
     flex-direction: column;
@@ -134,9 +139,11 @@
   .info p {
     color: var(--sk-secondary-strong);
     line-height: 1.5;
-    max-width: 48ch;
+    max-width: 50ch;
+    margin: 0;
   }
 
+  /* sk-set-actions */
   .action {
     display: flex;
     align-items: center;
@@ -144,16 +151,22 @@
     flex-shrink: 0;
   }
 
+  /* sk-btn-danger */
   .danger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sk-space-sm);
     border: 1px solid rgba(185, 28, 28, 0.3);
     border-radius: var(--sk-radius-md);
     background: rgba(185, 28, 28, 0.08);
-    color: #b91c1c;
+    color: var(--sk-danger);
     padding: var(--sk-space-sm) var(--sk-space-lg);
     font: inherit;
+    font-size: var(--sk-font-size-body);
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
+    transition: background 0.15s ease;
   }
 
   .danger:hover:not(:disabled) {
@@ -167,35 +180,41 @@
 
   .hint.success {
     color: var(--sk-boolean-true);
+    font-size: var(--sk-font-size-body);
   }
 
   .message.error {
-    color: #b91c1c;
+    color: var(--sk-danger);
+    margin: 0;
   }
 
+  /* sk-modetoggle */
   .mode-toggle {
     display: flex;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
     overflow: hidden;
+    flex-shrink: 0;
   }
 
+  /* sk-modetoggle-btn */
   .mode-btn {
-    flex: 1;
     border: none;
     background: transparent;
     color: var(--sk-secondary-strong);
     font: inherit;
+    font-size: var(--sk-font-size-body);
     padding: var(--sk-space-sm) var(--sk-space-md);
     cursor: pointer;
     white-space: nowrap;
-    transition: background 100ms;
+    transition: background 0.12s ease;
   }
 
   .mode-btn + .mode-btn {
     border-left: 1px solid var(--sk-border-light);
   }
 
+  /* sk-modetoggle-btn.active — amber fill */
   .mode-btn.active {
     background: var(--sk-accent);
     color: #fff;
@@ -203,7 +222,7 @@
   }
 
   .mode-btn:not(.active):hover:not(:disabled) {
-    background: rgba(47, 72, 88, 0.05);
+    background: rgba(var(--marble-vein-rgb), 0.05);
   }
 
   .mode-btn:disabled {

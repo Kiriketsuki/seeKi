@@ -64,6 +64,7 @@
 </div>
 
 <style>
+  /* Column dropdown panel — mirrors kit.css .sk-col-dropdown */
   .dropdown {
     width: 100%;
     max-height: min(50vh, 320px);
@@ -73,42 +74,40 @@
     overflow: hidden;
   }
 
+  /* Header: title + "Show All" action — mirrors .sk-col-dropdown-head */
   .dropdown-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--sk-space-sm);
-    padding: var(--sk-space-md);
+    padding: var(--sk-space-sm) var(--sk-space-md);
     border-bottom: 1px solid var(--sk-border-light);
   }
 
+  /* Title: uppercase eyebrow label — mirrors .sk-col-dropdown-title */
   .title {
-    font-size: var(--sk-font-size-md);
-    font-weight: 600;
-    color: var(--sk-text);
+    font-size: var(--sk-font-size-sm);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sk-secondary-strong);
   }
 
   .subtitle {
     margin-top: var(--sk-space-xs);
     font-size: var(--sk-font-size-sm);
-    color: var(--sk-secondary);
+    color: var(--sk-muted);
   }
 
+  /* "Show All" button — teal ink (data-strong), mirrors .sk-col-showall */
   .show-all {
-    border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-sm);
-    background: var(--sk-glass-button);
-    color: var(--sk-secondary-strong);
+    border: none;
+    background: none;
+    color: var(--sk-data-strong);
     font-family: var(--sk-font-ui);
-    font-size: var(--sk-font-size-sm);
-    padding: var(--sk-space-xs) var(--sk-space-sm);
+    font-size: var(--sk-font-size-body);
     cursor: pointer;
     flex-shrink: 0;
-  }
-
-  .show-all:hover:not(:disabled) {
-    color: var(--sk-text);
-    border-color: rgba(0, 169, 165, 0.28);
   }
 
   .show-all:disabled {
@@ -116,17 +115,22 @@
     cursor: not-allowed;
   }
 
+  /* Scrollable column list — mirrors .sk-col-list */
   .list {
-    padding: var(--sk-space-xs);
+    max-height: 220px;
     overflow-y: auto;
+    padding: var(--sk-space-xs);
+    display: flex;
+    flex-direction: column;
   }
 
+  /* Individual column row — mirrors .sk-col-item */
   .column-row {
     width: 100%;
     display: flex;
     align-items: center;
     gap: var(--sk-space-sm);
-    padding: var(--sk-space-sm) var(--sk-space-sm);
+    padding: var(--sk-space-xs) var(--sk-space-sm);
     border: none;
     border-radius: var(--sk-radius-sm);
     background: transparent;
@@ -137,8 +141,9 @@
     cursor: pointer;
   }
 
+  /* hover: teal-6% wash — mirrors .sk-col-item:hover */
   .column-row:hover {
-    background: rgba(0, 169, 165, 0.08);
+    background: rgba(var(--sk-accent-active-rgb), 0.06);
   }
 
   .column-row.hidden .column-label {
@@ -146,6 +151,7 @@
     color: var(--sk-muted);
   }
 
+  /* Checkbox icon — teal (interaction/data accent) — mirrors .sk-col-item input accent-color */
   .checkbox {
     width: 14px;
     height: 14px;
@@ -153,10 +159,12 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--sk-accent);
+    color: var(--sk-data);
   }
 
+  /* Column name — mono type label for the data type variant would go here */
   .column-label {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -1106,7 +1106,7 @@
     flex-direction: column;
     gap: var(--sk-space-lg);
     min-height: 0;
-    padding: var(--sk-space-lg) var(--sk-space-2xl);
+    padding: var(--sk-space-xl) var(--sk-space-2xl) var(--sk-space-2xl);
     overflow: auto;
   }
 
@@ -1115,19 +1115,24 @@
     flex-direction: column;
     gap: var(--sk-space-md);
     border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-xl);
-    background: rgba(255, 255, 255, 0.78);
+    border-radius: var(--sk-radius-lg);
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: var(--sk-glass-grid-blur);
+    -webkit-backdrop-filter: var(--sk-glass-grid-blur);
     box-shadow: var(--sk-shadow-card);
-    padding: var(--sk-space-lg);
+    padding: var(--sk-space-xl);
   }
 
   .filter-panel__header h3 {
     margin: 0;
+    font-size: var(--sk-font-size-lg);
+    font-weight: 600;
+    color: var(--sk-text);
   }
 
   .eyebrow {
     margin: 0 0 var(--sk-space-xs);
-    color: var(--sk-accent);
+    color: var(--sk-accent-active-strong);
     font-size: var(--sk-font-size-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -1148,12 +1153,19 @@
 
   .filter-row select,
   .filter-row input {
-    border: 1px solid var(--sk-border-light);
+    border: 1px solid var(--sk-border-input);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.84);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     font: inherit;
-    padding: var(--sk-space-sm) var(--sk-space-sm);
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    outline: none;
+  }
+
+  .filter-row select:focus,
+  .filter-row input:focus {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.45);
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
   }
 
   .filter-row__hint,
@@ -1171,11 +1183,13 @@
     }
   }
 
+  /* Upgrade confirm dialog */
   .dialog-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: rgba(var(--sk-ink-rgb), 0.4);
     backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1185,17 +1199,19 @@
   }
 
   .dialog-card {
-    max-width: 400px;
+    max-width: 460px;
     width: 100%;
-    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
-    border-radius: var(--sk-radius-md);
-    padding: var(--sk-space-lg);
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    background: rgba(255, 255, 255, 0.97);
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-lg);
+    padding: var(--sk-space-xl);
+    box-shadow: var(--sk-shadow-pop);
     animation: dialog-pop 140ms ease-out;
   }
 
   .dialog-title {
     margin: 0 0 var(--sk-space-sm);
+    font-size: var(--sk-font-size-lg);
     font-weight: 600;
     color: var(--sk-text);
   }
@@ -1203,7 +1219,8 @@
   .dialog-detail {
     margin: 0 0 var(--sk-space-md);
     font-size: var(--sk-font-size-body);
-    color: var(--sk-muted);
+    color: var(--sk-secondary-strong);
+    line-height: 1.5;
   }
 
   .dialog-actions {
@@ -1219,9 +1236,11 @@
     gap: var(--sk-space-sm);
     border-radius: var(--sk-radius-md);
     font: inherit;
+    font-size: var(--sk-font-size-body);
+    font-weight: 500;
     cursor: pointer;
     padding: var(--sk-space-sm) var(--sk-space-md);
-    font-size: var(--sk-font-size-body);
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   }
 
   .dialog-btn:disabled {
@@ -1230,23 +1249,27 @@
   }
 
   .dialog-btn-secondary {
-    border: 1px solid var(--sk-border-light);
-    background: transparent;
+    border: 1px solid var(--sk-border-input);
+    background: var(--sk-glass-button);
     color: var(--sk-text);
   }
 
   .dialog-btn-secondary:hover:not(:disabled) {
-    background: rgba(47, 72, 88, 0.04);
+    background: #fff;
+    border-color: rgba(var(--sk-accent-active-rgb), 0.24);
+    box-shadow: var(--sk-shadow-card);
   }
 
+  /* Primary confirm = amber CTA */
   .dialog-btn-primary {
-    border: 1px solid rgba(0, 169, 165, 0.3);
-    background: rgba(0, 169, 165, 0.1);
-    color: var(--sk-accent);
+    border: none;
+    background: var(--sk-accent);
+    color: #fff;
+    box-shadow: var(--sk-shadow-accent);
   }
 
   .dialog-btn-primary:hover:not(:disabled) {
-    background: rgba(0, 169, 165, 0.18);
+    opacity: 0.93;
   }
 
   @keyframes dialog-fade {

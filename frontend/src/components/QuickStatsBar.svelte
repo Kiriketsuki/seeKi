@@ -85,78 +85,107 @@
 </div>
 
 <style>
+  /* ── Quick Stats Bar — mirrors .sk-stats-bar from kit.css ── */
   .quick-stats-bar {
     display: flex;
-    align-items: center;
-    gap: var(--sk-space-xs);
+    align-items: stretch;
+    gap: var(--sk-space-sm);
     overflow-x: auto;
+    width: 100%;
   }
 
+  /* base chip — mirrors .sk-stat-chip */
   .stat-chip {
     display: inline-flex;
     align-items: center;
-    gap: var(--sk-space-xs);
+    gap: var(--sk-space-sm);
     min-width: 0;
-    padding: var(--sk-space-xs) var(--sk-space-sm);
+    padding: 6px 12px 6px 8px;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.78);
+    background: rgba(255, 255, 255, 0.6);
     color: var(--sk-text);
     white-space: nowrap;
-    font-size: var(--sk-font-size-xs);
   }
 
+  /* teal-tinted primary chip — mirrors .sk-stat-chip.primary */
   .stat-chip--primary {
-    background: rgba(0, 169, 165, 0.08);
-    border-color: rgba(0, 169, 165, 0.2);
+    background: var(--sk-active-chip-bg);
+    border-color: var(--sk-active-chip-border);
   }
 
+  /* amber-tinted text chip — mirrors .sk-stat-chip.text */
   .stat-chip--text {
-    background: rgba(255, 149, 0, 0.08);
-    border-color: rgba(255, 149, 0, 0.2);
+    background: var(--sk-count-chip-bg);
+    border-color: var(--sk-count-chip-border);
   }
 
+  /* icon container — mirrors .sk-stat-icon */
   .stat-chip__icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: var(--sk-radius-pill);
-    background: rgba(255, 255, 255, 0.82);
-    color: var(--sk-secondary-strong);
+    width: 28px;
+    height: 28px;
+    border-radius: var(--sk-radius-md);
+    background: rgba(255, 255, 255, 0.7);
+    color: var(--sk-ink-soft);
     flex-shrink: 0;
   }
 
+  .stat-chip--primary .stat-chip__icon {
+    background: rgba(var(--sk-accent-active-rgb), 0.14);
+    color: var(--sk-accent-active-strong);
+  }
+
+  .stat-chip--text .stat-chip__icon {
+    background: rgba(var(--sk-accent-count-rgb), 0.16);
+    color: var(--sk-accent-count-ink);
+  }
+
+  /* body stack — mirrors .sk-stat-body */
   .stat-chip__body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    gap: 1px;
   }
 
+  /* eyebrow label — mirrors .sk-stat-eyebrow */
   .stat-chip__eyebrow {
     font-size: var(--sk-font-size-xs);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--sk-muted);
+    letter-spacing: 0.07em;
+    color: var(--sk-ink-muted);
+    font-weight: 600;
+    line-height: 1.25;
   }
 
+  /* primary value — mirrors .sk-stat-value */
   .stat-chip__value {
-    font-size: var(--sk-font-size-sm);
+    font-size: var(--sk-font-size-md);
+    font-weight: 600;
+    color: var(--sk-ink-strong);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
   }
 
+  /* secondary meta line — mirrors .sk-stat-meta */
   .stat-chip__meta {
-    font-size: var(--sk-font-size-xs);
-    color: var(--sk-secondary-strong);
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-ink-muted);
     overflow: hidden;
     text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
   }
 
+  /* trailing note — mirrors .sk-stats-note */
   .quick-stats-note {
     align-self: center;
     margin-left: auto;
     font-size: var(--sk-font-size-xs);
     color: var(--sk-muted);
     white-space: nowrap;
+    padding-left: var(--sk-space-sm);
   }
 </style>

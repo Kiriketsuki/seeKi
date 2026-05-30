@@ -83,15 +83,17 @@
     cursor: pointer;
   }
 
+  /* Refresh button: soft white-glass base, vein hairline border */
   .refresh-button {
     padding: var(--sk-space-xs) var(--sk-space-sm);
-    background: rgba(255, 255, 255, 0.82);
+    background: var(--sk-glass-button);
     color: var(--sk-text);
     border-color: var(--sk-border-light);
   }
 
-  .refresh-button:hover {
-    border-color: rgba(0, 169, 165, 0.26);
+  /* hover: teal hairline border appears, glass brightens */
+  .refresh-button:hover:not(:disabled) {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.26);
     background: rgba(255, 255, 255, 0.96);
   }
 
@@ -107,6 +109,7 @@
     color: var(--sk-secondary-strong);
   }
 
+  /* Pill group container: frosted glass track */
   .refresh-pills {
     display: inline-flex;
     align-items: center;
@@ -121,10 +124,12 @@
     padding: var(--sk-space-xs) var(--sk-space-sm);
     background: transparent;
     color: var(--sk-secondary-strong);
+    border-radius: var(--sk-radius-pill);
   }
 
+  /* Active pill: teal-12% fill (interaction accent) */
   .refresh-pill.is-active {
-    background: rgba(0, 169, 165, 0.12);
+    background: var(--sk-active-tint-soft);
     color: var(--sk-text);
   }
 

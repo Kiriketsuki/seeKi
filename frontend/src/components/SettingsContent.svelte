@@ -60,8 +60,8 @@
     flex: 1;
     flex-direction: column;
     min-width: 0;
+    overflow-y: auto;
     padding: var(--sk-space-2xl);
-    overflow: auto;
   }
 
   .settings-panel-enter {
@@ -69,6 +69,14 @@
     flex-direction: column;
     flex: 1;
     min-width: 0;
+    max-width: 860px;
+    margin: 0 auto;
+    width: 100%;
     animation: sk-panel-fade 180ms ease-out;
+  }
+
+  @keyframes sk-panel-fade {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 </style>

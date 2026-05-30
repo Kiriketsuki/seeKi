@@ -157,7 +157,7 @@
 
 <div class="action-dock" role="toolbar" aria-label="Table actions" bind:this={shell}>
   <span class="sr-only" aria-live="polite" aria-atomic="true">{sortDescription}</span>
-  <div class="dock-surface" class:panel-open={panelOpen}>
+  <div class="dock-surface sk-material sk-material--floating" class:panel-open={panelOpen}>
     <div class="dock-panels" class:panel-open={panelOpen}>
       {#if searchVisible}
         <div id="dock-search-panel" class="dock-panel dock-panel--search" role="region" aria-label="Search rows">
@@ -294,41 +294,51 @@
   .action-dock {
     position: absolute;
     left: 50%;
-    bottom: var(--sk-dock-inset);
+    bottom: calc(var(--sk-dock-inset) + 10px);
     z-index: 3;
     width: min(var(--sk-dock-panel-width), calc(100% - (2 * var(--sk-dock-inset))));
     transform: translateX(-50%);
     pointer-events: none;
   }
 
+  /* .sk-material provides the frosted quartz base glass, ::before texture, and ::after
+     top sheen. We override a few layout/transition concerns here and keep it in sync
+     with the dock-specific panel-open state. */
   .dock-surface {
     display: grid;
     grid-template-rows: 0fr auto;
-    border: 1px solid var(--sk-border-light);
+    /* override sk-material border-radius to the dock's extra-round value */
     border-radius: calc(var(--sk-radius-lg) + 4px);
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    box-shadow: var(--sk-shadow-card);
+    /* override sk-material shadow to the dock's deeper vein shadow */
+    box-shadow:
+      0 14px 36px rgba(var(--marble-vein-rgb), 0.18),
+      0 3px 10px rgba(var(--marble-vein-rgb), 0.09),
+      inset 0 1px 0 rgba(255, 255, 255, 0.75);
     overflow: hidden;
     pointer-events: auto;
     transition:
       grid-template-rows 0.18s ease,
       box-shadow 0.18s ease,
       border-color 0.18s ease,
-      transform 0.18s ease;
+      transform 0.12s ease;
   }
 
   .dock-surface.panel-open {
     grid-template-rows: 1fr auto;
-    border-color: rgba(0, 169, 165, 0.18);
-    box-shadow: var(--sk-shadow-card), 0 8px 30px rgba(47, 72, 88, 0.08);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.18);
+    box-shadow:
+      0 18px 44px rgba(var(--marble-vein-rgb), 0.20),
+      0 3px 10px rgba(var(--marble-vein-rgb), 0.10),
+      inset 0 1px 0 rgba(255, 255, 255, 0.75);
   }
 
   .dock-panels {
     min-height: 0;
     overflow: hidden;
     opacity: 0;
+    /* sit above sk-material ::before texture and ::after sheen layers */
+    position: relative;
+    z-index: 1;
     transition: opacity 0.16s ease;
   }
 
@@ -345,13 +355,14 @@
     padding: 0;
   }
 
+  /* Search box — teal-tinted border, frosted glass input */
   .search-box {
     display: flex;
     align-items: center;
     gap: var(--sk-space-sm);
     width: 100%;
     padding: var(--sk-space-xs) var(--sk-space-md);
-    border: 1px solid rgba(0, 169, 165, 0.2);
+    border: 1px solid rgba(var(--sk-accent-active-rgb), 0.20);
     border-radius: calc(var(--sk-radius-md) + 2px);
     background: var(--sk-glass-input);
     backdrop-filter: var(--sk-glass-input-blur);
@@ -393,7 +404,7 @@
 
   .clear-search:hover:not(:disabled) {
     color: var(--sk-text);
-    border-color: rgba(0, 169, 165, 0.24);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.24);
   }
 
   .clear-search:disabled {
@@ -401,11 +412,15 @@
     cursor: not-allowed;
   }
 
+  /* Dock action row — 4-column grid of tool buttons */
   .dock-actions {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--sk-space-xs);
     padding: var(--sk-space-sm);
+    /* ensure content sits above the sk-material texture layers */
+    position: relative;
+    z-index: 1;
   }
 
   .dock-button {
@@ -431,20 +446,22 @@
       box-shadow 0.16s ease;
   }
 
+  /* hover: white-glass lift + teal hairline border */
   .dock-button:hover:not(:disabled),
   .dock-button.active {
     color: var(--sk-text);
     background: rgba(255, 255, 255, 0.72);
-    border-color: rgba(0, 169, 165, 0.24);
-    box-shadow: 0 2px 8px rgba(47, 72, 88, 0.08);
+    border-color: var(--sk-active-border);
+    box-shadow: 0 2px 8px rgba(var(--sk-ink-rgb), 0.08);
   }
 
+  /* active: teal-14% fill (interaction accent) */
   .dock-button.active {
-    background: rgba(0, 169, 165, 0.14);
+    background: var(--sk-active-tint);
   }
 
   .dock-button:focus-visible {
-    outline: 2px solid var(--sk-accent);
+    outline: 2px solid var(--sk-data);
     outline-offset: 2px;
   }
 
@@ -460,6 +477,7 @@
     justify-content: center;
   }
 
+  /* badge — amber for active filter count (count accent = amber) */
   .badge {
     position: absolute;
     top: -7px;
@@ -478,6 +496,7 @@
     line-height: 1;
   }
 
+  /* neutral badge (hidden column count) — slate/vein ink */
   .badge--neutral {
     background: var(--sk-secondary-strong);
   }

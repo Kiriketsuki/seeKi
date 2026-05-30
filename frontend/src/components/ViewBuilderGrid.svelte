@@ -120,7 +120,7 @@
 
   .eyebrow {
     margin: 0 0 var(--sk-space-xs);
-    color: var(--sk-accent);
+    color: var(--sk-accent-active-strong);
     font-size: var(--sk-font-size-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -130,17 +130,19 @@
   .builder-grid-shell__header p:last-child {
     margin-top: var(--sk-space-sm);
     color: var(--sk-secondary-strong);
+    line-height: 1.5;
+    max-width: 58ch;
   }
 
   .column-slots {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: var(--sk-space-md);
   }
 
   .column-slot {
-    min-height: 148px;
-    border-radius: var(--sk-radius-xl);
+    min-height: 142px;
+    border-radius: var(--sk-radius-lg);
     border: 1px solid var(--sk-border-light);
     background: rgba(255, 255, 255, 0.78);
     box-shadow: var(--sk-shadow-card);
@@ -151,6 +153,12 @@
     flex-direction: column;
     justify-content: space-between;
     overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .column-slot--filled:hover {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.24);
+    box-shadow: 0 2px 12px rgba(var(--sk-ink-rgb), 0.08);
   }
 
   .column-slot__button,
@@ -165,52 +173,65 @@
     background: transparent;
     color: var(--sk-text);
     cursor: pointer;
-    padding: var(--sk-space-lg);
+    padding: var(--sk-space-lg) var(--sk-space-lg) var(--sk-space-sm);
     text-align: left;
   }
 
   .column-slot__kind {
-    color: var(--sk-accent);
+    color: var(--sk-accent-active-strong);
     font-size: var(--sk-font-size-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
+  .column-slot__button strong {
+    font-size: var(--sk-font-size-md);
+  }
+
   .column-slot__button span:last-child {
     color: var(--sk-secondary-strong);
     line-height: 1.45;
+    font-size: var(--sk-font-size-sm);
   }
 
   .column-slot__actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--sk-space-sm);
+    gap: var(--sk-space-xs);
     padding: 0 var(--sk-space-md) var(--sk-space-md);
   }
 
   .column-slot--empty {
     align-items: center;
     justify-content: center;
-    border: 1px dashed rgba(0, 169, 165, 0.28);
-    background: rgba(0, 169, 165, 0.05);
-    color: var(--sk-accent);
+    border: 1px dashed rgba(var(--sk-accent-active-rgb), 0.3);
+    background: rgba(var(--sk-accent-active-rgb), 0.05);
+    color: var(--sk-accent-active-strong);
+    font: inherit;
+    transition: background 0.15s;
+  }
+
+  .column-slot--empty:hover {
+    background: rgba(var(--sk-accent-active-rgb), 0.1);
   }
 
   .icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border: 1px solid transparent;
-    border-radius: var(--sk-radius-lg);
-    background: rgba(255, 255, 255, 0.72);
+    border-radius: var(--sk-radius-md);
+    background: transparent;
     color: var(--sk-secondary-strong);
     cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
   }
 
   .icon-btn:hover:not(:disabled) {
+    background: rgba(var(--sk-ink-rgb), 0.06);
     border-color: var(--sk-border-light);
   }
 
@@ -220,38 +241,40 @@
   }
 
   .icon-btn--danger {
-    color: #b54747;
+    color: var(--sk-danger);
   }
 
   .preview-shell {
-    min-height: 420px;
+    min-height: 360px;
+    display: flex;
   }
 
   .empty-state {
-    min-height: 420px;
+    flex: 1;
+    min-height: 360px;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 1px dashed var(--sk-border-light);
-    border-radius: var(--sk-radius-xl);
-    background: rgba(255, 255, 255, 0.66);
+    border-radius: var(--sk-radius-lg);
+    background: rgba(255, 255, 255, 0.6);
     color: var(--sk-secondary-strong);
     text-align: center;
     padding: var(--sk-space-xl);
   }
 
   .empty-state--error {
-    color: #b54747;
+    color: var(--sk-danger);
   }
 
   .loading-chip {
     display: inline-flex;
     align-items: center;
     border-radius: var(--sk-radius-pill);
-    background: rgba(0, 169, 165, 0.1);
-    color: var(--sk-accent);
+    background: rgba(var(--sk-accent-active-rgb), 0.1);
+    color: var(--sk-accent-active-strong);
     font-size: var(--sk-font-size-xs);
     font-weight: 700;
-    padding: var(--sk-space-sm) var(--sk-space-sm);
+    padding: var(--sk-space-xs) var(--sk-space-sm);
   }
 </style>
