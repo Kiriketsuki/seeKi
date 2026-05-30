@@ -1,35 +1,217 @@
-:root {
-  /* Palette */
-  --sk-bg: #F5F0EB;
-  --sk-text: #2F4858;
-  --sk-accent: #ff9500;
-  --sk-brand-primary: #111111;
-  --sk-brand-surface: #f4f4f2;
-  --sk-muted: #8a7a6c;
-  --sk-secondary: #a0917f;
-  --sk-secondary-strong: #556977;
-  --sk-faded: #b0a090;
-  --sk-boolean-true: #15803d;
-  --sk-boolean-false: #b91c1c;
+/* ============================================================
+   SeeKi — Colors & Type  ·  MARBLE edition
+   A read-only, spreadsheet-like database viewer for people who
+   don't speak SQL. Warm-marble glassmorphism.
 
-  /* Glass surfaces */
-  --sk-glass-sidebar: rgba(255, 255, 255, 0.5);
-  --sk-glass-sidebar-blur: blur(20px);
-  --sk-glass-grid: rgba(255, 255, 255, 0.55);
-  --sk-glass-grid-blur: blur(24px);
-  --sk-glass-statusbar: rgba(255, 255, 255, 0.4);
+   ── Token architecture ──────────────────────────────────────
+   TIER 1  Raw palette primitives (--marble-*) — five named roles
+           per the marble brief, with rgb triplets for alpha mixing.
+           Six tunings ship as presets; switch by setting
+           `data-palette="…"` on <html> (default = alabaster).
+
+   TIER 2  Semantic role tokens (--sk-surface / --sk-frost /
+           --sk-ink* / --sk-accent-active / --sk-accent-count …)
+           that REFERENCE the raw layer and derive every tint,
+           border, ring, shadow and hatch from it. Re-skin the
+           whole system by editing five hexes — nothing else.
+
+   ALIASES The original --sk-bg / --sk-text / --sk-accent / --sk-data
+           names are kept and re-pointed at the semantic layer so
+           existing kit + specimen code keeps working unchanged.
+   ============================================================ */
+
+/* ════════════════════════════════════════════════════════════
+   TIER 1 — RAW PALETTE PRIMITIVES
+   Five roles: surface (base) · frost (secondary) · vein (ink) ·
+   active (teal) · count (amber). Default theme = Alabaster.
+   ════════════════════════════════════════════════════════════ */
+
+:root,
+[data-palette="alabaster"] {
+  /* Warm marble base — main dock/drawer surface */
+  --marble-surface: #F2EEE7;  --marble-surface-rgb: 242, 238, 231;
+  /* Frosted secondary — glass layering, inactive fills, soft panels */
+  --marble-frost:   #DDE3DF;  --marble-frost-rgb:   221, 227, 223;
+  /* Vein / ink — text, icons, marble veining */
+  --marble-vein:    #4E5A5F;  --marble-vein-rgb:    78, 90, 95;
+  /* Active accent — active search/filter state, focus rings */
+  --marble-active:  #4BA6A8;  --marble-active-rgb:  75, 166, 168;
+  /* Count accent — filter count badges, small attention marks */
+  --marble-count:   #D9953B;  --marble-count-rgb:   217, 149, 59;
+}
+
+[data-palette="travertine"] {       /* warmer ground & frost, deeper amber */
+  --marble-surface: #F4EEE3;  --marble-surface-rgb: 244, 238, 227;
+  --marble-frost:   #E5DFD3;  --marble-frost-rgb:   229, 223, 211;
+  --marble-vein:    #54565A;  --marble-vein-rgb:    84, 86, 90;
+  --marble-active:  #4FA6A1;  --marble-active-rgb:  79, 166, 161;
+  --marble-count:   #D58F33;  --marble-count-rgb:   213, 143, 51;
+}
+
+[data-palette="carrara"] {          /* cooler, bluer stone, crisper teal */
+  --marble-surface: #EFF1EE;  --marble-surface-rgb: 239, 241, 238;
+  --marble-frost:   #D7DEDC;  --marble-frost-rgb:   215, 222, 220;
+  --marble-vein:    #45525A;  --marble-vein-rgb:    69, 82, 90;
+  --marble-active:  #3F9FA6;  --marble-active-rgb:  63, 159, 166;
+  --marble-count:   #CB9447;  --marble-count-rgb:   203, 148, 71;
+}
+
+[data-palette="deepvein"] {         /* same stone, darker veining — high contrast */
+  --marble-surface: #F2EEE7;  --marble-surface-rgb: 242, 238, 231;
+  --marble-frost:   #D8DEDA;  --marble-frost-rgb:   216, 222, 218;
+  --marble-vein:    #39464B;  --marble-vein-rgb:    57, 70, 75;
+  --marble-active:  #3E9A9C;  --marble-active-rgb:  62, 154, 156;
+  --marble-count:   #CC8A2E;  --marble-count-rgb:   204, 138, 46;
+}
+
+[data-palette="spa"] {              /* desaturated accents — calm & uniform */
+  --marble-surface: #F2EEE7;  --marble-surface-rgb: 242, 238, 231;
+  --marble-frost:   #DDE3DF;  --marble-frost-rgb:   221, 227, 223;
+  --marble-vein:    #4E5A5F;  --marble-vein-rgb:    78, 90, 95;
+  --marble-active:  #74A6A3;  --marble-active-rgb:  116, 166, 163;
+  --marble-count:   #C9A569;  --marble-count-rgb:   201, 165, 105;
+}
+
+[data-palette="oxide"] {            /* saturated accents — crisp active states */
+  --marble-surface: #F1EDE5;  --marble-surface-rgb: 241, 237, 229;
+  --marble-frost:   #DAE2DE;  --marble-frost-rgb:   218, 226, 222;
+  --marble-vein:    #47565B;  --marble-vein-rgb:    71, 86, 91;
+  --marble-active:  #2BA1A4;  --marble-active-rgb:  43, 161, 164;
+  --marble-count:   #E2902A;  --marble-count-rgb:   226, 144, 42;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TIER 2 — SEMANTIC ROLE TOKENS  (+ legacy aliases)
+   Declared on both :root and [data-palette] so a nested element
+   carrying data-palette re-resolves the whole subtree.
+   ════════════════════════════════════════════════════════════ */
+
+:root,
+[data-palette] {
+  /* ===== SURFACES ===== */
+  --sk-surface: var(--marble-surface);          /* app ground — warm marble, never white */
+  --sk-surface-rgb: var(--marble-surface-rgb);
+  --sk-frost: var(--marble-frost);              /* quartz — soft panels, inactive fills */
+  --sk-frost-rgb: var(--marble-frost-rgb);
+
+  /* ===== INK SCALE (derived from the vein) =====
+     Mixed toward the surface so secondary ink stays in the warm
+     marble family instead of going cold/grey. */
+  --sk-ink: var(--marble-vein);                                                   /* primary text / icons */
+  --sk-ink-rgb: var(--marble-vein-rgb);
+  --sk-ink-strong: color-mix(in srgb, var(--marble-vein) 72%, #000);              /* hard ink moments */
+  --sk-ink-soft:  color-mix(in srgb, var(--marble-vein) 78%, var(--marble-surface)); /* secondary / meta */
+  --sk-ink-muted: color-mix(in srgb, var(--marble-vein) 55%, var(--marble-surface)); /* labels / hints */
+  --sk-ink-faint: color-mix(in srgb, var(--marble-vein) 40%, var(--marble-surface)); /* footers / disabled */
+
+  /* ===== ACCENTS ===== */
+  /* Active (oxidized teal) — active tool, hover, focus, interaction. */
+  --sk-accent-active: var(--marble-active);
+  --sk-accent-active-rgb: var(--marble-active-rgb);
+  --sk-accent-active-strong: color-mix(in srgb, var(--marble-active) 76%, #000);
+  --sk-accent-active-ink: color-mix(in srgb, var(--marble-active) 44%, #000);    /* teal text on tinted chip — clears 4.5:1 AA */
+  /* Count (soft amber) — count badges, selection, small attention marks. */
+  --sk-accent-count: var(--marble-count);
+  --sk-accent-count-rgb: var(--marble-count-rgb);
+  --sk-accent-count-ink: color-mix(in srgb, var(--marble-count) 44%, #4a2500);   /* amber text on tint — bumped to 44% for AA on spa/alabaster/oxide */
+  /* On-accent ink: dark amber/brown used on solid amber CTA backgrounds — clears 4.5:1 (>=5.95:1) across all 6 palettes */
+  --sk-on-accent: #2b1600;
+
+  /* ===== ACTIVE / INTERACTION TINTS (teal) ===== */
+  --sk-active-tint:        rgba(var(--marble-active-rgb), 0.14);  /* active dock/toggle fill */
+  --sk-active-tint-soft:   rgba(var(--marble-active-rgb), 0.08);  /* hover wash */
+  --sk-active-border:      rgba(var(--marble-active-rgb), 0.24);
+  --sk-active-chip-bg:     rgba(var(--marble-active-rgb), 0.08);
+  --sk-active-chip-border: rgba(var(--marble-active-rgb), 0.20);
+  --sk-ring:               rgba(var(--marble-active-rgb), 0.25);  /* focus ring halo — strengthened for WCAG 1.4.11 parity with button outlines */
+  --sk-ring-border:        rgba(var(--marble-active-rgb), 0.45);  /* focus border */
+  /* Focus-visible outline color — darkened 6pp beyond accent-active-strong for a
+     guaranteed 3:1 non-text ratio across all six palettes, including the
+     desaturated spa palette whose active accent would otherwise land ~3.4:1. */
+  --sk-focus-ring:         color-mix(in srgb, var(--marble-active) 82%, #000);
+
+  /* ===== COUNT / ATTENTION TINTS (amber) ===== */
+  --sk-count-tint:        rgba(var(--marble-count-rgb), 0.12);
+  --sk-count-chip-bg:     rgba(var(--marble-count-rgb), 0.10);
+  --sk-count-chip-border: rgba(var(--marble-count-rgb), 0.22);
+
+  /* ===== VALUE SEMANTICS (palette-independent) ===== */
+  --sk-boolean-true: #166534;   /* true badge — darkened from #15803d to clear 4.5:1 on tinted chip */
+  --sk-boolean-true-rgb: 22, 101, 52;
+  --sk-boolean-false: #b91c1c;  /* false badge */
+  --sk-boolean-false-rgb: 185, 28, 28;
+  --sk-danger: #b91c1c;
+  --sk-danger-rgb: 185, 28, 28;
+  --sk-warning: var(--sk-accent-count-ink);
+
+  /* ===== MODAL / OVERLAY BACKDROP ===== */
+  --sk-backdrop: rgba(var(--marble-vein-rgb), 0.40);  /* modal scrim — re-tones with palette */
+
+  /* ===== GLASS SURFACES =====
+     Soft panels (sidebar, status) are quartz-frosted; prominent
+     lifted glass (grid card, inputs, the floating dock) stays
+     bright translucent white for the frosted-lift read. */
+  --sk-glass-sidebar:        rgba(var(--marble-frost-rgb), 0.55);
+  --sk-glass-sidebar-blur:   blur(20px);
+  --sk-glass-statusbar:      rgba(var(--marble-frost-rgb), 0.42);
   --sk-glass-statusbar-blur: blur(20px);
-  --sk-glass-input: rgba(255, 255, 255, 0.6);
-  --sk-glass-input-blur: blur(8px);
-  --sk-glass-button: rgba(255, 255, 255, 0.6);
-  --sk-glass-button-blur: blur(8px);
+  --sk-glass-grid:           rgba(255, 255, 255, 0.55);
+  --sk-glass-grid-blur:      blur(24px);
+  --sk-glass-input:          rgba(255, 255, 255, 0.60);
+  --sk-glass-input-blur:     blur(8px);
+  --sk-glass-button:         rgba(255, 255, 255, 0.60);
+  --sk-glass-button-blur:    blur(8px);
+  --sk-glass-dock:           rgba(255, 255, 255, 0.86);  /* the floating action dock */
+  --sk-glass-popup:          rgba(255, 255, 255, 0.96);  /* dropdown/context-menu overlays */
 
-  /* Borders */
-  --sk-border: rgba(47, 72, 88, 0.06);
-  --sk-border-light: rgba(47, 72, 88, 0.05);
-  --sk-border-lighter: rgba(47, 72, 88, 0.03);
+  /* ===== BORDERS — hairlines from the vein ===== */
+  --sk-border:         rgba(var(--marble-vein-rgb), 0.08);
+  --sk-border-light:   rgba(var(--marble-vein-rgb), 0.055);
+  --sk-border-lighter: rgba(var(--marble-vein-rgb), 0.03);
+  --sk-border-input:   rgba(var(--marble-vein-rgb), 0.14);
 
-  /* Spacing (8pt grid — md=lg=16px, xl=2xl=24px intentional; reserved for future divergence) */
+  /* ===== SHADOWS — soft, vein-tinted, never black ===== */
+  --sk-shadow-card: 0 2px 16px rgba(var(--marble-vein-rgb), 0.06);
+  --sk-shadow-pop:  0 8px 30px rgba(var(--marble-vein-rgb), 0.11);
+  --sk-shadow-accent: 0 2px 8px rgba(var(--marble-count-rgb), 0.24);  /* count/CTA glow */
+
+  /* ===== NULL HATCH + ZEBRA ===== */
+  --sk-null-hatch: repeating-linear-gradient(
+    -45deg,
+    rgba(var(--marble-vein-rgb), 0.06),
+    rgba(var(--marble-vein-rgb), 0.06) 4px,
+    rgba(255, 255, 255, 0.40) 4px,
+    rgba(255, 255, 255, 0.40) 8px
+  );
+  --sk-row-alt: rgba(var(--marble-vein-rgb), 0.035);
+
+  /* ════════════════════════════════════════════════════════
+     LEGACY ALIASES — original token names, re-pointed.
+     Prefer the semantic names above in new work.
+     ════════════════════════════════════════════════════════ */
+  --sk-bg: var(--sk-surface);
+  --sk-brand-surface: color-mix(in srgb, var(--marble-surface) 86%, #fff);
+  --sk-brand-primary: var(--sk-ink-strong);
+  --sk-text: var(--sk-ink);
+  --sk-secondary-strong: var(--sk-ink-soft);
+  --sk-muted: var(--sk-ink-muted);
+  --sk-secondary: var(--sk-ink-muted);
+  --sk-faded: var(--sk-ink-faint);
+
+  --sk-accent: var(--sk-accent-count);            /* amber — brand/selection/badges */
+  --sk-accent-ink: var(--sk-accent-count-ink);
+  --sk-data: var(--sk-accent-active);             /* teal — interaction/focus */
+  --sk-data-strong: var(--sk-accent-active-strong);
+  --sk-data-ink: var(--sk-accent-active-ink);     /* teal text on tinted chip/surface — clears 4.5:1 AA */
+  --sk-ring-data: var(--sk-ring);
+}
+
+/* ════════════════════════════════════════════════════════════
+   SPACING · RADIUS · LAYOUT · TYPE  (palette-independent)
+   ════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ===== SPACING (8pt grid) ===== */
   --sk-space-xs: 4px;
   --sk-space-sm: 8px;
   --sk-space-md: 16px;
@@ -37,19 +219,25 @@
   --sk-space-xl: 24px;
   --sk-space-2xl: 24px;
 
-  /* Radius */
+  /* ===== RADIUS ===== */
   --sk-radius-sm: 4px;
   --sk-radius-md: 8px;
   --sk-radius-lg: 8px;
   --sk-radius-pill: 999px;
 
-  /* Shadows */
-  --sk-shadow-card: 0 2px 16px rgba(47, 72, 88, 0.04);
-  --sk-shadow-accent: 0 2px 8px rgba(255, 149, 0, 0.2);
+  /* ===== LAYOUT / SIZING (product shell) ===== */
+  --sk-sidebar-width: 236px;
+  --sk-sidebar-collapsed: 48px;
+  --sk-dock-height: 40px;
+  --sk-dock-inset: 8px;
+  --sk-dock-panel-width: 560px;
+  --sk-dock-clearance: 106px; /* dock bottom sits at dock-inset + 10px; clearance tracks it */
 
-  /* Typography (sm=body=12px, md=lg=16px intentional on 8pt grid; xs kept at 9px for 1× legibility) */
+  /* ===== TYPE FAMILIES (bundled — no Google Fonts import) ===== */
   --sk-font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
-  --sk-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', monospace;
+  --sk-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ===== TYPE SCALE (product, 1× UI density) ===== */
   --sk-font-size-xs: 9px;
   --sk-font-size-sm: 12px;
   --sk-font-size-body: 12px;
@@ -57,25 +245,17 @@
   --sk-font-size-lg: 16px;
   --sk-font-size-xl: 20px;
 
-  /* Sidebar */
-  --sk-sidebar-width: 210px;
-  --sk-sidebar-collapsed: 48px;
-  --sk-dock-height: 40px;
-  --sk-dock-inset: 8px;
-  --sk-dock-panel-width: 560px;
-  --sk-dock-clearance: 96px; /* dock-height(40) + dock-inset(8) + panel-padding-budget(48) */
+  /* ===== SEMANTIC TYPE (documents, slides, marketing) ===== */
+  --h1-font: var(--sk-font-ui);
+  --h1-size: 44px;  --h1-weight: 600; --h1-spacing: -0.02em; --h1-leading: 1.08;
+  --h2-size: 32px;  --h2-weight: 600; --h2-spacing: -0.015em; --h2-leading: 1.12;
+  --h3-size: 22px;  --h3-weight: 600; --h3-spacing: -0.01em; --h3-leading: 1.2;
+  --eyebrow-size: 12px; --eyebrow-weight: 700; --eyebrow-spacing: 0.08em; /* UPPERCASE */
+  --body-size: 16px; --body-weight: 400; --body-leading: 1.55;
+  --small-size: 13px; --small-weight: 400;
+  --code-size: 13px; --code-weight: 450;
 
-  /* Zebra striping */
-  --sk-row-alt: rgba(245, 240, 235, 0.3);
-  --sk-null-hatch: repeating-linear-gradient(
-    -45deg,
-    rgba(47, 72, 88, 0.05),
-    rgba(47, 72, 88, 0.05) 4px,
-    rgba(255, 255, 255, 0.4) 4px,
-    rgba(255, 255, 255, 0.4) 8px
-  );
-
-  /* Density tokens */
+  /* ===== DENSITY TOKENS (product-shell — preserved from existing tokens.css) ===== */
   --sk-table-header-min-height: 52px;
   --sk-toolbar-gap: var(--sk-space-sm);
   --sk-toolbar-padding-y: var(--sk-space-md);
@@ -89,6 +269,7 @@
   --sk-grid-badge-padding-x: var(--sk-space-sm);
 }
 
+/* ===== COMPACT DENSITY OVERRIDE ===== */
 .sk-density--compact {
   --sk-table-header-min-height: 44px;
   --sk-toolbar-gap: var(--sk-space-xs);

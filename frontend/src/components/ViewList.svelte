@@ -88,10 +88,7 @@
 <section class="view-list" class:headerless={!showHeader} data-testid="view-list">
   {#if showHeader}
     <div class="section-header">
-      <div>
-        <h3>Views</h3>
-        <p>Saved joined and aggregated views</p>
-      </div>
+      <h3>Views</h3>
       <button
         type="button"
         class="create-btn"
@@ -102,6 +99,7 @@
         <Plus size={14} />
         <span>Create</span>
       </button>
+      <p class="section-subtitle">Saved joined and aggregated views</p>
     </div>
   {/if}
 
@@ -254,41 +252,60 @@
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-sm);
-    padding: var(--sk-space-sm) var(--sk-space-md) var(--sk-space-md);
+    padding: var(--sk-space-sm) var(--sk-space-sm) var(--sk-space-md);
   }
 
   .view-list.headerless {
     padding-top: 0;
   }
 
+  /* ── Section header: uncramped layout ──
+     Row 1: h3 (title)  |  + Create button
+     Row 2: subtitle (full width, own line)
+  */
   .section-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--sk-space-md);
-  }
-
-  .section-header h3,
-  .section-header p {
-    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    column-gap: var(--sk-space-md);
+    row-gap: var(--sk-space-xs);
+    align-items: center;
   }
 
   .section-header h3 {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
     font-size: var(--sk-font-size-sm);
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--sk-secondary-strong);
   }
 
-  .section-header p {
-    font-size: var(--sk-font-size-xs);
-    color: var(--sk-muted);
+  /* create btn: column 2, row 1 */
+  .section-header .create-btn {
+    grid-column: 2;
+    grid-row: 1;
   }
 
+  /* subtitle: row 2, full width */
+  .section-subtitle {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0;
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-muted);
+    line-height: 1.45;
+    text-wrap: pretty;
+  }
+
+  /* search bar */
   .panel-search {
     display: flex;
     align-items: center;
     gap: var(--sk-space-sm);
+    padding: 0 var(--sk-space-xs);
     color: var(--sk-muted);
   }
 
@@ -296,16 +313,20 @@
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     padding: var(--sk-space-sm) var(--sk-space-sm);
     font: inherit;
   }
 
   .panel-search-input:focus {
-    border-color: rgba(0, 169, 165, 0.4);
-    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+    border-color: rgba(var(--marble-active-rgb), 0.4);
+    box-shadow: 0 0 0 2px var(--sk-ring);
     outline: none;
+  }
+
+  .panel-search-input::placeholder {
+    color: var(--sk-muted);
   }
 
   .items {
@@ -314,43 +335,54 @@
     gap: var(--sk-space-xs);
   }
 
+  /* view row */
   .view-row {
     display: flex;
     align-items: stretch;
     gap: var(--sk-space-sm);
-    border-radius: var(--sk-radius-sm);
+    border-radius: var(--sk-radius-md);
   }
 
   .view-row.active {
-    background: rgba(0, 169, 165, 0.1);
+    background: rgba(var(--marble-active-rgb), 0.1);
   }
 
+  /* roomier: 7px padding, radius-md */
   .view-item {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--sk-space-xs);
+    gap: 3px;
     border: none;
     background: transparent;
     color: var(--sk-text);
     text-align: left;
-    padding: var(--sk-space-xs);
-    border-radius: var(--sk-radius-sm);
+    padding: 7px var(--sk-space-sm);
+    border-radius: var(--sk-radius-md);
     cursor: pointer;
   }
 
+  /* keyboard nav: consistent focus ring matching re-skin palette */
+  .view-item:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* hover = teal soft wash */
   .view-item:hover,
   .view-row.active .view-item {
-    background: rgba(0, 169, 165, 0.08);
+    background: rgba(var(--marble-active-rgb), 0.08);
   }
 
   .view-item-name {
     font-size: var(--sk-font-size-body);
   }
 
+  /* base-tables in mono per design */
   .view-item-meta {
-    font-size: var(--sk-font-size-xs);
+    font-family: var(--sk-font-mono);
+    font-size: 10.5px;
     color: var(--sk-muted);
   }
 
@@ -387,8 +419,8 @@
     padding: var(--sk-space-sm);
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: var(--sk-shadow-card);
+    background: var(--sk-glass-popup);
+    box-shadow: var(--sk-shadow-pop);
   }
 
   .create-btn,
@@ -403,11 +435,19 @@
     cursor: pointer;
   }
 
+  /* create btn: teal border/bg, clean beside count */
   .create-btn {
-    border: 1px solid rgba(0, 169, 165, 0.24);
-    background: rgba(0, 169, 165, 0.08);
-    color: var(--sk-accent);
-    padding: var(--sk-space-sm) var(--sk-space-sm);
+    border: 1px solid rgba(var(--marble-active-rgb), 0.22);
+    background: rgba(var(--marble-active-rgb), 0.08);
+    color: var(--sk-accent-active-strong);
+    padding: 5px var(--sk-space-sm) 5px 7px;
+    font-size: var(--sk-font-size-xs);
+    font-weight: 600;
+  }
+
+  .create-btn:focus-visible {
+    outline: 2px solid var(--sk-data-strong);
+    outline-offset: 2px;
   }
 
   .icon-btn {
@@ -420,7 +460,7 @@
 
   .icon-btn:hover {
     border-color: var(--sk-border-light);
-    background: rgba(255, 255, 255, 0.7);
+    background: var(--sk-glass-button);
   }
 
   .actions-menu-item {
@@ -433,11 +473,11 @@
   }
 
   .actions-menu-item:hover {
-    background: rgba(0, 169, 165, 0.08);
+    background: rgba(var(--marble-active-rgb), 0.08);
   }
 
   .actions-menu-item--danger {
-    color: #b54747;
+    color: var(--sk-danger);
   }
 
   .create-btn:disabled,
@@ -451,12 +491,14 @@
   .empty-state {
     color: var(--sk-muted);
     font-size: var(--sk-font-size-body);
+    padding: var(--sk-space-sm) var(--sk-space-md);
   }
 
+  /* ── Dialogs ── */
   .dialog-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: rgba(var(--sk-ink-rgb), 0.4);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -469,10 +511,10 @@
   .dialog-card {
     max-width: 400px;
     width: 100%;
-    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    background: var(--sk-bg, var(--sk-glass-popup));
     border-radius: var(--sk-radius-md);
     padding: var(--sk-space-lg);
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    box-shadow: var(--sk-shadow-pop);
     animation: dialog-pop 140ms ease-out;
   }
 
@@ -492,7 +534,7 @@
     width: 100%;
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     padding: var(--sk-space-sm) var(--sk-space-sm);
     font: inherit;
@@ -500,8 +542,8 @@
   }
 
   .dialog-input:focus {
-    border-color: rgba(0, 169, 165, 0.4);
-    box-shadow: 0 0 0 2px rgba(0, 169, 165, 0.12);
+    border-color: rgba(var(--marble-active-rgb), 0.45);
+    box-shadow: 0 0 0 2px var(--sk-ring);
     outline: none;
   }
 
@@ -535,27 +577,27 @@
   }
 
   .dialog-btn-secondary:hover:not(:disabled) {
-    background: rgba(47, 72, 88, 0.04);
+    background: rgba(var(--marble-vein-rgb), 0.04);
   }
 
   .dialog-btn-primary {
-    border: 1px solid rgba(0, 169, 165, 0.3);
-    background: rgba(0, 169, 165, 0.1);
-    color: var(--sk-accent);
+    border: 1px solid rgba(var(--marble-active-rgb), 0.3);
+    background: rgba(var(--marble-active-rgb), 0.1);
+    color: var(--sk-accent-active-strong);
   }
 
   .dialog-btn-primary:hover:not(:disabled) {
-    background: rgba(0, 169, 165, 0.18);
+    background: rgba(var(--marble-active-rgb), 0.18);
   }
 
   .dialog-btn-danger {
-    border: 1px solid rgba(181, 71, 71, 0.3);
-    background: rgba(181, 71, 71, 0.08);
-    color: #b54747;
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
+    background: rgba(var(--sk-danger-rgb), 0.08);
+    color: var(--sk-danger);
   }
 
   .dialog-btn-danger:hover:not(:disabled) {
-    background: rgba(181, 71, 71, 0.16);
+    background: rgba(var(--sk-danger-rgb), 0.16);
   }
 
   @keyframes dialog-fade {

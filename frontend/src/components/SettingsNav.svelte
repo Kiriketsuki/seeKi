@@ -42,6 +42,7 @@
     padding: var(--sk-space-xs) 0;
   }
 
+  /* roomier rows: 7px padding, radius-md, marble-keyed hover */
   .nav-item {
     display: flex;
     align-items: center;
@@ -49,34 +50,35 @@
     gap: var(--sk-space-sm);
     width: 100%;
     border: none;
-    border-radius: var(--sk-radius-sm);
+    border-radius: var(--sk-radius-md);
     background: none;
     color: var(--sk-text);
-    padding: var(--sk-space-xs) var(--sk-space-md);
+    padding: 7px var(--sk-space-md);
     font-family: var(--sk-font-ui);
     font-size: var(--sk-font-size-body);
     text-align: left;
     cursor: pointer;
+    transition: background 0.12s ease;
   }
 
+  /* hover: teal soft wash */
   .nav-item:hover {
-    background: var(--sk-border);
+    background: var(--sk-active-tint-soft);
   }
 
+  /* active-soft: teal tint (not amber — settings nav uses the "active" teal token) */
   .nav-item.active {
-    background: var(--sk-accent);
-    color: white;
+    background: rgba(var(--marble-active-rgb), 0.1);
+    color: var(--sk-text);
+    box-shadow: inset 2px 0 0 var(--sk-accent-active);
   }
 
+  /* update badge dot */
   .badge {
     width: 8px;
     height: 8px;
     border-radius: var(--sk-radius-pill);
-    background: var(--sk-accent);
+    background: var(--sk-accent-count);
     flex-shrink: 0;
-  }
-
-  .nav-item.active .badge {
-    background: white;
   }
 </style>

@@ -251,6 +251,7 @@
     user-select: none;
   }
 
+  /* Panel card: frosted quartz slab, vein hairline border */
   .data-panel {
     min-height: 0;
     display: flex;
@@ -262,9 +263,10 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   }
 
+  /* Drop-target: teal ring from the active accent */
   .data-panel.is-drop-target {
-    border-color: rgba(0, 169, 165, 0.45);
-    box-shadow: 0 0 0 1px rgba(0, 169, 165, 0.18);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.45);
+    box-shadow: 0 0 0 1px rgba(var(--sk-accent-active-rgb), 0.18);
   }
 
   .data-panel__header {
@@ -292,6 +294,7 @@
     min-width: 0;
   }
 
+  /* Section title: uppercase eyebrow — mirrors .sk-section-title */
   .data-panel__title {
     font-size: var(--sk-font-size-sm);
     font-weight: 700;
@@ -326,11 +329,18 @@
     cursor: pointer;
   }
 
+  /* keyboard nav: consistent focus ring matching re-skin palette */
+  .panel-action:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Primary action (Create view): teal-tinted border + dark-teal ink — mirrors .sk-create-btn */
   .panel-action--primary {
     padding: var(--sk-space-xs) var(--sk-space-sm);
-    border-color: rgba(0, 169, 165, 0.24);
-    background: rgba(0, 169, 165, 0.08);
-    color: var(--sk-accent);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.24);
+    background: rgba(var(--sk-accent-active-rgb), 0.08);
+    color: var(--sk-data-ink);
   }
 
   .panel-action--icon {
@@ -340,9 +350,10 @@
     color: var(--sk-secondary-strong);
   }
 
+  /* Icon action hover: faint white glass, vein hairline border */
   .panel-action--icon:hover {
     border-color: var(--sk-border-light);
-    background: rgba(255, 255, 255, 0.78);
+    background: var(--sk-glass-button);
   }
 
   .panel-action:disabled {
@@ -377,10 +388,11 @@
     cursor: default;
   }
 
+  /* Grip pill: vein-tinted at 12% opacity */
   .data-panel__grip span {
     width: 56px;
     height: 4px;
     border-radius: var(--sk-radius-pill);
-    background: rgba(47, 72, 88, 0.12);
+    background: rgba(var(--sk-ink-rgb), 0.12);
   }
 </style>

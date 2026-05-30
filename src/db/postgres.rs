@@ -685,7 +685,7 @@ fn qualified_table_sql(table: &TableKey) -> String {
 fn is_numeric_type(data_type: &str) -> bool {
     matches!(
         data_type,
-        "smallint" | "integer" | "bigint" | "real" | "double precision" | "numeric"
+        "smallint" | "integer" | "bigint" | "real" | "double precision" | "numeric" | "money"
     )
 }
 

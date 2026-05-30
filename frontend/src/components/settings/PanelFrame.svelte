@@ -26,12 +26,14 @@
 </section>
 
 <style>
+  /* sk-pf in the design reference */
   .panel-frame {
     display: flex;
     flex-direction: column;
     gap: var(--sk-space-xl);
   }
 
+  /* sk-pf-head */
   .panel-header {
     display: flex;
     flex-direction: column;
@@ -42,14 +44,18 @@
     font-size: var(--sk-font-size-xl);
     font-weight: 600;
     color: var(--sk-text);
+    letter-spacing: -0.01em;
+    margin: 0;
   }
 
   .panel-header p {
     max-width: 70ch;
     color: var(--sk-secondary-strong);
     line-height: 1.6;
+    margin: 0;
   }
 
+  /* sk-pf-body */
   .panel-body {
     display: flex;
     flex-direction: column;

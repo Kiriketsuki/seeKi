@@ -28,26 +28,33 @@
 {/if}
 
 <style>
+  /* ── RowCapWarning — amber warn pill/banner per app.css .sk-info-banner / .sk-status-pill.warn ── */
+
+  /* shared structure — mirrors .sk-info-banner */
   .cap-banner {
     display: flex;
     align-items: center;
     gap: var(--sk-space-sm);
-    padding: var(--sk-space-xs) var(--sk-space-2xl);
+    padding: var(--sk-space-sm) var(--sk-space-2xl);
     font-size: var(--sk-font-size-sm);
+    font-weight: 500;
   }
 
+  /* hard cap — danger-level amber (attention, not error) — closest to .sk-status-pill.warn */
   .cap-banner--hard {
-    background: rgba(185, 28, 28, 0.07);
-    border-bottom: 1px solid rgba(185, 28, 28, 0.2);
-    color: #9b1c1c;
+    background: rgba(var(--sk-accent-count-rgb), 0.14);
+    border-bottom: 1px solid rgba(var(--sk-accent-count-rgb), 0.28);
+    color: var(--sk-accent-count-ink);
   }
 
+  /* soft cap — gentler amber info banner — mirrors .sk-info-banner approach with amber tint */
   .cap-banner--soft {
-    background: rgba(202, 138, 4, 0.07);
-    border-bottom: 1px solid rgba(202, 138, 4, 0.18);
-    color: #78350f;
+    background: rgba(var(--sk-accent-count-rgb), 0.08);
+    border-bottom: 1px solid rgba(var(--sk-accent-count-rgb), 0.18);
+    color: var(--sk-accent-count-ink);
   }
 
+  /* warning icon — flex-shrink so it never wraps */
   .cap-icon {
     flex-shrink: 0;
   }

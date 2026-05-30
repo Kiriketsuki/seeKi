@@ -169,15 +169,17 @@
 <style>
   .builder-topbar {
     display: grid;
-    grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(220px, 1.6fr) minmax(0, 2.4fr) auto;
     gap: var(--sk-space-lg);
     align-items: start;
     padding: var(--sk-space-lg);
     border: 1px solid var(--sk-border-light);
-    border-radius: var(--sk-radius-xl);
+    border-radius: var(--sk-radius-lg);
     background:
-      radial-gradient(circle at top left, rgba(0, 169, 165, 0.08), transparent 34%),
+      radial-gradient(circle at top left, rgba(var(--sk-accent-active-rgb), 0.08), transparent 38%),
       rgba(255, 255, 255, 0.82);
+    backdrop-filter: var(--sk-glass-grid-blur);
+    -webkit-backdrop-filter: var(--sk-glass-grid-blur);
     box-shadow: var(--sk-shadow-card);
   }
 
@@ -194,6 +196,8 @@
 
   .builder-topbar__cluster--actions {
     justify-content: flex-end;
+    align-items: flex-end;
+    gap: var(--sk-space-sm);
   }
 
   .field {
@@ -206,7 +210,7 @@
   }
 
   .field--name {
-    min-width: 260px;
+    min-width: 240px;
   }
 
   .field span {
@@ -216,12 +220,20 @@
   .field input,
   .field select,
   .top-n-controls input {
-    border: 1px solid var(--sk-border-light);
+    border: 1px solid var(--sk-border-input);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.84);
+    background: var(--sk-glass-input);
     color: var(--sk-text);
     font: inherit;
-    padding: var(--sk-space-sm) var(--sk-space-sm);
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    outline: none;
+  }
+
+  .field input:focus,
+  .field select:focus,
+  .top-n-controls input:focus {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.45);
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
   }
 
   .builder-pills {
@@ -233,22 +245,22 @@
   .pill {
     display: inline-flex;
     align-items: center;
-    gap: var(--sk-space-sm);
+    gap: var(--sk-space-xs);
     border-radius: var(--sk-radius-pill);
-    background: rgba(47, 72, 88, 0.08);
+    background: rgba(var(--sk-ink-rgb), 0.07);
     color: var(--sk-secondary-strong);
-    padding: var(--sk-space-sm) var(--sk-space-sm);
+    padding: 4px var(--sk-space-sm);
     font-size: var(--sk-font-size-xs);
     font-weight: 600;
   }
 
   .pill--accent {
-    background: rgba(0, 169, 165, 0.1);
-    color: var(--sk-accent);
+    background: rgba(var(--sk-accent-active-rgb), 0.1);
+    color: var(--sk-accent-active-strong);
   }
 
   .field--top-n {
-    min-width: 240px;
+    min-width: 220px;
   }
 
   .top-n-controls {
@@ -258,7 +270,7 @@
   }
 
   .top-n-controls input {
-    width: 80px;
+    width: 70px;
   }
 
   .toggle-chip,
@@ -271,34 +283,56 @@
     border-radius: var(--sk-radius-md);
     cursor: pointer;
     font: inherit;
+    font-size: var(--sk-font-size-body);
+    font-weight: 500;
     padding: var(--sk-space-sm) var(--sk-space-md);
+    white-space: nowrap;
+    transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
   }
 
-  .toggle-chip,
-  .secondary {
-    border: 1px solid var(--sk-border-light);
+  .toggle-chip {
+    border: 1px solid var(--sk-border-input);
     background: rgba(255, 255, 255, 0.72);
     color: var(--sk-text);
   }
 
   .toggle-chip.active {
-    border-color: rgba(0, 169, 165, 0.32);
-    background: rgba(0, 169, 165, 0.08);
-    color: var(--sk-accent);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.32);
+    background: rgba(var(--sk-accent-active-rgb), 0.1);
+    color: var(--sk-accent-active-strong);
   }
 
+  .secondary {
+    border: 1px solid var(--sk-border-input);
+    background: var(--sk-glass-button);
+    color: var(--sk-text);
+  }
+
+  .secondary:hover:not(:disabled) {
+    background: var(--sk-glass-button);
+    border-color: rgba(var(--sk-accent-active-rgb), 0.24);
+    box-shadow: var(--sk-shadow-card);
+  }
+
+  /* Primary = amber CTA (Save view) */
   .primary {
-    border: 1px solid rgba(0, 169, 165, 0.28);
-    background: rgba(0, 169, 165, 0.12);
-    color: var(--sk-accent);
+    border: none;
+    background: var(--sk-accent);
+    color: var(--sk-on-accent);
+    box-shadow: var(--sk-shadow-accent);
+  }
+
+  .primary:hover:not(:disabled) {
+    opacity: 0.93;
   }
 
   .primary:disabled {
     cursor: not-allowed;
-    opacity: 0.6;
+    opacity: 0.5;
+    box-shadow: none;
   }
 
-  @media (max-width: 1280px) {
+  @media (max-width: 1100px) {
     .builder-topbar {
       grid-template-columns: minmax(0, 1fr);
     }

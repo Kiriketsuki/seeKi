@@ -284,6 +284,10 @@
     refreshController.setSurface(selectedRefreshSurfaceKey);
   });
 
+  $effect(() => {
+    document.documentElement.setAttribute('data-palette', appearanceSettings.palette);
+  });
+
   function clearModeShortcut() {
     if (modeShortcutId !== null) {
       clearTimeout(modeShortcutId);
@@ -1611,8 +1615,8 @@
     display: inline-flex;
     align-items: center;
     border-radius: var(--sk-radius-pill);
-    background: rgba(0, 169, 165, 0.1);
-    color: var(--sk-accent);
+    background: var(--sk-active-chip-bg);
+    color: var(--sk-data-ink);
     padding: var(--sk-space-xs) var(--sk-space-sm);
     font-weight: 600;
   }
@@ -1620,7 +1624,7 @@
   .view-action {
     border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
-    background: rgba(255, 255, 255, 0.78);
+    background: var(--sk-glass-button);
     color: var(--sk-secondary-strong);
     padding: var(--sk-space-sm) var(--sk-space-sm);
     font: inherit;
@@ -1636,8 +1640,8 @@
   }
 
   .view-action--danger:hover {
-    color: #b91c1c;
-    border-color: rgba(185, 28, 28, 0.28);
+    color: var(--sk-danger);
+    border-color: rgba(var(--sk-danger-rgb), 0.28);
   }
 
   .grid-area {
@@ -1675,7 +1679,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(245, 240, 235, 0.28);
+    background: rgba(var(--sk-surface-rgb), 0.28);
   }
 
   .loading-state {
@@ -1694,7 +1698,7 @@
     width: 24px;
     height: 24px;
     border: 2px solid var(--sk-border);
-    border-top-color: var(--sk-accent);
+    border-top-color: var(--sk-accent-active);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
@@ -1711,15 +1715,15 @@
     justify-content: space-between;
     gap: var(--sk-space-md);
     padding: var(--sk-space-sm) var(--sk-space-2xl);
-    background: rgba(220, 38, 38, 0.1);
-    border-bottom: 1px solid rgba(220, 38, 38, 0.3);
+    background: rgba(var(--sk-danger-rgb), 0.1);
+    border-bottom: 1px solid rgba(var(--sk-danger-rgb), 0.3);
     color: var(--sk-text);
     font-size: var(--sk-font-size-body);
   }
 
   .dismiss-btn {
     background: none;
-    border: 1px solid rgba(220, 38, 38, 0.4);
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.4);
     border-radius: var(--sk-radius-sm);
     padding: var(--sk-space-xs) var(--sk-space-sm);
     font-family: var(--sk-font-ui);
@@ -1761,8 +1765,8 @@
   }
 
   .retry-btn {
-    background: var(--sk-accent);
-    color: white;
+    background: var(--sk-accent-count);
+    color: var(--sk-ink-strong);
     border: none;
     border-radius: var(--sk-radius-md);
     padding: var(--sk-space-xs) var(--sk-space-lg);
@@ -1792,7 +1796,7 @@
   .draft-guard-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: var(--sk-backdrop);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -1805,10 +1809,13 @@
   .draft-guard-card {
     max-width: 420px;
     width: 100%;
-    background: var(--sk-bg, rgba(255, 255, 255, 0.98));
+    background: var(--sk-glass-dock);
+    backdrop-filter: var(--sk-glass-grid-blur);
+    -webkit-backdrop-filter: var(--sk-glass-grid-blur);
+    border: 1px solid var(--sk-border-light);
     border-radius: var(--sk-radius-md);
     padding: var(--sk-space-lg);
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    box-shadow: var(--sk-shadow-pop);
     animation: dg-pop 140ms ease-out;
   }
 
@@ -1846,15 +1853,15 @@
     color: var(--sk-text);
   }
 
-  .draft-guard-btn-secondary:hover { background: rgba(47, 72, 88, 0.04); }
+  .draft-guard-btn-secondary:hover { background: var(--sk-active-tint-soft); }
 
   .draft-guard-btn-danger {
-    border: 1px solid rgba(181, 71, 71, 0.3);
-    background: rgba(181, 71, 71, 0.08);
-    color: #b54747;
+    border: 1px solid rgba(var(--sk-danger-rgb), 0.3);
+    background: rgba(var(--sk-danger-rgb), 0.08);
+    color: var(--sk-danger);
   }
 
-  .draft-guard-btn-danger:hover { background: rgba(181, 71, 71, 0.16); }
+  .draft-guard-btn-danger:hover { background: rgba(var(--sk-danger-rgb), 0.16); }
 
   @keyframes dg-fade {
     from { opacity: 0; }

@@ -197,7 +197,7 @@ export class SeekiHelpers {
 
   /** Toggle sidebar collapse/expand. */
   async toggleSidebar(): Promise<void> {
-    await this.page.locator('.sidebar .toggle').click();
+    await this.page.locator('[data-testid="sidebar-toggle"]').click();
   }
 
   /** Switch the sidebar workspace to Settings. */

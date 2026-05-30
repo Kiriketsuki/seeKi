@@ -6,6 +6,7 @@ import type {
   DisplayConfig,
   PageSizePreference,
   PaginationMode,
+  PalettePreference,
   RowDensityPreference,
   SettingsEntries,
 } from './types';
@@ -13,6 +14,7 @@ import type {
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   dateFormat: 'system',
   rowDensity: 'comfortable',
+  palette: 'alabaster',
 };
 
 export function parseBrandingSettings(
@@ -41,10 +43,14 @@ export function parseAppearanceSettings(settings: SettingsEntries): AppearanceSe
   const rowDensity = isRowDensityPreference(settings['appearance.row_density'])
     ? settings['appearance.row_density']
     : DEFAULT_APPEARANCE_SETTINGS.rowDensity;
+  const palette = isPalettePreference(settings['appearance.palette'])
+    ? settings['appearance.palette']
+    : DEFAULT_APPEARANCE_SETTINGS.palette;
 
   return {
     dateFormat,
     rowDensity,
+    palette,
   };
 }
 
@@ -63,6 +69,7 @@ export function buildAppearanceSettingsEntries(
   return {
     'appearance.date_format': appearance.dateFormat,
     'appearance.row_density': appearance.rowDensity,
+    'appearance.palette': appearance.palette,
   };
 }
 
@@ -79,6 +86,19 @@ export function isRowDensityPreference(
   value: unknown,
 ): value is RowDensityPreference {
   return value === 'comfortable' || value === 'compact';
+}
+
+export function isPalettePreference(
+  value: unknown,
+): value is PalettePreference {
+  return (
+    value === 'alabaster' ||
+    value === 'travertine' ||
+    value === 'carrara' ||
+    value === 'deepvein' ||
+    value === 'spa' ||
+    value === 'oxide'
+  );
 }
 
 export const DEFAULT_DATA_SETTINGS: DataSettings = {

@@ -47,10 +47,12 @@ describe('parseAppearanceSettings', () => {
       parseAppearanceSettings({
         'appearance.date_format': 'DD/MM/YYYY',
         'appearance.row_density': 'compact',
+        'appearance.palette': 'carrara',
       }),
     ).toEqual({
       dateFormat: 'DD/MM/YYYY',
       rowDensity: 'compact',
+      palette: 'carrara',
     });
   });
 
@@ -59,10 +61,12 @@ describe('parseAppearanceSettings', () => {
       parseAppearanceSettings({
         'appearance.date_format': 'RFC3339',
         'appearance.row_density': 'dense',
+        'appearance.palette': 'unknown-marble',
       }),
     ).toEqual({
       dateFormat: 'system',
       rowDensity: 'comfortable',
+      palette: 'alabaster',
     });
   });
 });
@@ -121,10 +125,12 @@ describe('settings entry builders', () => {
       buildAppearanceSettingsEntries({
         dateFormat: 'YYYY-MM-DD',
         rowDensity: 'compact',
+        palette: 'oxide',
       }),
     ).toEqual({
       'appearance.date_format': 'YYYY-MM-DD',
       'appearance.row_density': 'compact',
+      'appearance.palette': 'oxide',
     });
   });
 });

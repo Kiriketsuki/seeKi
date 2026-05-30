@@ -408,6 +408,14 @@ export type DateFormatPreference =
 
 export type RowDensityPreference = 'comfortable' | 'compact';
 
+export type PalettePreference =
+  | 'alabaster'
+  | 'travertine'
+  | 'carrara'
+  | 'deepvein'
+  | 'spa'
+  | 'oxide';
+
 export interface BrandingSettings {
   title: string;
   subtitle: string;
@@ -416,6 +424,7 @@ export interface BrandingSettings {
 export interface AppearanceSettings {
   dateFormat: DateFormatPreference;
   rowDensity: RowDensityPreference;
+  palette: PalettePreference;
 }
 
 export type SettingsEntries = Record<string, unknown>;
