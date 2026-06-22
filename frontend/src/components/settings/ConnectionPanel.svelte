@@ -33,7 +33,9 @@
       <div class="card"><span>Host</span><strong>{status.host ?? '—'}</strong></div>
       <div class="card"><span>Port</span><strong>{status.port ?? '—'}</strong></div>
       <div class="card"><span>Database</span><strong>{status.database ?? '—'}</strong></div>
+      {#if !(status.schemas.length === 1 && status.schemas[0] === status.database)}
       <div class="card"><span>Schemas</span><strong>{status.schemas.join(', ')}</strong></div>
+      {/if}
       <div class="card"><span>SSH</span><strong>{status.ssh_enabled ? (status.ssh_connected ? 'Configured and connected' : 'Configured') : 'Not configured'}</strong></div>
     </div>
   {/if}
