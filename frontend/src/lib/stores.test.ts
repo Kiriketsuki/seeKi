@@ -220,4 +220,32 @@ describe('buildQuickStatsSnapshot', () => {
       sampleCount: 3,
     });
   });
+
+  it('caps numeric stat chips so wide tables do not flood the bar', () => {
+    const wideRow: Record<string, number> = {};
+    const visibleColumns = Array.from({ length: 12 }, (_, index) => {
+      wideRow[`metric_${index}`] = index;
+      return column({
+        name: `metric_${index}`,
+        display_name: `Metric ${index}`,
+        data_type: 'integer',
+        is_primary_key: false,
+      });
+    });
+
+    const snapshot = buildQuickStatsSnapshot({
+      totalRows: 192_147,
+      rows: [wideRow, { ...wideRow }],
+      visibleColumns,
+    });
+
+    // All 12 are eligible, but the bar must stay bounded (first N, in column order).
+    expect(snapshot.numericColumns).toHaveLength(4);
+    expect(snapshot.numericColumns.map((stat) => stat.columnName)).toEqual([
+      'metric_0',
+      'metric_1',
+      'metric_2',
+      'metric_3',
+    ]);
+  });
 });
