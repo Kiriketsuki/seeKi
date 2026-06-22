@@ -1059,7 +1059,7 @@
       }
     }
     const qs = searchParams.toString();
-    const base = `/api/export/${encodeURIComponent(selectedSchema)}/${encodeURIComponent(selectedTable)}/csv`;
+    const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api/export/${encodeURIComponent(selectedSchema)}/${encodeURIComponent(selectedTable)}/csv`;
     window.open(`${base}${qs ? `?${qs}` : ''}`, '_blank');
   }
 

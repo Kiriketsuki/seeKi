@@ -40,6 +40,16 @@ import {
 
 const USE_MOCK = import.meta.env.VITE_MOCK === 'true';
 
+// When the app is served under a subpath (Vite `base`, e.g. '/seeki/') behind a
+// reverse proxy that STRIPs the prefix, the browser must REQUEST the prefixed path
+// (/seeki/api/...) so the proxy routes it; the proxy then strips it back to /api/...
+// for the server. BASE_URL is '/' in dev (no-op; the dev proxy handles /api) and
+// '/seeki/' in the production build.
+export function apiUrl(path: string): string {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, ''); // '' or '/seeki'
+  return `${base}${path}`;
+}
+
 function assertShape(data: unknown, fields: string[], context: string): void {
   if (data == null || typeof data !== 'object') {
     throw new Error(`${context}: expected object, got ${typeof data}`);
@@ -61,7 +71,7 @@ async function apiFetch<T = void>(path: string, method = 'GET'): Promise<T> {
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(path, { method, signal: controller.signal });
+    res = await fetch(apiUrl(path), { method, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeout);
     if (e instanceof DOMException && e.name === 'AbortError') {
@@ -91,7 +101,7 @@ async function apiPost<T = void>(path: string, body: unknown): Promise<T> {
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -125,7 +135,7 @@ async function apiPatch<T = void>(path: string, body: unknown): Promise<T> {
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -323,7 +333,7 @@ export function buildViewCsvUrl(
   viewId: number,
   params?: ViewRowsParams,
 ): string {
-  return `/api/views/${viewId}/csv${buildRowsQueryString(params)}`;
+  return apiUrl(`/api/views/${viewId}/csv${buildRowsQueryString(params)}`);
 }
 
 export async function fetchFkPath(
@@ -427,7 +437,7 @@ function withBearerHeader(headers: HeadersInit | undefined, token: string): Head
 
 async function fetchWithUpdateAuth(path: string, init: RequestInit): Promise<Response> {
   let token = await fetchUpdateToken();
-  let response = await fetch(path, {
+  let response = await fetch(apiUrl(path), {
     ...init,
     headers: withBearerHeader(init.headers, token),
   });
@@ -438,7 +448,7 @@ async function fetchWithUpdateAuth(path: string, init: RequestInit): Promise<Res
 
   resetUpdateTokenCache();
   token = await fetchUpdateToken();
-  response = await fetch(path, {
+  response = await fetch(apiUrl(path), {
     ...init,
     headers: withBearerHeader(init.headers, token),
   });
@@ -454,7 +464,7 @@ export async function setupTestConnection(req: {
   const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch('/api/setup/test-connection', {
+    res = await fetch(apiUrl('/api/setup/test-connection'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
@@ -616,7 +626,7 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
   const timeout = setTimeout(() => controller.abort(), SETUP_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch('/api/setup/save', {
+    res = await fetch(apiUrl('/api/setup/save'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
@@ -627,7 +637,7 @@ export async function setupSaveConfig(req: SetupSaveRequest): Promise<SetupSaveR
     if (e instanceof DOMException && e.name === 'AbortError') {
       // Server may have completed while we timed out — check before erroring
       try {
-        const status = await fetch('/api/status').then((r) => r.json());
+        const status = await fetch(apiUrl('/api/status')).then((r) => r.json());
         if ((status as { mode?: string })?.mode === 'normal') {
           window.location.reload();
           return undefined as unknown as SetupSaveResponse; // unreachable after reload
