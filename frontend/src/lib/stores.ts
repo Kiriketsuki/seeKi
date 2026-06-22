@@ -464,6 +464,12 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+/**
+ * Cap the per-column numeric stat chips so wide tables (e.g. vehicle logs with
+ * 20+ numeric columns) don't flood the quick-stats bar into an unreadable smear.
+ */
+const QUICK_STATS_MAX_NUMERIC_COLUMNS = 4;
+
 export function buildQuickStatsSnapshot({
   totalRows,
   rows,
@@ -523,7 +529,7 @@ export function buildQuickStatsSnapshot({
   return {
     totalRows: Math.max(0, totalRows),
     pageRowCount: rows.length,
-    numericColumns,
+    numericColumns: numericColumns.slice(0, QUICK_STATS_MAX_NUMERIC_COLUMNS),
     focusedTextColumn,
   };
 }

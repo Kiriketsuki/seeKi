@@ -109,6 +109,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--sk-space-sm);
+    flex: 0 0 auto;
     min-width: 0;
     padding: 6px 12px 6px 8px;
     border: 1px solid var(--sk-border-light);
