@@ -524,4 +524,12 @@
       font-size: var(--sk-font-size-sm);
     }
   }
+
+  /* Narrow "don't break": four 1fr columns collide into garbled labels below
+     ~430px. Drop to a 2×2 grid so each button keeps room for its icon + text. */
+  @media (max-width: 430px) {
+    .dock-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
 </style>

@@ -446,4 +446,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* Narrow "don't break": the expanded sidebar at full width swallows most of a
+     phone viewport and squeezes the grid into horizontal overflow. Trim its width
+     so the grid stays usable — still a visible, usable sidebar, not a drawer. */
+  @media (max-width: 430px) {
+    .sidebar:not(.collapsed) {
+      width: 180px;
+      min-width: 180px;
+    }
+  }
 </style>
