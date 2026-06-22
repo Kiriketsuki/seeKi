@@ -51,12 +51,12 @@
         aria-label="Expand sidebar"
         data-testid="sidebar-toggle"
       >
-        <img class="mark mark-collapsed" src="/logo-mark.svg" alt="SeeKi" width="22" height="22" />
+        <img class="mark mark-collapsed" src="{import.meta.env.BASE_URL}logo-mark.svg" alt="SeeKi" width="22" height="22" />
       </button>
     {:else}
       <div class="branding">
         <div class="title-row">
-          <img class="mark" src="/logo-mark.svg" alt="" aria-hidden="true" width="22" height="22" />
+          <img class="mark" src="{import.meta.env.BASE_URL}logo-mark.svg" alt="" aria-hidden="true" width="22" height="22" />
           <span class="title">{title}</span>
         </div>
         {#if subtitle}
