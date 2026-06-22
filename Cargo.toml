@@ -1,6 +1,6 @@
 [package]
 name = "seeki"
-version = "7.0.0"
+version = "7.0.1"
 edition = "2024"
 description = "A read-only, spreadsheet-like database viewer for casual users. data-seeKing."
 license = "MIT"
