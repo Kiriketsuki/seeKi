@@ -164,13 +164,14 @@
           {#if panel.id === 'views'}
             <button
               type="button"
-              class="panel-action panel-action--primary"
+              class="panel-action panel-action--primary panel-action--square"
               onclick={onCreateView}
               disabled={viewsDisabled}
+              title="Create view"
+              aria-label="Create view"
               data-testid="data-panel-create-view"
             >
               <Plus size={14} />
-              <span>Create view</span>
             </button>
           {/if}
           <span class="drag-handle" aria-hidden="true">
@@ -301,6 +302,9 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--sk-secondary-strong);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .data-panel__subtitle {
@@ -341,6 +345,19 @@
     border-color: rgba(var(--sk-accent-active-rgb), 0.24);
     background: rgba(var(--sk-accent-active-rgb), 0.08);
     color: var(--sk-data-ink);
+  }
+
+  .panel-action--primary:hover:not(:disabled) {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.38);
+    background: rgba(var(--sk-accent-active-rgb), 0.14);
+  }
+
+  /* Square icon button: fixed 28px, no text padding — fits the 236px sidebar header */
+  .panel-action--square {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    flex-shrink: 0;
   }
 
   .panel-action--icon {

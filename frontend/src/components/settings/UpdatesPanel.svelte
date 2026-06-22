@@ -72,6 +72,7 @@
   });
 
   let updateAvailable = $derived(status?.update_available ?? false);
+  let latestKnown = $derived(status?.latest != null && status.latest !== '');
   let previousExists = $derived(status?.previous_exists ?? false);
   let pollIntervalHours = $derived((status?.poll_interval_hours ?? 6) as UpdatePollIntervalHours);
   let availableBuilds = $derived(status?.available_builds ?? []);
@@ -195,9 +196,13 @@
       if (nextStatus) {
         setStatus(nextStatus);
       }
-      successMsg = nextStatus?.update_available
-        ? `Update available: ${nextStatus.latest}`
-        : 'You are running the latest version.';
+      if (nextStatus?.update_available) {
+        successMsg = `Update available: ${nextStatus.latest}`;
+      } else if (nextStatus?.latest) {
+        successMsg = 'You are running the latest version.';
+      } else {
+        successMsg = 'Check complete — could not retrieve latest version info.';
+      }
     } catch (error) {
       errorMsg = error instanceof Error ? error.message : 'Failed to check for updates';
     } finally {
@@ -438,10 +443,15 @@
           <AlertCircle size={12} />
           Update available
         </span>
-      {:else}
+      {:else if latestKnown}
         <span class="status-pill status-pill--ok">
           <CircleCheck size={12} />
           Up to date
+        </span>
+      {:else}
+        <span class="status-pill status-pill--unknown">
+          <AlertCircle size={12} />
+          Update status unknown
         </span>
       {/if}
       {#if versionInfo?.commit}
@@ -505,7 +515,14 @@
         </span>
         {checking ? 'Checking…' : 'Check for updates'}
       </button>
-      <button class="btn btn-accent" type="button" onclick={() => (confirmAction = 'install')} disabled={!installEnabled}>
+      <button
+        class="btn"
+        class:btn-accent={installEnabled}
+        class:btn-secondary={!installEnabled}
+        type="button"
+        onclick={() => (confirmAction = 'install')}
+        disabled={!installEnabled}
+      >
         <Download size={14} />
         {applying ? 'Installing…' : 'Install update'}
       </button>
@@ -780,6 +797,12 @@
   .status-pill--ok {
     background: rgba(var(--sk-boolean-true-rgb), 0.1);
     color: var(--sk-boolean-true);
+  }
+
+  /* sk-status-pill.unknown — muted neutral */
+  .status-pill--unknown {
+    background: rgba(var(--marble-vein-rgb), 0.08);
+    color: var(--sk-muted);
   }
 
   /* sk-status-pill.warn — amber */

@@ -200,6 +200,20 @@
         </div>
       {/each}
     </div>
+  {:else if views.length === 0}
+    <div class="empty-state empty-state--cta" data-testid="view-list-empty">
+      <p class="empty-state-text">No saved views yet.</p>
+      <button
+        type="button"
+        class="create-btn"
+        onclick={onCreate}
+        disabled={disabled}
+        data-testid="view-list-empty-create"
+      >
+        <Plus size={14} />
+        <span>Create view</span>
+      </button>
+    </div>
   {:else}
     <div class="empty-state" data-testid="view-list-empty">
       No saved views match "{search.trim()}".
@@ -492,6 +506,20 @@
     color: var(--sk-muted);
     font-size: var(--sk-font-size-body);
     padding: var(--sk-space-sm) var(--sk-space-md);
+  }
+
+  /* no-views state: centered prompt + labeled create CTA */
+  .empty-state--cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    padding: var(--sk-space-md) var(--sk-space-md) var(--sk-space-lg);
+    text-align: center;
+  }
+
+  .empty-state-text {
+    margin: 0;
   }
 
   /* ── Dialogs ── */

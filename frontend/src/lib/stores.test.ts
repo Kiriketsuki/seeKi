@@ -152,6 +152,24 @@ describe('createGridRefreshController', () => {
 });
 
 describe('buildQuickStatsSnapshot', () => {
+  it('excludes primary-key columns from numeric stats', () => {
+    const snapshot = buildQuickStatsSnapshot({
+      totalRows: 3,
+      rows: [
+        { id: 1, speed: 40 },
+        { id: 2, speed: 60 },
+        { id: 3, speed: 80 },
+      ],
+      visibleColumns: [
+        column({ name: 'id', display_name: 'ID', data_type: 'integer', is_primary_key: true }),
+        column({ name: 'speed', display_name: 'Speed', data_type: 'integer', is_primary_key: false }),
+      ],
+    });
+
+    expect(snapshot.numericColumns).toHaveLength(1);
+    expect(snapshot.numericColumns[0].columnName).toBe('speed');
+  });
+
   it('computes page-level numeric and distinct text stats', () => {
     const snapshot = buildQuickStatsSnapshot({
       totalRows: 18,

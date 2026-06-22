@@ -443,6 +443,10 @@ function isNumericColumn(column: ColumnInfo): boolean {
   return NUMERIC_DATA_TYPES.has(column.data_type);
 }
 
+function isPrimaryKeyColumn(column: ColumnInfo): boolean {
+  return column.is_primary_key;
+}
+
 function isDistinctEligibleColumn(column: ColumnInfo): boolean {
   return !isNumericColumn(column) && !DISTINCT_COUNT_EXCLUDED_TYPES.has(column.data_type);
 }
@@ -472,7 +476,7 @@ export function buildQuickStatsSnapshot({
   focusedTextColumnName?: string | null;
 }): QuickStatsSnapshot {
   const numericColumns = visibleColumns.flatMap((column) => {
-    if (!isNumericColumn(column)) {
+    if (!isNumericColumn(column) || isPrimaryKeyColumn(column)) {
       return [];
     }
 
