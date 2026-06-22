@@ -248,13 +248,22 @@ fn casualify(name: &str, drop_id_suffix: bool) -> String {
     }
 }
 
+/// Tokens that must always render fully uppercase regardless of source casing.
+const ACRONYMS: &[&str] = &["BHA", "JCPL", "ID", "ULD"];
+
 fn title_case(segment: &str) -> String {
+    // Already all-uppercase (e.g. an acronym already in upper form) — pass through.
     if segment
         .chars()
         .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
         && segment.len() > 1
     {
         return segment.to_string();
+    }
+    // Allow-listed acronyms: match case-insensitively, emit uppercase.
+    let upper = segment.to_ascii_uppercase();
+    if ACRONYMS.contains(&upper.as_str()) {
+        return upper;
     }
     let mut chars = segment.chars();
     match chars.next() {
@@ -599,6 +608,26 @@ subtitle = "Fleet Telemetry"
     }
 
     #[test]
+    fn column_display_name_acronyms_are_uppercase() {
+        let cfg = &DisplayConfig::default();
+        // Standalone acronym tokens stay uppercase.
+        assert_eq!(display_name_column("public", "t", "bha_count", cfg), "BHA Count");
+        assert_eq!(display_name_column("public", "t", "jcpl_code", cfg), "JCPL Code");
+        assert_eq!(display_name_column("public", "t", "uld_weight", cfg), "ULD Weight");
+        // "_id" suffix token treated as acronym (drop_id_suffix strips it first, so
+        // "vehicle_id" → strip → "vehicle" → "Vehicle").
+        assert_eq!(display_name_column("public", "t", "vehicle_id", cfg), "Vehicle");
+        // But a column whose name IS just "id" after stripping yields empty → falls back
+        // to the raw name "id"; that edge case is unchanged behaviour.
+        // Acronym embedded mid-name: "stand_id" → strip → "stand" → "Stand".
+        assert_eq!(display_name_column("public", "t", "stand_id", cfg), "Stand");
+        // A plain "_id" column where the token before "_id" is an acronym.
+        assert_eq!(display_name_column("public", "t", "jcpl_id", cfg), "JCPL");
+        // Ordinary words are still Title Case, not forced uppercase.
+        assert_eq!(display_name_column("public", "t", "vehicle_type", cfg), "Vehicle Type");
+    }
+
+    #[test]
     fn column_display_name_prefers_override() {
         let config = AppConfig::parse(FULL_CONFIG).expect("full config should parse");
 
@@ -701,9 +730,10 @@ subtitle = "Fleet Telemetry"
 
     #[test]
     fn casualify_handles_bare_id_column() {
+        // "ID" is an allow-listed acronym — a bare `id` column renders uppercase.
         assert_eq!(
             display_name_column("public", "t", "id", &DisplayConfig::default()),
-            "Id"
+            "ID"
         );
     }
 

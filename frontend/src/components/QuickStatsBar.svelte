@@ -55,6 +55,9 @@
         <span class="stat-chip__meta">
           Min {formatNumber(stat.min)} · Avg {formatNumber(stat.avg)} · Max {formatNumber(stat.max)}
         </span>
+        <span class="stat-chip__meta">
+          From {numberFormatter.format(stat.sampleCount)} page values
+        </span>
       </div>
     </div>
   {/each}
@@ -92,6 +95,13 @@
     gap: var(--sk-space-sm);
     overflow-x: auto;
     width: 100%;
+  }
+
+  @media (max-width: 600px) {
+    .quick-stats-bar {
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
   }
 
   /* base chip — mirrors .sk-stat-chip */

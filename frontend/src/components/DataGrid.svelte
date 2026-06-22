@@ -22,6 +22,7 @@
     replaceSort,
     sortStateToConfig,
   } from '../lib/data-grid';
+  import { isSensitiveColumn } from '../lib/sensitive-columns';
   import { SKELETON_ROW_MARKER } from '../lib/infinite-scroll';
 
   let {
@@ -64,6 +65,36 @@
     new Map(columns.map((column) => [column.name, column]))
   );
   let sorting = $derived(sortStateToConfig(sortState));
+
+  // Columns whose names look credential-bearing are masked by default; the user
+  // reveals individual cells on demand. Keyed by `${rowIndex}:${prop}` — viewport
+  // local but sufficient for a per-cell toggle. Reset whenever the data resets so
+  // a previous table's reveals never carry over.
+  let revealedCells = $state(new Set<string>());
+
+  function cellRevealKey(rowIndex: number, prop: string): string {
+    return `${rowIndex}:${prop}`;
+  }
+
+  function toggleReveal(rowIndex: number, prop: string) {
+    const key = cellRevealKey(rowIndex, prop);
+    const next = new Set(revealedCells);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    revealedCells = next;
+  }
+
+  $effect(() => {
+    // Clear reveals on a genuine reset (table/view switch) so secrets never leak
+    // across datasets, and on a sort change — reveals key on the absolute row
+    // index, which re-sorting reassigns to a different record.
+    void resetSignal;
+    void sortState;
+    revealedCells = new Set();
+  });
 
   function findViewportScroll(): Element | null {
     return (
@@ -310,6 +341,72 @@
       );
     }
 
+    // Sensitive (credential-bearing) columns: mask non-null values and offer a
+    // per-cell reveal toggle. NULL cells already returned above stay NULL.
+    if (isSensitiveColumn(info)) {
+      const rowIndex = (props as CellTemplateProp & { rowIndex?: number }).rowIndex ?? 0;
+      const prop = String(props.prop);
+      const revealed = revealedCells.has(cellRevealKey(rowIndex, prop));
+      const eyePaths = revealed
+        ? [
+            // lucide eye-off
+            h('path', { d: 'M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49' }),
+            h('path', { d: 'M14.084 14.158a3 3 0 0 1-4.242-4.242' }),
+            h('path', { d: 'M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143' }),
+            h('path', { d: 'm2 2 20 20' }),
+          ]
+        : [
+            // lucide eye
+            h('path', { d: 'M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0' }),
+            h('circle', { cx: '12', cy: '12', r: '3' }),
+          ];
+      return h(
+        'div',
+        { class: { 'sk-grid-cell': true, 'sk-grid-cell--sensitive': true } },
+        [
+          h(
+            'span',
+            {
+              class: { 'sk-grid-cell__text': true, 'sk-grid-cell--secret': true },
+              ...(revealed ? { title: formatted.tooltip ?? formatted.display } : {}),
+            },
+            revealed ? formatted.display : '••••••••'
+          ),
+          h(
+            'button',
+            {
+              class: { 'sk-cell-reveal': true },
+              type: 'button',
+              'aria-label': revealed ? 'Hide value' : 'Reveal value',
+              'aria-pressed': revealed ? 'true' : 'false',
+              title: revealed ? 'Hide value' : 'Reveal value',
+              onclick: (e: Event) => {
+                e.stopPropagation();
+                toggleReveal(rowIndex, prop);
+              },
+            },
+            [
+              h(
+                'svg',
+                {
+                  width: '15',
+                  height: '15',
+                  viewBox: '0 0 24 24',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  'stroke-width': '2',
+                  'stroke-linecap': 'round',
+                  'stroke-linejoin': 'round',
+                  'aria-hidden': 'true',
+                },
+                eyePaths
+              ),
+            ]
+          ),
+        ]
+      );
+    }
+
     if (formatted.kind === 'boolean') {
       return h(
         'div',
@@ -342,7 +439,9 @@
         },
         title: formatted.tooltip,
       },
-      formatted.display
+      // Wrap in a span so text-overflow:ellipsis applies — a flex container's bare
+      // text node never truncates with an ellipsis on its own.
+      [h('span', { class: { 'sk-grid-cell__text': true } }, formatted.display)]
     );
   }
 
@@ -355,8 +454,11 @@
     onSortChange?.(next);
   }
 
-  let gridColumns: ColumnRegular[] = $derived(
-    columns.map((column) =>
+  let gridColumns: ColumnRegular[] = $derived.by(() => {
+    // Reference revealedCells so toggling a per-cell reveal rebuilds the column
+    // definitions and RevoGrid re-runs the cell templates with the new state.
+    void revealedCells;
+    return columns.map((column) =>
       buildSortableColumn(column, {
         order: sortState.find((entry) => entry.column === column.name)?.direction,
         filterValue: filters[column.name] ?? '',
@@ -364,8 +466,8 @@
         columnTemplate: renderHeader,
         cellTemplate: renderCell,
       })
-    )
-  );
+    );
+  });
 </script>
 
 <div id="data-grid" class="grid-card" class:filters-visible={filtersVisible} bind:this={gridEl}>
@@ -378,11 +480,17 @@
     theme="compact"
     on:beforesorting={handleBeforeSorting}
   />
+  {#if columns.length > 0 && rows.length === 0}
+    <div class="grid-empty" role="status">
+      <span class="grid-empty__text">No rows</span>
+    </div>
+  {/if}
 </div>
 
 <style>
   /* ─── Grid card shell ──────────────────────────────────────────────────────── */
   .grid-card {
+    position: relative;
     background: var(--sk-glass-grid);
     backdrop-filter: var(--sk-glass-grid-blur);
     -webkit-backdrop-filter: var(--sk-glass-grid-blur);
@@ -391,6 +499,31 @@
     box-shadow: var(--sk-shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.55);
     overflow: hidden;
     height: 100%;
+  }
+
+  /* ─── Empty-state (zero rows, columns present) ─────────────────────────────── */
+  .grid-empty {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* Sit below the header row so the column labels stay visible above the message.
+       Default is the compact header height; widened when the filter row is shown. */
+    top: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .filters-visible .grid-empty {
+    top: var(--sk-grid-filter-header-height, 72px);
+  }
+
+  .grid-empty__text {
+    color: var(--sk-ink-muted);
+    font-size: var(--sk-font-size-body);
+    font-style: italic;
   }
 
   /* ─── RevoGrid CSS-variable overrides ─────────────────────────────────────── */
@@ -537,6 +670,18 @@
     justify-content: flex-start;
   }
 
+  /*
+   * Inner text span carries the ellipsis. text-overflow:ellipsis has no effect on
+   * a flex container's bare text node, so long values are wrapped in this span and
+   * truncated here instead — column widths are unchanged.
+   */
+  .grid-card :global(.sk-grid-cell__text) {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   /* Numeric columns: right-aligned, tabular figures */
   .grid-card :global(.sk-grid-cell--number) {
     justify-content: flex-end;
@@ -577,6 +722,50 @@
     color: var(--sk-ink-muted);
     font-style: italic;
     font-size: var(--sk-font-size-sm);
+  }
+
+  /* ─── Sensitive (credential) cells ─────────────────────────────────────────── */
+  .grid-card :global(.sk-grid-cell--sensitive) {
+    gap: var(--sk-space-sm);
+  }
+
+  /* Masked dots sit muted; revealed plaintext uses a monospace face for legibility. */
+  .grid-card :global(.sk-grid-cell--secret) {
+    color: var(--sk-ink-muted);
+    letter-spacing: 0.12em;
+  }
+
+  /* Reveal toggle — subtle icon button, only fully visible on row hover/focus. */
+  .grid-card :global(.sk-cell-reveal) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: var(--sk-radius-sm);
+    background: transparent;
+    color: var(--sk-ink-muted);
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  }
+
+  .grid-card :global(.rgCell:hover .sk-cell-reveal),
+  .grid-card :global(.sk-cell-reveal:focus-visible) {
+    opacity: 1;
+  }
+
+  .grid-card :global(.sk-cell-reveal:hover) {
+    background: rgba(var(--sk-accent-active-rgb), 0.12);
+    color: var(--sk-ink);
+  }
+
+  .grid-card :global(.sk-cell-reveal:focus-visible) {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
   }
 
   /* ─── Boolean badges ───────────────────────────────────────────────────────── */

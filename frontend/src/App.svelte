@@ -1546,7 +1546,9 @@
   .layout {
     display: flex;
     height: 100vh;
-    width: 100vw;
+    /* 100% (not 100vw) so a vertical scrollbar's width can't push horizontal overflow */
+    width: 100%;
+    max-width: 100%;
     overflow: hidden;
   }
 
@@ -1790,6 +1792,23 @@
     .view-toolbar {
       flex-direction: column;
       align-items: flex-start;
+    }
+  }
+
+  /* Narrow / phone "don't break": tighten gutters and let the stats bar and
+     refresh toolbar each take a full row so nothing collides or overflows. */
+  @media (max-width: 600px) {
+    .table-panel,
+    .grid-area,
+    .toolbar-row,
+    .table-error-banner {
+      padding-left: var(--sk-space-md);
+      padding-right: var(--sk-space-md);
+    }
+
+    .toolbar-row > :global(*) {
+      flex: 1 1 100%;
+      min-width: 0;
     }
   }
 

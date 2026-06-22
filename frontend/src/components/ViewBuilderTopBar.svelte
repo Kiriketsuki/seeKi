@@ -92,6 +92,7 @@
     <label class="field">
       <span>Starting from</span>
       <select value={baseValue} data-testid="view-builder-base-table" onchange={(event) => onBaseChange((event.currentTarget as HTMLSelectElement).value)}>
+        <option value="" disabled>Choose a table…</option>
         {#each tables as table (`${table.schema}.${table.name}`)}
           <option value={`${table.schema}.${table.name}`}>{table.schema}.{table.name}</option>
         {/each}
