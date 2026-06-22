@@ -6,6 +6,24 @@
 
   const REPO_URL = 'https://github.com/Kiriketsuki/seeKi';
 
+  const builtAtFormatter = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+
+  function formatBuiltAt(iso: string): string {
+    try {
+      return builtAtFormatter.format(new Date(iso));
+    } catch {
+      return iso;
+    }
+  }
+
   let version = $state<VersionResponse | null>(null);
   let loading = $state(true);
   let error = $state('');
@@ -33,10 +51,10 @@
     <div class="grid">
       <div class="card"><span>Version</span><strong>{version.version}</strong></div>
       <div class="card"><span>Commit</span><strong>{version.commit}</strong></div>
-      <div class="card"><span>Built at</span><strong>{version.built_at}</strong></div>
-      <a class="card link" href={REPO_URL} target="_blank" rel="noreferrer">
+      <div class="card"><span>Built at</span><strong title={version.built_at}>{formatBuiltAt(version.built_at)}</strong></div>
+      <a class="card link repo" href={REPO_URL} target="_blank" rel="noreferrer">
         <span>Repository</span>
-        <strong>{REPO_URL}</strong>
+        <strong class="repo-url">{REPO_URL}</strong>
       </a>
     </div>
   {/if}
@@ -101,5 +119,16 @@
   /* sk-kv-link hover */
   .link:hover strong {
     color: var(--sk-accent-active-strong);
+  }
+
+  /* repo card spans full width so the URL never wraps mid-identifier */
+  .repo {
+    grid-column: 1 / -1;
+  }
+
+  /* URL breaks at any character boundary rather than splitting mid-token */
+  .repo-url {
+    word-break: break-all;
+    overflow-wrap: anywhere;
   }
 </style>
