@@ -35,6 +35,21 @@ describe('formatCellValue', () => {
     expect(result.display).toBe('NULL');
   });
 
+  describe('json/jsonb objects', () => {
+    const jsonCol = col({ data_type: 'jsonb', display_type: 'JSON' });
+
+    it('renders an object as JSON text, not [object Object]', () => {
+      const result = formatCellValue(jsonCol, { type: 'Polygon', srid: 4326 });
+      expect(result.kind).toBe('text');
+      expect(result.display).toBe('{"type":"Polygon","srid":4326}');
+    });
+
+    it('renders an array as JSON text', () => {
+      const result = formatCellValue(jsonCol, [1, 2, 3]);
+      expect(result.display).toBe('[1,2,3]');
+    });
+  });
+
   describe('boolean', () => {
     const boolCol = col({ data_type: 'boolean' });
 

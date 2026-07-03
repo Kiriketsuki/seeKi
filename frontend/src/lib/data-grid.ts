@@ -206,8 +206,22 @@ export function formatCellValue(
 
   return {
     kind: 'text',
-    display: String(value),
+    display: stringifyCellValue(value),
   };
+}
+
+// Render any remaining value as text. Objects and arrays (e.g. json/jsonb columns)
+// would otherwise stringify to "[object Object]" via String(); show their JSON text
+// instead so the cell reads like the varchar fallback the rest of the grid uses.
+function stringifyCellValue(value: unknown): string {
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 function formatDate(date: Date, dateFormat: DateFormatPreference): string {
