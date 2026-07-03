@@ -800,6 +800,12 @@ fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &st
             .try_get::<uuid::Uuid, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
+        // inet/cidr binary wire format is a struct, not text — the unchecked String
+        // fallback below cannot decode it (exports empty cells).
+        "inet" | "cidr" => row
+            .try_get::<sqlx::types::ipnet::IpNet, _>(col)
+            .map(crate::db::postgres::format_ipnet)
+            .unwrap_or_default(),
         // USER-DEFINED types (Postgres enums, citext, domains, etc.) have OIDs sqlx
         // doesn't statically know, so the checked `try_get::<String, _>` rejects them
         // even though their wire format is plain text. `try_get_unchecked` skips that
