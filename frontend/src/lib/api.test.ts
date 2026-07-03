@@ -623,3 +623,79 @@ describe('custom views API helpers', () => {
     );
   });
 });
+
+// ── Table display-name API helpers ────────────────────────────────────────────
+
+describe('table display-name API helpers', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('VITE_MOCK', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('fetchTableDisplayNames reads the display-names map', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ 'public.vehicles_log': 'Vehicle Telemetry' }));
+    const { fetchTableDisplayNames } = await import('./api');
+
+    await expect(fetchTableDisplayNames()).resolves.toEqual({
+      'public.vehicles_log': 'Vehicle Telemetry',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tables/display-names',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('updateTableDisplayName PUTs the trimmed name and returns the resolved name', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ display_name: 'Vehicle Telemetry' }));
+    const { updateTableDisplayName } = await import('./api');
+
+    await expect(
+      updateTableDisplayName('public', 'vehicles_log', 'Vehicle Telemetry'),
+    ).resolves.toBe('Vehicle Telemetry');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tables/display-names/public/vehicles_log',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ display_name: 'Vehicle Telemetry' }),
+      }),
+    );
+  });
+
+  it('updateTableDisplayName sends an empty string to revert to the automatic name', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ display_name: 'Vehicles Log' }));
+    const { updateTableDisplayName } = await import('./api');
+
+    await expect(updateTableDisplayName('public', 'vehicles_log', '')).resolves.toBe(
+      'Vehicles Log',
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tables/display-names/public/vehicles_log',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ display_name: '' }),
+      }),
+    );
+  });
+
+  it('updateTableDisplayName surfaces the server error message on failure', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: 'Display name is too long' }, 400),
+    );
+    const { updateTableDisplayName } = await import('./api');
+
+    await expect(
+      updateTableDisplayName('public', 'vehicles_log', 'x'.repeat(65)),
+    ).rejects.toThrow('API error 400: Display name is too long');
+  });
+});
