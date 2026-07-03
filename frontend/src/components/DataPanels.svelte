@@ -13,6 +13,7 @@
     selectedSchema = '',
     selectedTable = '',
     onSelectTable,
+    onRenameTable,
     views = [],
     activeViewId = null,
     viewsDisabled = false,
@@ -26,6 +27,7 @@
     selectedSchema: string;
     selectedTable: string;
     onSelectTable: (table: TableInfo) => void;
+    onRenameTable: (table: TableInfo, displayName: string) => void;
     views: SavedViewSummary[];
     activeViewId: number | null;
     viewsDisabled?: boolean;
@@ -201,6 +203,7 @@
               {selectedSchema}
               {selectedTable}
               onSelect={onSelectTable}
+              onRename={onRenameTable}
               showHeader={false}
             />
           {:else}

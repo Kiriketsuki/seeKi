@@ -32,6 +32,7 @@
     renameView,
     saveLastUsedState,
     saveSettings,
+    updateTableDisplayName,
   } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
   import type {
@@ -229,9 +230,18 @@
     }
     return null;
   });
-  let selectedTableDisplayName = $derived.by(
-    () => displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
-  );
+  // Sourced from `tables` first — it reflects the server's resolved precedence
+  // (UI rename via table_display_names > seeki.toml [display] > heuristic) and
+  // updates immediately after an inline rename. `displayConfig` is a fallback
+  // for the brief window before `tables` has loaded.
+  let selectedTableDisplayName = $derived.by(() => {
+    const match = tables.find(
+      (t) => t.schema === selectedSchema && t.name === selectedTable,
+    );
+    return (
+      match?.display_name ?? displayConfig?.tables[selectedTableKey]?.display_name ?? selectedTable
+    );
+  });
   let selectedViewKey = $derived.by(() =>
     selectedView ? `view:${selectedView.id}` : ''
   );
@@ -747,6 +757,31 @@
       tableError = e instanceof Error ? e.message : 'Failed to load table';
     } finally {
       if (myRequest === navRequestId) tableLoading = false;
+    }
+  }
+
+  // Optimistically renames a table in the sidebar/header, persists via PUT, then
+  // reconciles with the server-resolved name (UI override > seeki.toml > heuristic).
+  // Reverts and surfaces an error through the existing tableError banner on failure.
+  async function handleRenameTable(table: TableInfo, displayName: string) {
+    const previousTables = tables;
+    const optimisticName = displayName || table.name;
+    tables = tables.map((t) =>
+      t.schema === table.schema && t.name === table.name
+        ? { ...t, display_name: optimisticName }
+        : t,
+    );
+
+    try {
+      const resolved = await updateTableDisplayName(table.schema, table.name, displayName);
+      tables = tables.map((t) =>
+        t.schema === table.schema && t.name === table.name
+          ? { ...t, display_name: resolved }
+          : t,
+      );
+    } catch (e) {
+      tables = previousTables;
+      tableError = e instanceof Error ? e.message : 'Failed to rename table';
     }
   }
 
@@ -1281,7 +1316,7 @@
       onSettingsClick={() => (settingsOpen = true)}
     >
       {#if !sidebarCollapsed}
-        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} />
+        <TableList {tables} {selectedSchema} {selectedTable} onSelect={selectTable} onRename={(table, name) => void handleRenameTable(table, name)} />
       {/if}
     </Sidebar>
     <main class="main">
@@ -1323,6 +1358,7 @@
                 selectedSchema={tablesSurface.kind === 'table' ? selectedSchema : ''}
                 selectedTable={tablesSurface.kind === 'table' ? selectedTable : ''}
                 onSelectTable={selectTable}
+                onRenameTable={(table, name) => void handleRenameTable(table, name)}
                 views={savedViews}
                 activeViewId={selectedViewId}
                 viewsDisabled={tables.length === 0}

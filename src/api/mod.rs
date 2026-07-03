@@ -12,7 +12,7 @@ use axum::{
     extract::{Path, Query},
     http::header,
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,11 +23,16 @@ use crate::db::postgres::is_valid_identifier;
 use crate::db::{
     ColumnInfo, ExportQueryParams, RowQueryParams, SortDirection, SortEntry, ValidationError,
 };
-use crate::store::Store;
+use crate::store::{Store, display_names};
 
 pub fn router(mode: SharedAppMode, store: Store) -> Router {
     Router::new()
         .route("/tables", get(list_tables))
+        .route("/tables/display-names", get(get_table_display_names))
+        .route(
+            "/tables/display-names/{schema}/{table}",
+            put(put_table_display_name),
+        )
         .route("/tables/{schema}/{table}/columns", get(get_columns))
         .route("/tables/{schema}/{table}/samples", get(get_column_samples))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
@@ -126,14 +131,20 @@ async fn get_display_config(
     let mut tables = HashMap::new();
     for table in &allowed_tables {
         let key = (table.schema.clone(), table.name.clone());
-        let columns: HashMap<String, ColumnDisplayConfig> = all_columns
-            .get(&key)
-            .cloned()
-            .unwrap_or_default()
+        let table_columns = all_columns.get(&key).cloned().unwrap_or_default();
+        let sibling_names_owned: Vec<String> =
+            table_columns.iter().map(|c| c.name.clone()).collect();
+        let sibling_names: Vec<&str> = sibling_names_owned.iter().map(|s| s.as_str()).collect();
+        let columns: HashMap<String, ColumnDisplayConfig> = table_columns
             .into_iter()
             .map(|c| {
-                let display =
-                    display_name_column(&table.schema, &table.name, &c.name, &state.config.display);
+                let display = display_name_column(
+                    &table.schema,
+                    &table.name,
+                    &c.name,
+                    &sibling_names,
+                    &state.config.display,
+                );
                 (
                     c.name,
                     ColumnDisplayConfig {
@@ -221,15 +232,25 @@ fn read_optional_string_setting(
 
 async fn list_tables(
     Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let state = require_state(&mode).await?;
     let schemas = state.config.database.effective_schemas();
     let all_tables = state.db.list_tables(&schemas).await?;
+    let overrides = display_names::list_display_names(store.pool()).await?;
+    let override_map: HashMap<(String, String), String> = overrides
+        .into_iter()
+        .map(|e| ((e.schema_name, e.table_name), e.display_name))
+        .collect();
     let tables: Vec<serde_json::Value> = all_tables
         .into_iter()
         .filter(|t| state.config.tables.allows(&t.schema, &t.name))
         .map(|t| {
-            let display = display_name_table(&t.schema, &t.name, &state.config.display);
+            let key = (t.schema.clone(), t.name.clone());
+            let display = override_map
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| display_name_table(&t.schema, &t.name, &state.config.display));
             serde_json::json!({
                 "schema": t.schema,
                 "name": t.name,
@@ -239,6 +260,58 @@ async fn list_tables(
         })
         .collect();
     Ok(Json(serde_json::json!({ "tables": tables })))
+}
+
+/// GET /api/tables/display-names — maps "schema.table" -> stored display-name override.
+async fn get_table_display_names(
+    Extension(store): Extension<Store>,
+) -> Result<Json<HashMap<String, String>>, AppError> {
+    let entries = display_names::list_display_names(store.pool()).await?;
+    let map: HashMap<String, String> = entries
+        .into_iter()
+        .map(|e| {
+            (
+                format!("{}.{}", e.schema_name, e.table_name),
+                e.display_name,
+            )
+        })
+        .collect();
+    Ok(Json(map))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetTableDisplayNameBody {
+    #[serde(default)]
+    display_name: String,
+}
+
+/// PUT /api/tables/display-names/{schema}/{table} — set or (if empty) revert a table's
+/// display-name override. Responds with the resolved display name after the change.
+async fn put_table_display_name(
+    Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
+    Path((schema, table)): Path<(String, String)>,
+    Json(body): Json<SetTableDisplayNameBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
+    if !is_valid_identifier(&schema) || !is_valid_identifier(&table) {
+        return Err(AppError::bad_request("Invalid schema or table name"));
+    }
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
+    }
+
+    display_names::set_display_name(store.pool(), &schema, &table, &body.display_name)
+        .await
+        .map_err(AppError::bad_request_from_err)?;
+
+    let resolved = display_names::get_display_name(store.pool(), &schema, &table)
+        .await?
+        .unwrap_or_else(|| display_name_table(&schema, &table, &state.config.display));
+
+    Ok(Json(serde_json::json!({ "display_name": resolved })))
 }
 
 async fn get_columns(
@@ -261,10 +334,17 @@ async fn get_columns(
             "Table '{schema}.{table}' not found"
         )));
     }
+    let sibling_names: Vec<&str> = raw_columns.iter().map(|c| c.name.as_str()).collect();
     let columns: Vec<serde_json::Value> = raw_columns
-        .into_iter()
+        .iter()
         .map(|c| {
-            let display = display_name_column(&schema, &table, &c.name, &state.config.display);
+            let display = display_name_column(
+                &schema,
+                &table,
+                &c.name,
+                &sibling_names,
+                &state.config.display,
+            );
             serde_json::json!({
                 "name": c.name,
                 "display_name": display,
@@ -520,9 +600,18 @@ async fn export_csv(
     let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
 
     // Fetch columns eagerly so we can build headers before spawning
+    let sibling_names: Vec<&str> = columns.iter().map(|c| c.name.as_str()).collect();
     let display_headers: Vec<String> = columns
         .iter()
-        .map(|c| display_name_column(&schema, &table, &c.name, &state.config.display))
+        .map(|c| {
+            display_name_column(
+                &schema,
+                &table,
+                &c.name,
+                &sibling_names,
+                &state.config.display,
+            )
+        })
         .collect();
 
     let display_table = display_name_table(&schema, &table, &state.config.display)
@@ -711,7 +800,12 @@ fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &st
             .try_get::<uuid::Uuid, _>(col)
             .map(|v| v.to_string())
             .unwrap_or_default(),
-        _ => row.try_get::<String, _>(col).unwrap_or_default(),
+        // USER-DEFINED types (Postgres enums, citext, domains, etc.) have OIDs sqlx
+        // doesn't statically know, so the checked `try_get::<String, _>` rejects them
+        // even though their wire format is plain text. `try_get_unchecked` skips that
+        // type-compatibility check and decodes the text representation directly —
+        // without it, enum/citext/domain columns export as empty cells for every row.
+        _ => row.try_get_unchecked::<String, _>(col).unwrap_or_default(),
     }
 }
 
@@ -734,6 +828,12 @@ impl AppError {
             status: axum::http::StatusCode::BAD_REQUEST,
             message: message.into(),
         }
+    }
+
+    /// Map a fallible store call's error to a 400. Used for user-input validation
+    /// failures (e.g. display-name length) surfaced as plain `anyhow::Error`s.
+    pub(super) fn bad_request_from_err(err: anyhow::Error) -> Self {
+        Self::bad_request(err.to_string())
     }
 
     pub(super) fn forbidden(message: impl Into<String>) -> Self {
@@ -1281,9 +1381,12 @@ mod tests {
             columns: columns_map,
         };
 
+        let sibling_names: Vec<&str> = columns.iter().map(|c| c.name.as_str()).collect();
         let headers: Vec<String> = columns
             .iter()
-            .map(|c| display_name_column("public", "vehicles_log", &c.name, &config))
+            .map(|c| {
+                display_name_column("public", "vehicles_log", &c.name, &sibling_names, &config)
+            })
             .collect();
 
         assert_eq!(headers, vec!["Supervisor", "Latitude"]);

@@ -208,23 +208,41 @@ pub fn display_name_table(schema: &str, table: &str, config: &DisplayConfig) -> 
         .unwrap_or_else(|| casualify(table, false))
 }
 
+/// `sibling_columns` should list every column name in the same table (including
+/// `column` itself) so the `_id`-suffix heuristic can detect collisions — e.g.
+/// `original_table_id` must not casualify to the same display name as a sibling
+/// `original_table` column.
 pub fn display_name_column(
     schema: &str,
     table: &str,
     column: &str,
+    sibling_columns: &[&str],
     config: &DisplayConfig,
 ) -> String {
     // Lookup order mirrors display_name_table: qualified key ("schema.table") → bare
     // name → casualify fallback. Prevents column overrides from colliding across
-    // schemas that share a table name.
+    // schemas that share a table name. Overrides take precedence and are exempt
+    // from the collision check below.
     let qualified = format!("{schema}.{table}");
-    config
+    if let Some(name) = config
         .columns
         .get(&qualified)
         .or_else(|| config.columns.get(table))
         .and_then(|columns| columns.get(column))
-        .cloned()
-        .unwrap_or_else(|| casualify(column, true))
+    {
+        return name.clone();
+    }
+
+    // Only drop the "_id" suffix when doing so would not collide with another
+    // column in the same table (e.g. "original_table_id" alongside "original_table").
+    let drop_id_suffix = match column.strip_suffix("_id") {
+        Some(base) => !sibling_columns
+            .iter()
+            .any(|&sibling| sibling != column && sibling == base),
+        None => false,
+    };
+
+    casualify(column, drop_id_suffix)
 }
 
 fn casualify(name: &str, drop_id_suffix: bool) -> String {
@@ -588,6 +606,7 @@ subtitle = "Fleet Telemetry"
                 "public",
                 "my_table",
                 "some_column",
+                &["some_column"],
                 &DisplayConfig::default()
             ),
             "Some Column"
@@ -601,6 +620,7 @@ subtitle = "Fleet Telemetry"
                 "public",
                 "vehicles_log",
                 "supervisor_id",
+                &["supervisor_id"],
                 &DisplayConfig::default()
             ),
             "Supervisor"
@@ -611,20 +631,41 @@ subtitle = "Fleet Telemetry"
     fn column_display_name_acronyms_are_uppercase() {
         let cfg = &DisplayConfig::default();
         // Standalone acronym tokens stay uppercase.
-        assert_eq!(display_name_column("public", "t", "bha_count", cfg), "BHA Count");
-        assert_eq!(display_name_column("public", "t", "jcpl_code", cfg), "JCPL Code");
-        assert_eq!(display_name_column("public", "t", "uld_weight", cfg), "ULD Weight");
+        assert_eq!(
+            display_name_column("public", "t", "bha_count", &["bha_count"], cfg),
+            "BHA Count"
+        );
+        assert_eq!(
+            display_name_column("public", "t", "jcpl_code", &["jcpl_code"], cfg),
+            "JCPL Code"
+        );
+        assert_eq!(
+            display_name_column("public", "t", "uld_weight", &["uld_weight"], cfg),
+            "ULD Weight"
+        );
         // "_id" suffix token treated as acronym (drop_id_suffix strips it first, so
         // "vehicle_id" → strip → "vehicle" → "Vehicle").
-        assert_eq!(display_name_column("public", "t", "vehicle_id", cfg), "Vehicle");
+        assert_eq!(
+            display_name_column("public", "t", "vehicle_id", &["vehicle_id"], cfg),
+            "Vehicle"
+        );
         // But a column whose name IS just "id" after stripping yields empty → falls back
         // to the raw name "id"; that edge case is unchanged behaviour.
         // Acronym embedded mid-name: "stand_id" → strip → "stand" → "Stand".
-        assert_eq!(display_name_column("public", "t", "stand_id", cfg), "Stand");
+        assert_eq!(
+            display_name_column("public", "t", "stand_id", &["stand_id"], cfg),
+            "Stand"
+        );
         // A plain "_id" column where the token before "_id" is an acronym.
-        assert_eq!(display_name_column("public", "t", "jcpl_id", cfg), "JCPL");
+        assert_eq!(
+            display_name_column("public", "t", "jcpl_id", &["jcpl_id"], cfg),
+            "JCPL"
+        );
         // Ordinary words are still Title Case, not forced uppercase.
-        assert_eq!(display_name_column("public", "t", "vehicle_type", cfg), "Vehicle Type");
+        assert_eq!(
+            display_name_column("public", "t", "vehicle_type", &["vehicle_type"], cfg),
+            "Vehicle Type"
+        );
     }
 
     #[test]
@@ -632,8 +673,53 @@ subtitle = "Fleet Telemetry"
         let config = AppConfig::parse(FULL_CONFIG).expect("full config should parse");
 
         assert_eq!(
-            display_name_column("public", "vehicles_log", "posn_lat", &config.display),
+            display_name_column(
+                "public",
+                "vehicles_log",
+                "posn_lat",
+                &["posn_lat"],
+                &config.display
+            ),
             "Latitude"
+        );
+    }
+
+    #[test]
+    fn column_display_name_keeps_id_suffix_on_collision() {
+        let siblings = ["original_table", "original_table_id"];
+        assert_eq!(
+            display_name_column(
+                "public",
+                "t",
+                "original_table_id",
+                &siblings,
+                &DisplayConfig::default()
+            ),
+            "Original Table ID"
+        );
+        assert_eq!(
+            display_name_column(
+                "public",
+                "t",
+                "original_table",
+                &siblings,
+                &DisplayConfig::default()
+            ),
+            "Original Table"
+        );
+    }
+
+    #[test]
+    fn column_display_name_drops_id_suffix_when_no_collision() {
+        assert_eq!(
+            display_name_column(
+                "public",
+                "t",
+                "vehicle_id",
+                &["vehicle_id"],
+                &DisplayConfig::default()
+            ),
+            "Vehicle"
         );
     }
 
@@ -706,7 +792,13 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn casualify_preserves_all_caps_segments() {
         assert_eq!(
-            display_name_column("public", "t", "GPS_LATITUDE", &DisplayConfig::default()),
+            display_name_column(
+                "public",
+                "t",
+                "GPS_LATITUDE",
+                &["GPS_LATITUDE"],
+                &DisplayConfig::default()
+            ),
             "GPS LATITUDE"
         );
     }
@@ -723,7 +815,7 @@ subtitle = "Fleet Telemetry"
     fn casualify_handles_id_only_column() {
         // "_id" with drop_id_suffix strips to "" — fallback returns raw name
         assert_eq!(
-            display_name_column("public", "t", "_id", &DisplayConfig::default()),
+            display_name_column("public", "t", "_id", &["_id"], &DisplayConfig::default()),
             "_id"
         );
     }
@@ -732,7 +824,7 @@ subtitle = "Fleet Telemetry"
     fn casualify_handles_bare_id_column() {
         // "ID" is an allow-listed acronym — a bare `id` column renders uppercase.
         assert_eq!(
-            display_name_column("public", "t", "id", &DisplayConfig::default()),
+            display_name_column("public", "t", "id", &["id"], &DisplayConfig::default()),
             "ID"
         );
     }
@@ -740,7 +832,7 @@ subtitle = "Fleet Telemetry"
     #[test]
     fn casualify_handles_empty_string() {
         assert_eq!(
-            display_name_column("public", "t", "", &DisplayConfig::default()),
+            display_name_column("public", "t", "", &[""], &DisplayConfig::default()),
             ""
         );
     }
