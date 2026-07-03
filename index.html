@@ -1,178 +1,25 @@
-<!doctype html>
-<html lang="en" data-theme="light">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SeeKi — a quiet database browser</title>
-    <meta name="description" content="SeeKi is a read-only database browser for people who shouldn't need to learn SQL. Point it at a table, read the row, trust the value." />
-    <link rel="icon" type="image/svg+xml" href="/seeKi/assets/img/favicon.svg" />
-    <link rel="stylesheet" href="/seeKi/assets/css/site.css" />
-    <script>
-      (function () {
-        try {
-          var t = localStorage.getItem('sk-theme');
-          if (t === 'light' || t === 'dark') {
-            document.documentElement.setAttribute('data-theme', t);
-          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            document.documentElement.setAttribute('data-theme', 'dark');
-          }
-        } catch (_) {}
-      })();
-    </script>
-  </head>
-  <body data-page="home">
-    <div class="sk-shell">
-      <header class="sk-topbar sk-glass" role="banner">
-        <a class="sk-topbar__brand sk-brand" href="/seeKi/" aria-label="SeeKi — home">
-          <span class="sk-wordmark">see<span class="sk-wordmark__accent">Ki</span></span>
-          <span class="sk-topbar__tagline">read-only database browser</span>
-        </a>
-        <div class="sk-topbar__actions">
-          <button class="sk-theme-toggle" type="button" aria-label="Toggle theme" data-sk-theme-toggle>
-            <span class="sk-theme-toggle__label" data-sk-theme-label>Light</span>
-          </button>
-          <a class="sk-topbar__link" href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
-        </div>
-      </header>
-
-      <aside class="sk-sidebar sk-glass" aria-label="Site navigation">
-        <nav class="sk-sidebar__nav" aria-label="Documentation">
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">Get Started</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/get-started/install.html">Install</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/get-started/quickstart.html">Quickstart</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/get-started/connections.html">Connections</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/get-started/config-reference.html">Config reference</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/get-started/ssh-tunneling.html">SSH tunneling</a></li>
-            </ul>
-          </section>
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">Features</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/features/setup-wizard.html">Setup wizard</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/features/data-grid.html">Data grid</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/features/column-dropdown.html">Column menu</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/features/yes-no-badges.html">Yes/No badges</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/features/null-rendering.html">NULL rendering</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/features/branding.html">Branding</a></li>
-            </ul>
-          </section>
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">Operate</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/operate/running.html">Running SeeKi</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/operate/config-locations.html">Config locations</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/operate/logs.html">Logs</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/operate/troubleshooting.html">Troubleshooting</a></li>
-            </ul>
-          </section>
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">Develop</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/develop/architecture.html">Architecture</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/develop/frontend-map.html">Frontend map</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/develop/adding-a-db-engine.html">Adding a database engine</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/develop/build-release.html">Build &amp; release</a></li>
-            </ul>
-          </section>
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">API</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/api/">Overview</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/api/tables.html">Tables</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/api/columns.html">Columns</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/api/rows.html">Rows</a></li>
-            </ul>
-          </section>
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">Project</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/project/changelog.html">Changelog</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/project/roadmap.html">Roadmap</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/project/contributing.html">Contributing</a></li>
-              <li><a class="sk-sidebar__link" href="/seeKi/project/security.html">Security</a></li>
-            </ul>
-          </section>
-          <section class="sk-sidebar__section">
-            <h2 class="sk-sidebar__heading">Reference</h2>
-            <ul class="sk-sidebar__list">
-              <li><a class="sk-sidebar__link" href="/seeKi/sitemap.html">Sitemap</a></li>
-            </ul>
-          </section>
-        </nav>
-      </aside>
-
-      <main class="sk-content" role="main">
-        <section class="sk-hero">
-          <p class="sk-hero__kicker">A quieter way to read the database.</p>
-          <h1 class="sk-hero__title">Point at a table. Read the row. Trust the value.</h1>
-          <p class="sk-hero__lede">
-            SeeKi is a read-only browser for the databases your team already runs. It opens as a spreadsheet,
-            not a query editor — no SQL, no joins, no schema tree. The data is the hero; the chrome gets out of the way.
-          </p>
-          <div class="sk-hero__cta">
-            <a class="sk-cta sk-cta--primary" href="/seeKi/get-started/quickstart.html">Get started in five minutes</a>
-            <a class="sk-cta sk-cta--secondary" href="/seeKi/develop/architecture.html">How it works</a>
-            <a class="sk-cta sk-cta--secondary" href="/seeKi/api/">API reference</a>
-          </div>
-        </section>
-
-        <section class="sk-feature-grid" aria-label="What SeeKi is">
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">A spreadsheet, not a console</h3>
-            <p class="sk-feature__body">
-              Tables in the sidebar, rows in the grid, sort and search at the top. Anyone who has opened a spreadsheet
-              already knows how to use it.
-            </p>
-          </article>
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">Read-only, by design</h3>
-            <p class="sk-feature__body">
-              SeeKi never offers to save, edit, or delete. Connect it to production without a second thought — the
-              surface area for accidents is zero.
-            </p>
-          </article>
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">Single binary, local only</h3>
-            <p class="sk-feature__body">
-              One executable runs the backend and serves the embedded frontend on <code>localhost</code>. No cloud,
-              no telemetry, no account.
-            </p>
-          </article>
-          <article class="sk-feature">
-            <h3 class="sk-feature__title">Honest about what it shows</h3>
-            <p class="sk-feature__body">
-              NULL renders as a hatched cell, not an empty one. Booleans render as Yes/No with a label and a shape,
-              not just a colour. What you see is what the database holds.
-            </p>
-          </article>
-        </section>
-
-        <section class="sk-next" aria-label="Next steps">
-          <h2 class="sk-section__title">Where to next</h2>
-          <ul class="sk-next__list">
-            <li><a href="/seeKi/get-started/quickstart.html"><strong>Quickstart</strong> — from zero to the first row, in one page.</a></li>
-            <li><a href="/seeKi/get-started/connections.html"><strong>Connections</strong> — PostgreSQL today, SQLite next.</a></li>
-            <li><a href="/seeKi/features/data-grid.html"><strong>The data grid</strong> — how sorting, search, and column controls behave.</a></li>
-            <li><a href="/seeKi/project/security.html"><strong>Security</strong> — how we keep a read-only product read-only.</a></li>
-          </ul>
-        </section>
-      </main>
-
-      <footer class="sk-footer" role="contentinfo">
-        <div class="sk-footer__inner">
-          <span class="sk-footer__brand">SeeKi</span>
-          <span class="sk-footer__meta">Read-only. Local. Source-of-truth.</span>
-          <nav class="sk-footer__links" aria-label="Footer">
-            <a href="/seeKi/sitemap.html">Sitemap</a>
-            <a href="/seeKi/project/contributing.html">Contributing</a>
-            <a href="https://github.com/kiriketsuki/seeKi" rel="noopener">GitHub</a>
-          </nav>
-        </div>
-      </footer>
-    </div>
-
-    <script src="/seeKi/assets/js/theme.js" defer></script>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SeeKi Documentation</title>
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; background: #F5F0EB; color: #2F4858; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    p.subtitle { color: #8a7a6c; margin-bottom: 2rem; }
+    section { margin-bottom: 2rem; }
+    h2 { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.05em; color: #2F4858; border-bottom: 1px solid #e0d8d0; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { margin-bottom: 0.5rem; }
+    a { color: #00A9A5; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .empty { color: #a0917f; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>SeeKi Documentation</h1>
+  <p class="subtitle">Read-only, spreadsheet-like database viewer. data-seeKing.</p>
+  <p class="empty">No documentation pages yet.</p>
+</body>
 </html>
