@@ -64,6 +64,7 @@ struct FkPathQuery {
     target_table: String,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum EitherExportShape {
     Legacy {
         columns: Vec<crate::db::ViewColumn>,
@@ -148,10 +149,14 @@ fn validate_view_definition(
         for input in &derived.inputs {
             if matches!(input.kind, ViewDerivedInputKind::Column) {
                 let schema = input.source_schema.as_deref().ok_or_else(|| {
-                    super::AppError::bad_request("Derived column input of kind Column must specify source_schema")
+                    super::AppError::bad_request(
+                        "Derived column input of kind Column must specify source_schema",
+                    )
                 })?;
                 let table = input.source_table.as_deref().ok_or_else(|| {
-                    super::AppError::bad_request("Derived column input of kind Column must specify source_table")
+                    super::AppError::bad_request(
+                        "Derived column input of kind Column must specify source_table",
+                    )
                 })?;
                 validate_allowed_table(state, schema, table)?;
             }

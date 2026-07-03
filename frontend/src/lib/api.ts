@@ -164,11 +164,64 @@ async function apiPatch<T = void>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function apiPut<T = void>(path: string, body: unknown): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Request timed out — the server may be busy. Try again.');
+    }
+    throw e;
+  }
+  clearTimeout(timeout);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = `API error ${res.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = `API error ${res.status}: ${parsed.error}`;
+    } catch {
+      if (text) message += `: ${text}`;
+    }
+    throw new Error(message);
+  }
+  if (res.status === 204) return undefined as unknown as T;
+  return res.json() as Promise<T>;
+}
+
 export async function fetchTables(): Promise<TableInfo[]> {
   if (USE_MOCK) return mockFetchTables();
   const data = await apiFetch<TablesResponse>('/api/tables');
   assertShape(data, ['tables'], '/api/tables');
   return data.tables;
+}
+
+export async function fetchTableDisplayNames(): Promise<Record<string, string>> {
+  if (USE_MOCK) return {};
+  return apiFetch<Record<string, string>>('/api/tables/display-names');
+}
+
+// Empty display name reverts the table to its automatic name. The server
+// resolves the final name (UI override > seeki.toml [display] > heuristic)
+// and returns it so the caller never has to duplicate that precedence logic.
+export async function updateTableDisplayName(
+  schema: string,
+  table: string,
+  displayName: string,
+): Promise<string> {
+  const path = `/api/tables/display-names/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+  const data = await apiPut<{ display_name: string }>(path, { display_name: displayName });
+  assertShape(data, ['display_name'], path);
+  return data.display_name;
 }
 
 export async function fetchColumns(

@@ -397,7 +397,8 @@ pub struct LegacyViewDefinitionShape {
 
 pub enum PlannerCompatibility {
     Legacy(LegacyViewDefinitionShape),
-    RequiresPlannerV2(String),
+    // Reason is asserted in tests and kept for debugging; prod match arms ignore it.
+    RequiresPlannerV2(#[allow(dead_code)] String),
 }
 
 impl ViewDefinitionShape {

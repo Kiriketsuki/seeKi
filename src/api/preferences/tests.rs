@@ -392,9 +392,8 @@ async fn last_used_reject_oversized_search_term() {
     let app = setup_router(mode, store);
 
     let big_term = "x".repeat(65 * 1024);
-    let body =
-        serde_json::json!({ "sort_columns": [], "filters": {}, "search_term": big_term })
-            .to_string();
+    let body = serde_json::json!({ "sort_columns": [], "filters": {}, "search_term": big_term })
+        .to_string();
 
     let req = Request::builder()
         .method("POST")

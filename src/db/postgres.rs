@@ -2544,7 +2544,7 @@ fn build_v1_planner_draft(draft: &ViewDraft<'_>) -> anyhow::Result<PlannerDraftD
 
     let output_names = resolve_view_output_names(draft.columns)?;
     let mut projections = Vec::with_capacity(draft.columns.len());
-    for (column, output_name) in draft.columns.iter().zip(output_names.into_iter()) {
+    for (column, output_name) in draft.columns.iter().zip(output_names) {
         if !is_valid_identifier(&column.source_schema) {
             return Err(
                 ValidationError(format!("Invalid schema name: {}", column.source_schema)).into(),
@@ -3393,6 +3393,7 @@ pub async fn preview_view_shape(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn query_view_shape_rows(
     pool: &PgPool,
     base_schema: &str,
@@ -3683,8 +3684,13 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .try_get::<uuid::Uuid, _>(col)
             .map(|v| Value::String(v.to_string()))
             .unwrap_or(Value::Null),
+        // USER-DEFINED types (Postgres enums, citext, domains, etc.) have OIDs sqlx
+        // doesn't statically know, so the checked `try_get::<String, _>` rejects them
+        // even though their wire format is plain text. `try_get_unchecked` skips that
+        // type-compatibility check and decodes the text representation directly —
+        // without it, enum/citext/domain columns render as NULL for every row.
         _ => row
-            .try_get::<String, _>(col)
+            .try_get_unchecked::<String, _>(col)
             .map(Value::from)
             .unwrap_or(Value::Null),
     }

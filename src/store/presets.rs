@@ -379,7 +379,9 @@ mod tests {
             search_term: None,
             page_size: Some(100),
         };
-        set_last_used(pool, CONN, SCHEMA, TABLE, &state).await.unwrap();
+        set_last_used(pool, CONN, SCHEMA, TABLE, &state)
+            .await
+            .unwrap();
 
         let got = get_last_used(pool, CONN, SCHEMA, TABLE)
             .await
@@ -426,7 +428,9 @@ mod tests {
             search_term: None,
             page_size: None,
         };
-        set_last_used(pool, CONN, SCHEMA, TABLE, &state).await.unwrap();
+        set_last_used(pool, CONN, SCHEMA, TABLE, &state)
+            .await
+            .unwrap();
 
         let got = get_last_used(pool, CONN, SCHEMA, TABLE)
             .await

@@ -566,6 +566,47 @@
     background: var(--sk-row-alt);
   }
 
+  /* ─── Horizontal scroll ────────────────────────────────────────────────────────
+   * RevoGrid renders the visible horizontal scrollbar as `revogr-scroll-virtual.horizontal`
+   * and force-hides the native scrollbar on the real scroll container
+   * (`revogr-viewport-scroll` sets scrollbar-width:none + ::-webkit-scrollbar{display:none}).
+   * The virtual bar sizes its gutter to getScrollbarSize(document) — which returns 0 on
+   * overlay-scrollbar platforms (macOS, iOS/Android, GTK-overlay Linux) — so RevoGrid sets
+   * its min-height to 0px and the bar collapses: wide tables get no visible/draggable
+   * horizontal scrollbar at all. Force a persistent, classic (non-overlay) scrollbar so a
+   * draggable bar always appears when columns overflow. `-webkit-appearance:none` opts
+   * WebKit/Blink out of overlay scrollbars; `scrollbar-width:thin` covers Firefox. This does
+   * not touch the vertical virtual bar (`.vertical`) that infinite-scroll wiring depends on,
+   * and native shift+wheel / trackpad panning (handled on revogr-viewport-scroll) is
+   * unaffected — this restores the missing scrollbar affordance.
+   */
+  .grid-card :global(revogr-scroll-virtual.horizontal) {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--sk-ink-rgb), 0.32) transparent;
+  }
+
+  .grid-card :global(revogr-scroll-virtual.horizontal)::-webkit-scrollbar {
+    height: 10px;
+    -webkit-appearance: none;
+    background: transparent;
+  }
+
+  .grid-card :global(revogr-scroll-virtual.horizontal)::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .grid-card :global(revogr-scroll-virtual.horizontal)::-webkit-scrollbar-thumb {
+    background-color: rgba(var(--sk-ink-rgb), 0.32);
+    border-radius: var(--sk-radius-pill);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .grid-card :global(revogr-scroll-virtual.horizontal)::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(var(--sk-ink-rgb), 0.48);
+    background-clip: padding-box;
+  }
+
   /* ─── Column header ────────────────────────────────────────────────────────── */
   .grid-card :global(.sk-grid-header) {
     display: flex;

@@ -1,3 +1,4 @@
+pub mod display_names;
 pub mod presets;
 pub mod settings;
 pub mod ui_state;
@@ -74,6 +75,22 @@ impl Store {
             .run(&pool)
             .await
             .context("running store migrations")?;
+
+        // `table_display_names` is created directly (not via the migrations
+        // dir) per the UX-fixes spec: no migration tooling required for this
+        // table, `CREATE TABLE IF NOT EXISTS` mirrors the existing pattern.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS table_display_names (
+                schema_name  TEXT NOT NULL,
+                table_name   TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                updated_at   TEXT,
+                PRIMARY KEY (schema_name, table_name)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .context("creating table_display_names table")?;
 
         tracing::info!(path = %path.display(), "store ready");
         Ok(Self(pool))
