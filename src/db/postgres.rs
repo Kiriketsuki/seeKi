@@ -3684,6 +3684,12 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .try_get::<uuid::Uuid, _>(col)
             .map(|v| Value::String(v.to_string()))
             .unwrap_or(Value::Null),
+        // inet/cidr binary wire format is a family/prefix/bytes struct, not text —
+        // the unchecked String fallback below cannot decode it (renders NULL).
+        "inet" | "cidr" => row
+            .try_get::<sqlx::types::ipnet::IpNet, _>(col)
+            .map(|v| Value::String(format_ipnet(v)))
+            .unwrap_or(Value::Null),
         // USER-DEFINED types (Postgres enums, citext, domains, etc.) have OIDs sqlx
         // doesn't statically know, so the checked `try_get::<String, _>` rejects them
         // even though their wire format is plain text. `try_get_unchecked` skips that
@@ -3693,6 +3699,16 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .try_get_unchecked::<String, _>(col)
             .map(Value::from)
             .unwrap_or(Value::Null),
+    }
+}
+
+/// Render a host address without the redundant /32 (v4) or /128 (v6) suffix;
+/// keep the prefix for genuine subnets.
+pub(crate) fn format_ipnet(net: sqlx::types::ipnet::IpNet) -> String {
+    if net.prefix_len() == net.max_prefix_len() {
+        net.addr().to_string()
+    } else {
+        net.to_string()
     }
 }
 
@@ -3795,6 +3811,16 @@ mod tests {
         assert!(!is_valid_identifier("col;DROP TABLE"));
         assert!(!is_valid_identifier("col\"name"));
         assert!(!is_valid_identifier(""));
+    }
+
+    #[test]
+    fn format_ipnet_strips_full_prefix_keeps_subnets() {
+        let host_v4: sqlx::types::ipnet::IpNet = "192.168.1.10/32".parse().unwrap();
+        let subnet_v4: sqlx::types::ipnet::IpNet = "10.0.0.0/24".parse().unwrap();
+        let host_v6: sqlx::types::ipnet::IpNet = "::1/128".parse().unwrap();
+        assert_eq!(format_ipnet(host_v4), "192.168.1.10");
+        assert_eq!(format_ipnet(subnet_v4), "10.0.0.0/24");
+        assert_eq!(format_ipnet(host_v6), "::1");
     }
 
     #[test]
