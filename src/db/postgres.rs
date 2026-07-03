@@ -3530,8 +3530,10 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
     let total_rows: i64 = count_query.fetch_one(pool).await?.get("cnt");
 
     let offset = (params.page.saturating_sub(1) as u64) * (params.page_size as u64);
+    let spatial = spatial_columns(pool, schema, table).await?;
+    let select_list = build_row_select_list(&columns, &spatial);
     let query_sql = format!(
-        "SELECT * FROM \"{schema}\".\"{table}\" {} {} LIMIT {} OFFSET {offset}",
+        "SELECT {select_list} FROM \"{schema}\".\"{table}\" {} {} LIMIT {} OFFSET {offset}",
         qb.where_clause, qb.order_clause, params.page_size
     );
 
@@ -3591,8 +3593,10 @@ pub async fn export_rows_stream<'a>(
         1,
     )?;
 
+    let spatial = spatial_columns(pool, schema, table).await?;
+    let select_list = build_row_select_list(&columns, &spatial);
     let query_sql = format!(
-        "SELECT * FROM \"{schema}\".\"{table}\" {} {}",
+        "SELECT {select_list} FROM \"{schema}\".\"{table}\" {} {}",
         qb.where_clause, qb.order_clause
     );
 
@@ -3613,6 +3617,72 @@ pub async fn export_rows_stream<'a>(
     };
 
     Ok((columns, Box::pin(stream)))
+}
+
+/// Fetch the PostGIS spatial columns of a table, mapping column name to the schema
+/// its geometry/geography type lives in.
+///
+/// PostGIS geometry/geography arrive over the wire as binary EWKB, which the text
+/// decode path cannot read — they would render as NULL. We project them through
+/// `ST_AsText()` (see [`build_row_select_list`]) so they come back as WKT. PostGIS
+/// installs its functions in the same schema as its types, so `udt_schema` is where
+/// `ST_AsText` lives, keeping the projection generic across deployments.
+async fn spatial_columns(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+) -> anyhow::Result<HashMap<String, String>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT column_name, udt_schema
+        FROM information_schema.columns
+        WHERE table_schema = $1
+          AND table_name = $2
+          AND udt_name IN ('geometry', 'geography')
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("column_name"),
+                r.get::<String, _>("udt_schema"),
+            )
+        })
+        .collect())
+}
+
+/// Build the explicit column list for a `SELECT`, wrapping any PostGIS spatial column
+/// in a schema-qualified `ST_AsText(...)` so it returns human-readable WKT instead of
+/// binary EWKB (which would decode to NULL). Non-spatial columns are selected as-is.
+///
+/// Identifiers are validated before interpolation; any column that fails validation
+/// falls back to a plain quoted reference so a malformed catalog entry can never inject
+/// SQL. Column and type-schema names originate from `information_schema`, not user input.
+fn build_row_select_list(columns: &[ColumnInfo], spatial: &HashMap<String, String>) -> String {
+    if columns.is_empty() {
+        return "*".to_string();
+    }
+    columns
+        .iter()
+        .map(|c| {
+            let name = &c.name;
+            match spatial.get(name) {
+                Some(udt_schema)
+                    if is_valid_identifier(name) && is_valid_identifier(udt_schema) =>
+                {
+                    format!("\"{udt_schema}\".ST_AsText(\"{name}\") AS \"{name}\"")
+                }
+                _ => format!("\"{name}\""),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Convert a PostgreSQL column value to a serde_json::Value.
@@ -3713,7 +3783,11 @@ pub(crate) fn format_ipnet(net: sqlx::types::ipnet::IpNet) -> String {
 }
 
 /// Convert SQL type names to human-friendly labels.
-fn humanize_type(data_type: &str, _udt: &str) -> String {
+fn humanize_type(data_type: &str, udt: &str) -> String {
+    // USER-DEFINED covers enums and PostGIS spatial types alike; disambiguate on udt.
+    if matches!(udt, "geometry" | "geography") {
+        return "Location".to_string();
+    }
     match data_type {
         "character varying" | "character" | "text" => "Text".to_string(),
         "integer" | "smallint" | "bigint" => "Number".to_string(),
@@ -3832,6 +3906,53 @@ mod tests {
             humanize_type("timestamp with time zone", "timestamptz"),
             "Date & Time"
         );
+    }
+
+    #[test]
+    fn humanize_type_labels_spatial_as_location() {
+        assert_eq!(humanize_type("USER-DEFINED", "geometry"), "Location");
+        assert_eq!(humanize_type("USER-DEFINED", "geography"), "Location");
+        // enums remain USER-DEFINED but keep their raw type label
+        assert_eq!(
+            humanize_type("USER-DEFINED", "fault_level_enum"),
+            "USER-DEFINED"
+        );
+    }
+
+    #[test]
+    fn build_row_select_list_wraps_only_spatial_columns() {
+        let cols = test_columns();
+        let mut spatial = HashMap::new();
+        spatial.insert("vehicle_id".to_string(), "autoconnect_db".to_string());
+
+        let sql = build_row_select_list(&cols, &spatial);
+        assert_eq!(
+            sql,
+            "\"id\", \"autoconnect_db\".ST_AsText(\"vehicle_id\") AS \"vehicle_id\", \"logged_at\""
+        );
+    }
+
+    #[test]
+    fn build_row_select_list_plain_when_no_spatial() {
+        let cols = test_columns();
+        let sql = build_row_select_list(&cols, &HashMap::new());
+        assert_eq!(sql, "\"id\", \"vehicle_id\", \"logged_at\"");
+    }
+
+    #[test]
+    fn build_row_select_list_rejects_bad_identifiers() {
+        let cols = vec![ColumnInfo {
+            name: "geom".into(),
+            data_type: "USER-DEFINED".into(),
+            display_type: "Location".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        }];
+        let mut spatial = HashMap::new();
+        // A malformed udt_schema must not be interpolated into ST_AsText — fall back to plain.
+        spatial.insert("geom".to_string(), "evil\"; DROP".to_string());
+        let sql = build_row_select_list(&cols, &spatial);
+        assert_eq!(sql, "\"geom\"");
     }
 
     #[test]
