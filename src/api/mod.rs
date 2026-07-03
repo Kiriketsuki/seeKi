@@ -134,8 +134,7 @@ async fn get_display_config(
         let table_columns = all_columns.get(&key).cloned().unwrap_or_default();
         let sibling_names_owned: Vec<String> =
             table_columns.iter().map(|c| c.name.clone()).collect();
-        let sibling_names: Vec<&str> =
-            sibling_names_owned.iter().map(|s| s.as_str()).collect();
+        let sibling_names: Vec<&str> = sibling_names_owned.iter().map(|s| s.as_str()).collect();
         let columns: HashMap<String, ColumnDisplayConfig> = table_columns
             .into_iter()
             .map(|c| {
@@ -248,9 +247,10 @@ async fn list_tables(
         .filter(|t| state.config.tables.allows(&t.schema, &t.name))
         .map(|t| {
             let key = (t.schema.clone(), t.name.clone());
-            let display = override_map.get(&key).cloned().unwrap_or_else(|| {
-                display_name_table(&t.schema, &t.name, &state.config.display)
-            });
+            let display = override_map
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| display_name_table(&t.schema, &t.name, &state.config.display));
             serde_json::json!({
                 "schema": t.schema,
                 "name": t.name,
@@ -269,7 +269,12 @@ async fn get_table_display_names(
     let entries = display_names::list_display_names(store.pool()).await?;
     let map: HashMap<String, String> = entries
         .into_iter()
-        .map(|e| (format!("{}.{}", e.schema_name, e.table_name), e.display_name))
+        .map(|e| {
+            (
+                format!("{}.{}", e.schema_name, e.table_name),
+                e.display_name,
+            )
+        })
         .collect();
     Ok(Json(map))
 }
@@ -599,7 +604,13 @@ async fn export_csv(
     let display_headers: Vec<String> = columns
         .iter()
         .map(|c| {
-            display_name_column(&schema, &table, &c.name, &sibling_names, &state.config.display)
+            display_name_column(
+                &schema,
+                &table,
+                &c.name,
+                &sibling_names,
+                &state.config.display,
+            )
         })
         .collect();
 

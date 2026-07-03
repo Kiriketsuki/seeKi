@@ -62,13 +62,11 @@ pub async fn set_display_name(
     let trimmed = display_name.trim();
 
     if trimmed.is_empty() {
-        sqlx::query(
-            "DELETE FROM table_display_names WHERE schema_name = ? AND table_name = ?",
-        )
-        .bind(schema_name)
-        .bind(table_name)
-        .execute(pool)
-        .await?;
+        sqlx::query("DELETE FROM table_display_names WHERE schema_name = ? AND table_name = ?")
+            .bind(schema_name)
+            .bind(table_name)
+            .execute(pool)
+            .await?;
         return Ok(());
     }
 

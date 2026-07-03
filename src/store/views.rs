@@ -44,6 +44,7 @@ struct StoredViewColumnsEnvelope {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 enum StoredViewColumns {
     Legacy(Vec<SavedViewColumn>),
     V2(StoredViewColumnsEnvelope),

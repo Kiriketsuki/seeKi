@@ -122,7 +122,9 @@ fn validate_known_setting(key: &str, value: &Value) -> Result<(), Err> {
                 return Err(Err::bad_request("data.page_size must be a number"));
             };
             if !matches!(n, 50 | 100 | 250 | 500) {
-                return Err(Err::bad_request("data.page_size must be 50, 100, 250, or 500"));
+                return Err(Err::bad_request(
+                    "data.page_size must be 50, 100, 250, or 500",
+                ));
             }
         }
         "data.pagination_mode" => {
@@ -176,12 +178,10 @@ async fn set_last_used(
     if search_term_json.len() > MAX_VALUE_BYTES {
         return Err(Err::bad_request("value exceeds maximum size"));
     }
-    if let Some(ps) = body.page_size {
-        if !matches!(ps, 50 | 100 | 250 | 500) {
-            return Err(Err::bad_request(
-                "page_size must be 50, 100, 250, or 500",
-            ));
-        }
+    if let Some(ps) = body.page_size
+        && !matches!(ps, 50 | 100 | 250 | 500)
+    {
+        return Err(Err::bad_request("page_size must be 50, 100, 250, or 500"));
     }
     let conn_id = require_conn_id(&mode).await?;
     presets::set_last_used(store.pool(), &conn_id, &schema, &table, &body)
