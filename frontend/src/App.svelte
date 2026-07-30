@@ -162,6 +162,9 @@
   let sortState: SortState = $state([]);
   let filtersVisible: boolean = $state(false);
   let filters: FilterState = $state({});
+  // Exact-match filters (`eq.` params). FK jump navigation creates them.
+  // There is no manual creation UI, the chips above the grid remove them.
+  let exactFilters: Record<string, string> = $state({});
   let searchTerm: string = $state('');
   let searchVisible: boolean = $state(false);
   let columnsOpen: boolean = $state(false);
@@ -675,7 +678,23 @@
       params.search = trimmedSearch;
     }
 
+    if (Object.keys(exactFilters).length > 0) {
+      params.exact_filters = { ...exactFilters };
+    }
+
     return params;
+  }
+
+  function removeExactFilter(column: string) {
+    const next = { ...exactFilters };
+    delete next[column];
+    exactFilters = next;
+    void resetAndLoadRows(sortState, filters, searchTerm);
+  }
+
+  function exactFilterLabel(column: string): string {
+    const info = columns.find((c) => c.name === column);
+    return info?.display_name ?? column;
   }
 
   async function selectTable(table: TableInfo) {
@@ -688,6 +707,7 @@
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
+    exactFilters = {};
     columnsOpen = false;
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
@@ -803,6 +823,7 @@
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
+    exactFilters = {};
     columnsOpen = false;
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
@@ -1102,6 +1123,11 @@
     if (params.filters) {
       for (const [col, val] of Object.entries(params.filters)) {
         searchParams.set(`filter.${col}`, val);
+      }
+    }
+    if (params.exact_filters) {
+      for (const [col, val] of Object.entries(params.exact_filters)) {
+        searchParams.set(`eq.${col}`, val);
       }
     }
     const qs = searchParams.toString();
@@ -1460,6 +1486,25 @@
                   loadedCount={cleanRowCount}
                 />
               {/if}
+              {#if Object.keys(exactFilters).length > 0}
+                <div class="exact-filter-strip" role="status">
+                  {#each Object.entries(exactFilters) as [column, value] (column)}
+                    <span class="exact-filter-chip">
+                      <span class="exact-filter-chip__text">
+                        {exactFilterLabel(column)} is exactly {value}
+                      </span>
+                      <button
+                        class="exact-filter-chip__remove"
+                        type="button"
+                        aria-label={`Remove exact filter on ${exactFilterLabel(column)}`}
+                        onclick={() => removeExactFilter(column)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
               <div class="grid-area">
                 <div class="grid-shell">
                   <div class="grid-content" class:stale={tableLoading && paginationMode === 'infinite'}>
@@ -1769,6 +1814,42 @@
     border-bottom: 1px solid rgba(var(--sk-danger-rgb), 0.3);
     color: var(--sk-text);
     font-size: var(--sk-font-size-body);
+  }
+
+  /* Exact-match filter chips. Teal marks them as linked-navigation state,
+     distinct from the amber substring-filter accents. */
+  .exact-filter-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    padding: var(--sk-space-sm) var(--sk-space-2xl);
+  }
+
+  .exact-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sk-space-xs);
+    padding: 2px var(--sk-space-sm);
+    background: rgba(var(--sk-accent-active-rgb), 0.12);
+    border: 1px solid rgba(var(--sk-accent-active-rgb), 0.3);
+    border-radius: var(--sk-radius-full, 999px);
+    color: var(--sk-accent-active-ink);
+    font-size: var(--sk-font-size-small, var(--sk-font-size-body));
+  }
+
+  .exact-filter-chip__remove {
+    border: none;
+    background: none;
+    padding: 0 2px;
+    color: inherit;
+    font-size: 1.05em;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .exact-filter-chip__remove:hover {
+    color: var(--sk-danger, currentColor);
   }
 
   .dismiss-btn {

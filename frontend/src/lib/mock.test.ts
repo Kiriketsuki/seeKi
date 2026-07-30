@@ -65,6 +65,21 @@ describe('mockFetchRows', () => {
     ).toBe(true);
   });
 
+  it('applies exact filters as strict equality', () => {
+    const filtered = mockFetchRows('public', 'users', {
+      exact_filters: { id: '1' },
+    });
+
+    expect(filtered.total_rows).toBe(1);
+    expect(String(filtered.rows[0].id)).toBe('1');
+
+    // Substring semantics would also match 10, exact must not.
+    const substring = mockFetchRows('public', 'users', {
+      filters: { id: '1' },
+    });
+    expect(substring.total_rows).toBeGreaterThan(filtered.total_rows);
+  });
+
   it('combines multiple column filters with AND logic', () => {
     const filtered = mockFetchRows('public', 'users', {
       filters: {
