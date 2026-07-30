@@ -117,8 +117,12 @@ async fn get_display_config(
     let settings = load_settings_map(&store).await?;
     let schemas = state.config.database.effective_schemas();
     let all_tables = state.db.list_tables(&schemas).await?;
+    // Partition children reuse the parent's column set, so the display config
+    // skips them. This keeps the bulk column fetch small on heavily
+    // partitioned databases.
     let allowed_tables: Vec<_> = all_tables
         .into_iter()
+        .filter(|t| t.partition_parent.is_none())
         .filter(|t| state.config.tables.allows(&t.schema, &t.name))
         .collect();
 
@@ -256,6 +260,8 @@ async fn list_tables(
                 "name": t.name,
                 "display_name": display,
                 "row_count_estimate": t.row_count_estimate,
+                "is_partitioned": t.is_partitioned,
+                "partition_parent": t.partition_parent,
             })
         })
         .collect();
