@@ -1,17 +1,20 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use futures::Stream;
 use serde::Serialize;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use tokio::sync::RwLock;
 
 use super::{
-    ColumnInfo, ExportQueryParams, FkHop, QueryResult, RowQueryParams, SavedViewAggregate,
-    SavedViewColumn, SavedViewColumnKind, SavedViewSortDirection, SortDirection, SortEntry,
-    TableInfo, ValidationError, ViewAggregate, ViewColumn, ViewColumnRef, ViewDefinitionShape,
-    ViewDerivedColumn, ViewDerivedInput, ViewDerivedInputKind, ViewDerivedOperation, ViewDraft,
-    ViewExportQueryParams, ViewFilterValue, ViewOrderBy, ViewRowsQueryParams, ViewSelfDirection,
-    ViewSourceKind,
+    ColumnInfo, ExportQueryParams, FkHop, QueryResult, RelationshipEdge, RowQueryParams,
+    SavedViewAggregate, SavedViewColumn, SavedViewColumnKind, SavedViewSortDirection,
+    SortDirection, SortEntry, TableInfo, ValidationError, ViewAggregate, ViewColumn, ViewColumnRef,
+    ViewDefinitionShape, ViewDerivedColumn, ViewDerivedInput, ViewDerivedInputKind,
+    ViewDerivedOperation, ViewDraft, ViewExportQueryParams, ViewFilterValue, ViewOrderBy,
+    ViewRowsQueryParams, ViewSelfDirection, ViewSourceKind,
 };
 
 /// Result of a connection test — describes a single table visible to the server.
@@ -863,6 +866,62 @@ fn find_fk_path(edges: &[FkEdge], base: &TableKey, target: &TableKey) -> Vec<FkH
     Vec::new()
 }
 
+/// BFS over the FK adjacency graph, starting from `base`. Returns every reachable
+/// table (excluding `base` itself) paired with its hop distance. The result order
+/// is deterministic: sorted by hop count, then by schema and table name.
+fn reachable_tables_bfs(edges: &[FkEdge], base: &TableKey) -> Vec<(TableKey, u32)> {
+    let adjacency = build_fk_adjacency(edges);
+    let mut visited: HashSet<TableKey> = HashSet::from([base.clone()]);
+    let mut queue: VecDeque<(TableKey, u32)> = VecDeque::from([(base.clone(), 0)]);
+    let mut result: Vec<(TableKey, u32)> = Vec::new();
+
+    while let Some((current, hop_count)) = queue.pop_front() {
+        let Some(hops) = adjacency.get(&current) else {
+            continue;
+        };
+
+        for hop in hops {
+            let next = TableKey::new(&hop.to_schema, &hop.to_table);
+            if visited.contains(&next) {
+                continue;
+            }
+
+            visited.insert(next.clone());
+            let next_hop_count = hop_count + 1;
+            result.push((next.clone(), next_hop_count));
+            queue.push_back((next, next_hop_count));
+        }
+    }
+
+    result.sort_by(|(a_key, a_hops), (b_key, b_hops)| {
+        a_hops.cmp(b_hops).then_with(|| a_key.cmp(b_key))
+    });
+    result
+}
+
+/// All tables reachable from `base_table` by following FK edges in either direction,
+/// within `base_schema`. FK edges never cross a schema boundary (see `load_fk_edges`),
+/// so the search stays inside one schema.
+pub async fn fk_reachable_tables(
+    pool: &PgPool,
+    base_schema: &str,
+    base_table: &str,
+) -> anyhow::Result<Vec<(String, String, u32)>> {
+    if !is_valid_identifier(base_schema) {
+        anyhow::bail!("Invalid schema name: {base_schema}");
+    }
+    if !is_valid_identifier(base_table) {
+        anyhow::bail!("Invalid table name: {base_table}");
+    }
+
+    let base = TableKey::new(base_schema, base_table);
+    let edges = get_fk_edges_cached(pool, base_schema).await?;
+    Ok(reachable_tables_bfs(&edges, &base)
+        .into_iter()
+        .map(|(key, hops)| (key.schema, key.table, hops))
+        .collect())
+}
+
 fn resolve_view_output_names(columns: &[ViewColumn]) -> anyhow::Result<Vec<String>> {
     let mut bare_name_counts: HashMap<&str, usize> = HashMap::new();
     for column in columns {
@@ -1109,10 +1168,87 @@ fn build_order_clause(
     })
 }
 
+/// Lightweight UUID shape check so a malformed exact-filter value collapses
+/// to a no-match condition instead of a runtime cast error in PostgreSQL.
+fn is_plausible_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(i, b)| match i {
+        8 | 13 | 18 | 23 => *b == b'-',
+        _ => b.is_ascii_hexdigit(),
+    })
+}
+
+/// One exact-match condition: (condition SQL, bind value when the condition
+/// binds a parameter at `param_idx`). Values that cannot possibly match the
+/// column type collapse to FALSE, mirroring the boolean substring-filter
+/// precedent, so a malformed value returns zero rows instead of erroring.
+fn exact_filter_condition(
+    col_name: &str,
+    col_type: &str,
+    value: &str,
+    param_idx: u32,
+) -> (String, Option<String>) {
+    let no_match = ("FALSE".to_string(), None);
+    match col_type {
+        "boolean" => match normalize_boolean_filter(value) {
+            Some(b) => (
+                format!("\"{col_name}\" = {}", if b { "TRUE" } else { "FALSE" }),
+                None,
+            ),
+            None => no_match,
+        },
+        "smallint" | "integer" | "bigint" => {
+            if value.trim().parse::<i64>().is_err() {
+                return no_match;
+            }
+            (
+                format!("\"{col_name}\" = ${param_idx}::bigint"),
+                Some(value.trim().to_string()),
+            )
+        }
+        "real" | "double precision" | "numeric" => {
+            if value.trim().parse::<f64>().is_err() {
+                return no_match;
+            }
+            (
+                format!("\"{col_name}\" = ${param_idx}::numeric"),
+                Some(value.trim().to_string()),
+            )
+        }
+        "uuid" => {
+            if !is_plausible_uuid(value.trim()) {
+                return no_match;
+            }
+            (
+                format!("\"{col_name}\" = ${param_idx}::uuid"),
+                Some(value.trim().to_string()),
+            )
+        }
+        _ => match sql_cast_type(col_type) {
+            // Temporal and text types cast the parameter to the column's
+            // type so ISO input matches regardless of display format.
+            Some(cast) => (
+                format!("\"{col_name}\" = ${param_idx}::{cast}"),
+                Some(value.to_string()),
+            ),
+            // Exotic types (PostGIS geometry, arrays, …) compare on the
+            // text form. Exact, and never a cast error.
+            None => (
+                format!("\"{col_name}\"::text = ${param_idx}"),
+                Some(value.to_string()),
+            ),
+        },
+    }
+}
+
 fn build_query_clauses(
     columns: &[ColumnInfo],
     search: Option<&str>,
     filters: &std::collections::HashMap<String, String>,
+    exact_filters: &std::collections::HashMap<String, String>,
     sort: &[SortEntry],
     include_pk_tiebreakers: bool,
     start_param_idx: u32,
@@ -1121,7 +1257,7 @@ fn build_query_clauses(
     let valid_column_names: std::collections::HashSet<&str> =
         columns.iter().map(|c| c.name.as_str()).collect();
 
-    for col_name in filters.keys() {
+    for col_name in filters.keys().chain(exact_filters.keys()) {
         if !is_valid_identifier(col_name) {
             return Err(ValidationError(format!("Invalid filter column name: {col_name}")).into());
         }
@@ -1183,6 +1319,20 @@ fn build_query_clauses(
         } else {
             conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
             bind_values.push(format!("%{value}%"));
+            param_idx += 1;
+        }
+    }
+
+    // Exact-match conditions (AND-ed), from the `eq.` query-param namespace.
+    let mut exact_entries: Vec<_> = exact_filters.iter().collect();
+    exact_entries.sort_by_key(|(k, _)| k.as_str());
+
+    for (col_name, value) in &exact_entries {
+        let col_type = column_types.get(col_name.as_str()).copied().unwrap_or("");
+        let (condition, bind) = exact_filter_condition(col_name, col_type, value, param_idx);
+        conditions.push(condition);
+        if let Some(bind_value) = bind {
+            bind_values.push(bind_value);
             param_idx += 1;
         }
     }
@@ -1263,6 +1413,93 @@ async fn load_fk_edges(pool: &PgPool, schema: &str) -> anyhow::Result<Vec<FkEdge
         .collect())
 }
 
+/// FK edges change only on DDL, so a short cache absorbs the repeated
+/// pg_constraint scans that relationship lookups and view planning issue.
+const FK_EDGE_CACHE_TTL: Duration = Duration::from_secs(300);
+
+type FkEdgeCacheMap = HashMap<String, (Instant, Arc<Vec<FkEdge>>)>;
+
+static FK_EDGE_CACHE: OnceLock<RwLock<FkEdgeCacheMap>> = OnceLock::new();
+
+fn fk_edge_cache() -> &'static RwLock<FkEdgeCacheMap> {
+    FK_EDGE_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn fk_cache_entry_is_fresh(inserted: Instant, now: Instant, ttl: Duration) -> bool {
+    now.duration_since(inserted) < ttl
+}
+
+/// Drops every cached FK edge. Called when a new database pool connects, so a
+/// reconfigured target never serves edges from the previous database.
+pub async fn clear_fk_edge_cache() {
+    fk_edge_cache().write().await.clear();
+}
+
+async fn get_fk_edges_cached(pool: &PgPool, schema: &str) -> anyhow::Result<Arc<Vec<FkEdge>>> {
+    let now = Instant::now();
+    if let Some((inserted, edges)) = fk_edge_cache().read().await.get(schema)
+        && fk_cache_entry_is_fresh(*inserted, now, FK_EDGE_CACHE_TTL)
+    {
+        return Ok(Arc::clone(edges));
+    }
+
+    let edges = Arc::new(load_fk_edges(pool, schema).await?);
+    fk_edge_cache()
+        .write()
+        .await
+        .insert(schema.to_string(), (now, Arc::clone(&edges)));
+    Ok(edges)
+}
+
+fn build_table_relationships(
+    edges: &[FkEdge],
+    key: &TableKey,
+) -> (Vec<RelationshipEdge>, Vec<RelationshipEdge>) {
+    let outgoing = edges
+        .iter()
+        .filter(|edge| edge.source == *key)
+        .map(|edge| RelationshipEdge {
+            constraint_name: edge.constraint_name.clone(),
+            columns: edge.source_columns.clone(),
+            other_schema: edge.target.schema.clone(),
+            other_table: edge.target.table.clone(),
+            other_columns: edge.target_columns.clone(),
+        })
+        .collect();
+    let incoming = edges
+        .iter()
+        .filter(|edge| edge.target == *key)
+        .map(|edge| RelationshipEdge {
+            constraint_name: edge.constraint_name.clone(),
+            columns: edge.target_columns.clone(),
+            other_schema: edge.source.schema.clone(),
+            other_table: edge.source.table.clone(),
+            other_columns: edge.source_columns.clone(),
+        })
+        .collect();
+    (outgoing, incoming)
+}
+
+/// FK edges that touch one table: (outgoing, incoming). `columns` on each edge
+/// are the columns on the requested table, `other_*` describe the far side.
+pub async fn table_relationships(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+) -> anyhow::Result<(Vec<RelationshipEdge>, Vec<RelationshipEdge>)> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name: {schema}");
+    }
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name: {table}");
+    }
+    let edges = get_fk_edges_cached(pool, schema).await?;
+    Ok(build_table_relationships(
+        &edges,
+        &TableKey::new(schema, table),
+    ))
+}
+
 pub async fn lookup_fk_path(
     pool: &PgPool,
     base_schema: &str,
@@ -1282,8 +1519,77 @@ pub async fn lookup_fk_path(
 
     let base = TableKey::new(base_schema, base_table);
     let target = TableKey::new(target_schema, target_table);
-    let edges = load_fk_edges(pool, base_schema).await?;
+    let edges = get_fk_edges_cached(pool, base_schema).await?;
     Ok(find_fk_path(&edges, &base, &target))
+}
+
+/// Cap a raw row count at 1000 and report whether the true count exceeds it.
+/// The UI shows "1000+" instead of an unbounded number for a heavily referenced row.
+fn cap_count(count: i64) -> (i64, bool) {
+    if count > 1000 {
+        (1000, true)
+    } else {
+        (count, false)
+    }
+}
+
+/// Count rows in the source table of one incoming FK edge whose FK columns equal
+/// the given values, capped at 1000 so a heavily referenced row cannot trigger an
+/// unbounded scan. `source_columns` and `values` pair up by position.
+pub async fn count_referencing_rows(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+    source_columns: &[String],
+    values: &[String],
+) -> anyhow::Result<(i64, bool)> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name: {schema}");
+    }
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name: {table}");
+    }
+    if source_columns.is_empty() || source_columns.len() != values.len() {
+        anyhow::bail!("Mismatched FK columns and values for reference count");
+    }
+    for col in source_columns {
+        if !is_valid_identifier(col) {
+            anyhow::bail!("Invalid FK column name: {col}");
+        }
+    }
+
+    let columns = get_columns(pool, schema, table).await?;
+    let column_types: std::collections::HashMap<&str, &str> = columns
+        .iter()
+        .map(|c| (c.name.as_str(), c.data_type.as_str()))
+        .collect();
+
+    let mut conditions: Vec<String> = Vec::new();
+    let mut bind_values: Vec<String> = Vec::new();
+    let mut param_idx: u32 = 1;
+
+    for (col_name, value) in source_columns.iter().zip(values.iter()) {
+        let col_type = column_types.get(col_name.as_str()).copied().unwrap_or("");
+        let (condition, bind) = exact_filter_condition(col_name, col_type, value, param_idx);
+        conditions.push(condition);
+        if let Some(bind_value) = bind {
+            bind_values.push(bind_value);
+            param_idx += 1;
+        }
+    }
+
+    let where_clause = conditions.join(" AND ");
+    let count_sql = format!(
+        "SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM \"{schema}\".\"{table}\" WHERE {where_clause} LIMIT 1001) capped"
+    );
+
+    let mut count_query = sqlx::query(&count_sql);
+    for val in &bind_values {
+        count_query = count_query.bind(val);
+    }
+    let count: i64 = count_query.fetch_one(pool).await?.get("cnt");
+
+    Ok(cap_count(count))
 }
 
 fn normalize_boolean_filter(value: &str) -> Option<bool> {
@@ -2316,7 +2622,10 @@ async fn load_planner_catalog(
         .collect::<Vec<_>>();
 
     let columns_by_table = get_columns_bulk(pool, &refs).await?;
-    let fk_edges = load_fk_edges(pool, &base_binding.table.schema).await?;
+    let fk_edges = get_fk_edges_cached(pool, &base_binding.table.schema)
+        .await?
+        .as_ref()
+        .clone();
 
     Ok(PlannerCatalog {
         columns_by_table,
@@ -3293,6 +3602,7 @@ fn rows_to_json(rows: &[sqlx::postgres::PgRow], columns: &[ColumnInfo]) -> Vec<s
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn query_projected_rows(
     pool: &PgPool,
     plan: &PlannedViewQuery,
@@ -3301,11 +3611,13 @@ async fn query_projected_rows(
     sort: &[SortEntry],
     search: Option<&str>,
     filters: &HashMap<String, String>,
+    exact_filters: &HashMap<String, String>,
 ) -> anyhow::Result<QueryResult> {
     let qb = build_query_clauses(
         &plan.output_columns,
         search,
         filters,
+        exact_filters,
         sort,
         true,
         plan.bind_values.len() as u32 + 1,
@@ -3371,6 +3683,7 @@ pub async fn preview_view(
         &[],
         None,
         &HashMap::new(),
+        &HashMap::new(),
     )
     .await
 }
@@ -3388,6 +3701,7 @@ pub async fn query_view_rows(
         params.sort,
         params.search,
         params.filters,
+        params.exact_filters,
     )
     .await
 }
@@ -3418,6 +3732,7 @@ pub async fn preview_view_shape(
         &[],
         None,
         &HashMap::new(),
+        &HashMap::new(),
     )
     .await
 }
@@ -3433,9 +3748,20 @@ pub async fn query_view_shape_rows(
     sort: &[SortEntry],
     search: Option<&str>,
     filters: &HashMap<String, String>,
+    exact_filters: &HashMap<String, String>,
 ) -> anyhow::Result<QueryResult> {
     let plan = plan_view_shape_query(pool, base_schema, base_table, shape).await?;
-    query_projected_rows(pool, &plan, page, page_size, sort, search, filters).await
+    query_projected_rows(
+        pool,
+        &plan,
+        page,
+        page_size,
+        sort,
+        search,
+        filters,
+        exact_filters,
+    )
+    .await
 }
 
 pub async fn export_view_shape_rows_stream<'a>(
@@ -3455,6 +3781,7 @@ pub async fn export_view_shape_rows_stream<'a>(
         &plan.output_columns,
         search,
         filters,
+        &HashMap::new(),
         sort,
         false,
         plan.bind_values.len() as u32 + 1,
@@ -3496,6 +3823,7 @@ pub async fn export_view_rows_stream<'a>(
         &plan.output_columns,
         params.search,
         params.filters,
+        &HashMap::new(),
         params.sort,
         false,
         plan.bind_values.len() as u32 + 1,
@@ -3542,6 +3870,7 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
         &columns,
         params.search,
         params.filters,
+        params.exact_filters,
         params.sort,
         true,
         1,
@@ -3593,6 +3922,53 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
     })
 }
 
+/// Fetch at most one row matching an exact-filter set, used by the FK peek panel to
+/// preview a linked record before the user jumps to it. Returns the first matching row
+/// as JSON (or `None` when nothing matches) and a flag for whether more than one row
+/// matched, so the caller can warn that the preview shows only one of several.
+pub async fn query_single_row(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+    exact_filters: &HashMap<String, String>,
+) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name");
+    }
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name");
+    }
+
+    let columns = get_columns(pool, schema, table).await?;
+    let no_filters = HashMap::new();
+    let qb = build_query_clauses(&columns, None, &no_filters, exact_filters, &[], false, 1)?;
+
+    let spatial = spatial_columns(pool, schema, table).await?;
+    let select_list = build_row_select_list(&columns, &spatial);
+    let query_sql = format!(
+        "SELECT {select_list} FROM \"{schema}\".\"{table}\" {} LIMIT 2",
+        qb.where_clause
+    );
+
+    let mut query = sqlx::query(&query_sql);
+    for val in &qb.bind_values {
+        query = query.bind(val);
+    }
+    let rows = query.fetch_all(pool).await?;
+
+    let multiple = rows.len() > 1;
+    let first_row = rows.first().map(|row| {
+        let mut map = serde_json::Map::new();
+        for col in &columns {
+            let val = pg_value_to_json(row, &col.name, &col.data_type);
+            map.insert(col.name.clone(), val);
+        }
+        serde_json::Value::Object(map)
+    });
+
+    Ok((first_row, multiple))
+}
+
 /// Build a streaming query for CSV export — returns all matching rows without pagination.
 /// The returned stream yields `Result<PgRow>` items for incremental processing.
 pub async fn export_rows_stream<'a>(
@@ -3617,6 +3993,7 @@ pub async fn export_rows_stream<'a>(
         &columns,
         params.search,
         params.filters,
+        params.exact_filters,
         params.sort,
         false,
         1,
@@ -3898,6 +4275,166 @@ mod tests {
     }
 
     #[test]
+    fn exact_filter_condition_binds_typed_equality() {
+        let (cond, bind) = exact_filter_condition("id", "bigint", "42", 3);
+        assert_eq!(cond, "\"id\" = $3::bigint");
+        assert_eq!(bind.as_deref(), Some("42"));
+
+        let (cond, bind) = exact_filter_condition("price", "numeric", "19.99", 1);
+        assert_eq!(cond, "\"price\" = $1::numeric");
+        assert_eq!(bind.as_deref(), Some("19.99"));
+
+        let (cond, bind) =
+            exact_filter_condition("token", "uuid", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", 1);
+        assert_eq!(cond, "\"token\" = $1::uuid");
+        assert!(bind.is_some());
+
+        let (cond, bind) = exact_filter_condition("name", "text", "Ann", 2);
+        assert_eq!(cond, "\"name\" = $2::text");
+        assert_eq!(bind.as_deref(), Some("Ann"));
+
+        let (cond, _) = exact_filter_condition("at", "timestamp with time zone", "2026-01-01", 1);
+        assert_eq!(cond, "\"at\" = $1::timestamptz");
+    }
+
+    #[test]
+    fn exact_filter_condition_collapses_malformed_values_to_false() {
+        assert_eq!(
+            exact_filter_condition("id", "bigint", "42abc", 1).0,
+            "FALSE"
+        );
+        assert_eq!(
+            exact_filter_condition("price", "numeric", "cheap", 1).0,
+            "FALSE"
+        );
+        assert_eq!(
+            exact_filter_condition("token", "uuid", "not-a-uuid", 1).0,
+            "FALSE"
+        );
+        assert_eq!(
+            exact_filter_condition("ok", "boolean", "maybe", 1).0,
+            "FALSE"
+        );
+    }
+
+    #[test]
+    fn exact_filter_condition_handles_boolean_and_unknown_types() {
+        let (cond, bind) = exact_filter_condition("ok", "boolean", "yes", 1);
+        assert_eq!(cond, "\"ok\" = TRUE");
+        assert!(bind.is_none());
+
+        // Types with no SQL cast compare on the text form instead of erroring.
+        let (cond, bind) = exact_filter_condition("geom", "USER-DEFINED", "POINT(0 0)", 4);
+        assert_eq!(cond, "\"geom\"::text = $4");
+        assert_eq!(bind.as_deref(), Some("POINT(0 0)"));
+    }
+
+    #[test]
+    fn exact_filter_condition_builds_composite_edge_conditions_in_order() {
+        // Simulates the per-column loop `count_referencing_rows` runs for a
+        // composite FK edge: each column keeps its own type and parameter index.
+        let columns = ["warehouse_id", "region_code"];
+        let types = ["integer", "text"];
+        let values = ["7", "EU"];
+
+        let mut conditions = Vec::new();
+        let mut param_idx = 1u32;
+        for ((col, col_type), value) in columns.iter().zip(types.iter()).zip(values.iter()) {
+            let (cond, bind) = exact_filter_condition(col, col_type, value, param_idx);
+            conditions.push(cond);
+            if bind.is_some() {
+                param_idx += 1;
+            }
+        }
+
+        assert_eq!(
+            conditions,
+            vec![
+                "\"warehouse_id\" = $1::bigint",
+                "\"region_code\" = $2::text",
+            ]
+        );
+    }
+
+    #[test]
+    fn cap_count_reports_true_count_under_the_cap() {
+        assert_eq!(cap_count(0), (0, false));
+        assert_eq!(cap_count(500), (500, false));
+        assert_eq!(cap_count(1000), (1000, false));
+    }
+
+    #[test]
+    fn cap_count_caps_at_1000_and_flags_capped() {
+        assert_eq!(cap_count(1001), (1000, true));
+        assert_eq!(cap_count(50_000), (1000, true));
+    }
+
+    #[test]
+    fn build_query_clauses_combines_substring_and_exact_filters() {
+        let columns = test_columns();
+        let mut filters = HashMap::new();
+        filters.insert("vehicle_id".to_string(), "ADT".to_string());
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "7".to_string());
+
+        let qb = build_query_clauses(&columns, None, &filters, &exact, &[], false, 1).unwrap();
+        assert_eq!(
+            qb.where_clause,
+            "WHERE \"vehicle_id\"::text ILIKE $1 AND \"id\" = $2::bigint"
+        );
+        assert_eq!(qb.bind_values, vec!["%ADT%".to_string(), "7".to_string()]);
+    }
+
+    #[test]
+    fn build_query_clauses_indexes_composite_exact_filter_params_in_order() {
+        // A composite FK carries more than one exact filter at once (the
+        // peek-panel path, for example). Param indices must stay sequential
+        // and skip the boolean condition, which binds nothing.
+        let mut columns = test_columns();
+        columns.push(ColumnInfo {
+            name: "is_active".into(),
+            data_type: "boolean".into(),
+            display_type: "Yes/No".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        });
+
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "7".to_string());
+        exact.insert("vehicle_id".to_string(), "ADT3".to_string());
+        exact.insert("is_active".to_string(), "yes".to_string());
+
+        let qb =
+            build_query_clauses(&columns, None, &HashMap::new(), &exact, &[], false, 1).unwrap();
+
+        // Sorted by column name: id, is_active, vehicle_id.
+        assert_eq!(
+            qb.where_clause,
+            "WHERE \"id\" = $1::bigint AND \"is_active\" = TRUE AND \"vehicle_id\" = $2::text"
+        );
+        assert_eq!(qb.bind_values, vec!["7".to_string(), "ADT3".to_string()]);
+    }
+
+    #[test]
+    fn build_query_clauses_rejects_unknown_exact_filter_column() {
+        let columns = test_columns();
+        let mut exact = HashMap::new();
+        exact.insert("nope".to_string(), "1".to_string());
+
+        let result = build_query_clauses(&columns, None, &HashMap::new(), &exact, &[], false, 1);
+        let err = result.err().expect("unknown column must be rejected");
+        assert!(err.to_string().contains("Unknown filter column"));
+    }
+
+    #[test]
+    fn plausible_uuid_validates_shape() {
+        assert!(is_plausible_uuid("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"));
+        assert!(!is_plausible_uuid("a0eebc99"));
+        assert!(!is_plausible_uuid("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a1z"));
+        assert!(!is_plausible_uuid("a0eebc99x9c0b-4ef8-bb6d-6bb9bd380a11"));
+    }
+
+    #[test]
     fn valid_identifier_accepts_safe_chars() {
         assert!(is_valid_identifier("vehicle_id"));
         assert!(is_valid_identifier("col1"));
@@ -4155,6 +4692,112 @@ mod tests {
     }
 
     #[test]
+    fn fk_cache_entry_freshness_respects_ttl() {
+        let ttl = Duration::from_secs(300);
+        let inserted = Instant::now();
+        assert!(fk_cache_entry_is_fresh(inserted, inserted, ttl));
+        assert!(fk_cache_entry_is_fresh(
+            inserted,
+            inserted + Duration::from_secs(299),
+            ttl
+        ));
+        assert!(!fk_cache_entry_is_fresh(
+            inserted,
+            inserted + Duration::from_secs(300),
+            ttl
+        ));
+        assert!(!fk_cache_entry_is_fresh(
+            inserted,
+            inserted + Duration::from_secs(301),
+            ttl
+        ));
+    }
+
+    #[test]
+    fn table_relationships_split_outgoing_and_incoming() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "orders_customer_fkey",
+            ),
+            fk_edge(
+                "order_items",
+                "orders",
+                &["order_id"],
+                &["id"],
+                "items_order_fkey",
+            ),
+            fk_edge(
+                "shipments",
+                "warehouses",
+                &["warehouse_id"],
+                &["id"],
+                "shipments_warehouse_fkey",
+            ),
+        ];
+
+        let (outgoing, incoming) =
+            build_table_relationships(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(outgoing[0].constraint_name, "orders_customer_fkey");
+        assert_eq!(outgoing[0].columns, vec!["customer_id".to_string()]);
+        assert_eq!(outgoing[0].other_table, "customers");
+        assert_eq!(outgoing[0].other_columns, vec!["id".to_string()]);
+
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(incoming[0].constraint_name, "items_order_fkey");
+        assert_eq!(incoming[0].columns, vec!["id".to_string()]);
+        assert_eq!(incoming[0].other_table, "order_items");
+        assert_eq!(incoming[0].other_columns, vec!["order_id".to_string()]);
+    }
+
+    #[test]
+    fn table_relationships_keep_composite_column_order() {
+        let edges = vec![fk_edge(
+            "shipment_legs",
+            "routes",
+            &["route_region", "route_code"],
+            &["region", "code"],
+            "legs_route_fkey",
+        )];
+
+        let (outgoing, _) =
+            build_table_relationships(&edges, &TableKey::new("public", "shipment_legs"));
+
+        assert_eq!(
+            outgoing[0].columns,
+            vec!["route_region".to_string(), "route_code".to_string()]
+        );
+        assert_eq!(
+            outgoing[0].other_columns,
+            vec!["region".to_string(), "code".to_string()]
+        );
+    }
+
+    #[test]
+    fn table_relationships_self_reference_appears_in_both_directions() {
+        let edges = vec![fk_edge(
+            "employees",
+            "employees",
+            &["manager_id"],
+            &["id"],
+            "employees_manager_fkey",
+        )];
+
+        let (outgoing, incoming) =
+            build_table_relationships(&edges, &TableKey::new("public", "employees"));
+
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(outgoing[0].columns, vec!["manager_id".to_string()]);
+        assert_eq!(incoming[0].columns, vec!["id".to_string()]);
+    }
+
+    #[test]
     fn find_fk_path_prefers_shortest_path_then_lexical_constraint_order() {
         let edges = vec![
             fk_edge(
@@ -4197,6 +4840,112 @@ mod tests {
         assert_eq!(path[0].constraint_name, "a_orders_accounts");
         assert_eq!(path[0].to_table, "accounts");
         assert_eq!(path[1].constraint_name, "z_accounts_regions");
+    }
+
+    #[test]
+    fn reachable_tables_bfs_returns_linear_chain_distances() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "orders_customer_fkey",
+            ),
+            fk_edge(
+                "customers",
+                "regions",
+                &["region_id"],
+                &["id"],
+                "customers_region_fkey",
+            ),
+        ];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(
+            reachable,
+            vec![
+                (TableKey::new("public", "customers"), 1),
+                (TableKey::new("public", "regions"), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn reachable_tables_bfs_excludes_unreachable_table() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "orders_customer_fkey",
+            ),
+            fk_edge(
+                "shipments",
+                "warehouses",
+                &["warehouse_id"],
+                &["id"],
+                "shipments_warehouse_fkey",
+            ),
+        ];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(reachable, vec![(TableKey::new("public", "customers"), 1)]);
+        assert!(
+            !reachable
+                .iter()
+                .any(|(key, _)| key.table == "warehouses" || key.table == "shipments")
+        );
+    }
+
+    #[test]
+    fn reachable_tables_bfs_orders_deterministically_by_hop_then_name() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "zebras",
+                &["zebra_id"],
+                &["id"],
+                "orders_zebra_fkey",
+            ),
+            fk_edge(
+                "orders",
+                "apples",
+                &["apple_id"],
+                &["id"],
+                "orders_apple_fkey",
+            ),
+            fk_edge("apples", "trees", &["tree_id"], &["id"], "apples_tree_fkey"),
+        ];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(
+            reachable,
+            vec![
+                (TableKey::new("public", "apples"), 1),
+                (TableKey::new("public", "zebras"), 1),
+                (TableKey::new("public", "trees"), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn reachable_tables_bfs_handles_composite_edges() {
+        let edges = vec![fk_edge(
+            "shipment_legs",
+            "routes",
+            &["route_region", "route_code"],
+            &["region", "code"],
+            "legs_route_fkey",
+        )];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "shipment_legs"));
+
+        assert_eq!(reachable, vec![(TableKey::new("public", "routes"), 1)]);
     }
 
     #[test]

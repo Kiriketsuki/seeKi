@@ -31,13 +31,22 @@ jobs:
               id: pr
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  # The message must reach bash as data, never as script text.
+                  # Inline ${{ }} interpolation lets a quote in a commit body
+                  # break the string and execute the rest as commands.
+                  COMMIT_MSG: ${{ github.event.head_commit.message }}
+                  INPUT_PR_NUMBER: ${{ github.event.inputs.pr_number }}
               run: |
-                  if [ -n "${{ github.event.inputs.pr_number }}" ]; then
-                    PR_NUM="${{ github.event.inputs.pr_number }}"
+                  if [ -n "$INPUT_PR_NUMBER" ]; then
+                    PR_NUM="$INPUT_PR_NUMBER"
                   else
-                    # Parse "(#NN)" or "from <owner>/<branch>" from commit message
-                    MSG="${{ github.event.head_commit.message }}"
-                    PR_NUM=$(echo "$MSG" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+                    # Parse the PR number from the squash commit title.
+                    # GitHub appends "(#PR)" at the END of the title, so take the
+                    # LAST "#NNN" match. An issue ref such as "(#112)" can appear
+                    # earlier in the title, and the body can carry more issue refs,
+                    # so only the first line is parsed.
+                    TITLE=$(printf '%s\n' "$COMMIT_MSG" | head -1)
+                    PR_NUM=$(printf '%s\n' "$TITLE" | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
                   fi
 
                   if [ -z "$PR_NUM" ]; then

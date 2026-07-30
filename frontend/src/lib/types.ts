@@ -154,6 +154,47 @@ export interface FkHop {
   constraint_name: string;
 }
 
+/** The far side of an FK edge as returned by /relationships. */
+export interface RelationshipTableRef {
+  schema: string;
+  table: string;
+  display_name: string;
+  columns: string[];
+  /** False when the far table is outside the connection allowlist. */
+  allowed: boolean;
+}
+
+export interface OutgoingRelationship {
+  constraint: string;
+  /** FK columns on the current table, in constraint order. */
+  columns: string[];
+  target: RelationshipTableRef;
+}
+
+export interface IncomingRelationship {
+  constraint: string;
+  /** Referenced columns on the current table, in constraint order. */
+  columns: string[];
+  source: RelationshipTableRef;
+}
+
+export interface TableRelationships {
+  outgoing: OutgoingRelationship[];
+  incoming: IncomingRelationship[];
+}
+
+/** One incoming FK edge's capped row count, as returned by /references. */
+export interface ReferenceEntry {
+  schema: string;
+  table: string;
+  display_name: string;
+  /** FK columns on the source table, in constraint order. */
+  columns: string[];
+  count: number;
+  /** True when `count` is 1000 because the true count exceeds the cap. */
+  capped: boolean;
+}
+
 export interface SavedViewSummary {
   id: number;
   name: string;
@@ -174,6 +215,15 @@ export interface ViewDefinitionShape {
 }
 
 export interface SavedViewDefinition extends SavedViewSummary, ViewDefinitionShape {}
+
+/** One related column picked in RelatedColumnsPicker.svelte, for inline denormalization. */
+export interface PickedRelatedColumn {
+  schema: string;
+  table: string;
+  tableDisplayName: string;
+  column: string;
+  columnDisplayName: string;
+}
 
 export interface ViewDraft extends ViewDefinitionShape {
   name: string;
@@ -213,8 +263,33 @@ export interface FkPathResponse {
   path: FkHop[];
 }
 
+/** One table reachable from a base table by following FK edges. */
+export interface ReachableTable {
+  schema: string;
+  table: string;
+  display_name: string;
+  /** Number of FK hops from the base table. 1 means directly linked. */
+  hops: number;
+}
+
+export interface FkReachableResponse {
+  tables: ReachableTable[];
+}
+
+export interface ReferencesResponse {
+  references: ReferenceEntry[];
+}
+
 export interface ColumnSamplesResponse {
   samples: string[];
+}
+
+/** Response of GET /tables/{schema}/{table}/row, used by the FK peek panel. */
+export interface TableRowResponse {
+  row: Record<string, unknown> | null;
+  /** True when the eq. filters matched more than one row; the peek panel shows only the first. */
+  multiple: boolean;
+  columns: ColumnInfo[];
 }
 
 export interface StatusResponse {
