@@ -24,6 +24,7 @@
     fetchRows,
     fetchSettings,
     fetchStatus,
+    fetchTableRelationships,
     fetchTables,
     fetchUpdateStatus,
     fetchView,
@@ -51,6 +52,7 @@
     SortColumn,
     SortState,
     TableInfo,
+    TableRelationships,
     TablesSurface,
     UpdateStatus,
     ViewColumn,
@@ -143,6 +145,7 @@
   let selectedTable: string = $state('');
   let selectedView: SavedViewDefinition | null = $state(null);
   let columns: ColumnInfo[] = $state([]);
+  let relationships: TableRelationships | null = $state(null);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
   let appSettings: SettingsEntries = $state({});
@@ -695,12 +698,19 @@
     let initialFilters: FilterState = {};
     let initialSearch = '';
 
+    relationships = null;
+
     try {
-      const [cols, lastUsed] = await Promise.all([
+      // A relationships failure must never sink the table load, so it
+      // degrades to "no FK metadata" instead of rejecting the Promise.all.
+      const [cols, lastUsed, rels] = await Promise.all([
         fetchColumns(table.schema, table.name),
         !isSetup ? fetchLastUsedState(table.schema, table.name) : Promise.resolve(null),
+        fetchTableRelationships(table.schema, table.name).catch(() => null),
       ]);
       if (myRequest !== navRequestId) return;
+
+      relationships = rels;
 
       if (lastUsed) {
         initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
@@ -788,6 +798,7 @@
   async function openSavedView(view: SavedViewSummary) {
     const myRequest = ++navRequestId;
     tablesSurface = { kind: 'view', viewId: view.id };
+    relationships = null;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
@@ -1454,6 +1465,7 @@
                   <div class="grid-content" class:stale={tableLoading && paginationMode === 'infinite'}>
                     <DataGrid
                       columns={visibleColumns}
+                      relationships={tablesSurface.kind === 'table' ? relationships : null}
                       rows={displayRows}
                       dateFormat={appearanceSettings.dateFormat}
                       {sortState}
