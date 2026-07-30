@@ -24,6 +24,10 @@ pub struct TableInfo {
     pub schema: String,
     pub name: String,
     pub row_count_estimate: Option<i64>,
+    /// True when this relation is a declaratively partitioned parent (relkind 'p').
+    pub is_partitioned: bool,
+    /// Qualified "schema.name" of the parent when this relation is a partition child.
+    pub partition_parent: Option<String>,
 }
 
 impl TableInfo {

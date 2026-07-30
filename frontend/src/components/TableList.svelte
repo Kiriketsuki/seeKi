@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Pencil, Search } from 'lucide-svelte';
+  import { ChevronRight, Layers, Pencil, Search } from 'lucide-svelte';
   import type { TableInfo } from '../lib/types';
 
   const MAX_DISPLAY_NAME_LENGTH = 64;
@@ -44,22 +44,79 @@
     return table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
   }
 
+  function tableKey(table: TableInfo): string {
+    return `${table.schema}.${table.name}`;
+  }
+
+  // Partition children group under their parent. A child whose parent is not
+  // in the list stays in the main list, so it never becomes unreachable.
+  let presentKeys = $derived(new Set(tables.map(tableKey)));
+
+  let partitionsByParent = $derived.by(() => {
+    const groups = new Map<string, TableInfo[]>();
+    for (const table of tables) {
+      const parent = table.partition_parent;
+      if (parent && presentKeys.has(parent)) {
+        const group = groups.get(parent) ?? [];
+        groups.set(parent, [...group, table]);
+      }
+    }
+    return groups;
+  });
+
+  let mainTables = $derived(
+    tables.filter((table) => !table.partition_parent || !presentKeys.has(table.partition_parent)),
+  );
+
+  let partitionCount = $derived(tables.length - mainTables.length);
+
+  let expandedParents = $state<Set<string>>(new Set());
+
+  function toggleExpanded(parentKey: string) {
+    const next = new Set(expandedParents);
+    if (next.has(parentKey)) {
+      next.delete(parentKey);
+    } else {
+      next.add(parentKey);
+    }
+    expandedParents = next;
+  }
+
   let search = $state('');
+
+  function matchesQuery(table: TableInfo, query: string): boolean {
+    return (
+      prettyLabel(table).toLowerCase().includes(query) ||
+      table.display_name.toLowerCase().includes(query)
+    );
+  }
+
   let filteredTables = $derived.by(() => {
     const query = search.trim().toLowerCase();
     if (!query) {
-      return tables;
+      return mainTables;
     }
 
-    return tables.filter(
+    // A parent also matches when one of its partitions matches.
+    return mainTables.filter(
       (table) =>
-        prettyLabel(table).toLowerCase().includes(query) ||
-        table.display_name.toLowerCase().includes(query),
+        matchesQuery(table, query) ||
+        (partitionsByParent.get(tableKey(table)) ?? []).some((p) => matchesQuery(p, query)),
     );
   });
 
-  function tableKey(table: TableInfo): string {
-    return `${table.schema}.${table.name}`;
+  // While searching, a parent whose partitions match auto-expands to the matches.
+  function visiblePartitions(parentKey: string): TableInfo[] {
+    const children = partitionsByParent.get(parentKey) ?? [];
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      return expandedParents.has(parentKey) ? children : [];
+    }
+    const matching = children.filter((p) => matchesQuery(p, query));
+    if (matching.length > 0) {
+      return matching;
+    }
+    return expandedParents.has(parentKey) ? children : [];
   }
 
   let editingKey = $state<string | null>(null);
@@ -107,7 +164,9 @@
   {#if showHeader}
     <div class="section-header">
       <div class="section-title">Tables</div>
-      <div class="section-subtitle">{tables.length} available</div>
+      <div class="section-subtitle">
+        {mainTables.length} available{partitionCount > 0 ? ` · ${partitionCount} partitions` : ''}
+      </div>
     </div>
   {/if}
 
@@ -127,6 +186,7 @@
   <div class="list-items" data-testid="table-list-items">
     {#if filteredTables.length > 0}
       {#each filteredTables as table (tableKey(table))}
+        {@const hasPartitions = (partitionsByParent.get(tableKey(table)) ?? []).length > 0}
         <div
           class="table-row"
           class:active={selectedSchema === table.schema && selectedTable === table.name}
@@ -147,15 +207,36 @@
               data-testid={`table-item-rename-input-${tableKey(table)}`}
             />
           {:else}
+            {#if hasPartitions}
+              <button
+                type="button"
+                class="partition-toggle"
+                class:expanded={expandedParents.has(tableKey(table))}
+                aria-label={`Toggle partitions of ${prettyLabel(table)}`}
+                aria-expanded={expandedParents.has(tableKey(table))}
+                onclick={() => toggleExpanded(tableKey(table))}
+                data-testid={`partition-toggle-${tableKey(table)}`}
+              >
+                <ChevronRight size={12} />
+              </button>
+            {/if}
             <button
               type="button"
               class="table-item"
+              class:has-toggle={hasPartitions}
               onclick={() => onSelect(table)}
               ondblclick={() => startEdit(table)}
-              title={`${table.schema}.${table.name}`}
+              title={table.is_partitioned
+                ? `${table.schema}.${table.name} — partitioned table, all partitions merged`
+                : `${table.schema}.${table.name}`}
               data-testid={`table-item-${tableKey(table)}`}
             >
               <span class="table-item-name">{prettyLabel(table)}</span>
+              {#if table.is_partitioned}
+                <span class="partition-badge" title="Partitioned table">
+                  <Layers size={11} />
+                </span>
+              {/if}
               {#if table.row_count_estimate != null}
                 <span class="table-item-count">{table.row_count_estimate.toLocaleString()}</span>
               {/if}
@@ -174,6 +255,25 @@
             </button>
           {/if}
         </div>
+        {#each visiblePartitions(tableKey(table)) as partition (tableKey(partition))}
+          <div
+            class="table-row partition-row"
+            class:active={selectedSchema === partition.schema && selectedTable === partition.name}
+          >
+            <button
+              type="button"
+              class="table-item partition-item"
+              onclick={() => onSelect(partition)}
+              title={`${partition.schema}.${partition.name} — partition of ${table.schema}.${table.name}`}
+              data-testid={`table-item-${tableKey(partition)}`}
+            >
+              <span class="table-item-name">{partition.name}</span>
+              {#if partition.row_count_estimate != null}
+                <span class="table-item-count">{partition.row_count_estimate.toLocaleString()}</span>
+              {/if}
+            </button>
+          </div>
+        {/each}
       {/each}
     {:else}
       <div class="empty-state" data-testid="table-list-empty">
@@ -369,6 +469,60 @@
   .table-item-edit-input:focus {
     border-color: rgba(var(--marble-active-rgb), 0.4);
     box-shadow: 0 0 0 2px var(--sk-ring);
+  }
+
+  /* chevron: rotates 90deg when the partition group is expanded */
+  .partition-toggle {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-left: var(--sk-space-xs);
+    border: none;
+    background: none;
+    border-radius: var(--sk-radius-sm);
+    color: var(--sk-muted);
+    cursor: pointer;
+    transition: transform 120ms ease, background 120ms ease;
+  }
+
+  .partition-toggle.expanded {
+    transform: rotate(90deg);
+  }
+
+  .partition-toggle:hover {
+    background: var(--sk-active-tint-soft);
+    color: var(--sk-text);
+  }
+
+  .partition-toggle:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* the parent button loses left padding when a chevron precedes it */
+  .table-item.has-toggle {
+    padding-left: var(--sk-space-xs);
+  }
+
+  .partition-badge {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    color: var(--sk-muted);
+  }
+
+  /* partition child rows: indented, slightly muted */
+  .partition-row .partition-item {
+    padding-left: calc(var(--sk-space-md) + 20px);
+    font-size: var(--sk-font-size-sm);
+    color: var(--sk-secondary-strong);
+  }
+
+  .partition-row.active .partition-item {
+    color: var(--sk-ink-strong);
   }
 
   .empty-state {

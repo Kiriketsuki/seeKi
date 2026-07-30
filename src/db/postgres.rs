@@ -64,10 +64,19 @@ pub async fn test_connection(
         SELECT
             n.nspname AS schema_name,
             c.relname AS table_name,
-            c.reltuples::bigint AS row_estimate
+            CASE
+                WHEN c.relkind = 'p' THEN (
+                    SELECT COALESCE(SUM(GREATEST(ch.reltuples, 0))::bigint, 0)
+                    FROM pg_inherits i
+                    JOIN pg_class ch ON ch.oid = i.inhrelid
+                    WHERE i.inhparent = c.oid
+                )
+                ELSE c.reltuples::bigint
+            END AS row_estimate
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relkind = 'r'
+        WHERE c.relkind IN ('r', 'p')
+          AND NOT c.relispartition
         ORDER BY n.nspname, c.relname
         "#,
     )
@@ -112,7 +121,7 @@ pub async fn list_schemas(pool: &PgPool) -> anyhow::Result<Vec<SchemaPreview>> {
         r#"
         SELECT
             n.nspname AS schema_name,
-            COUNT(c.oid) FILTER (WHERE c.relkind = 'r') AS table_count
+            COUNT(c.oid) FILTER (WHERE c.relkind IN ('r', 'p') AND NOT c.relispartition) AS table_count
         FROM pg_namespace n
         LEFT JOIN pg_class c ON c.relnamespace = n.oid
         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
@@ -147,11 +156,25 @@ pub async fn list_tables(pool: &PgPool, schemas: &[String]) -> anyhow::Result<Ve
         SELECT
             n.nspname AS schema_name,
             c.relname AS table_name,
-            c.reltuples::bigint AS row_estimate
+            (c.relkind = 'p') AS is_partitioned,
+            pn.nspname AS parent_schema,
+            pc.relname AS parent_name,
+            CASE
+                WHEN c.relkind = 'p' THEN (
+                    SELECT COALESCE(SUM(GREATEST(ch.reltuples, 0))::bigint, 0)
+                    FROM pg_inherits ci
+                    JOIN pg_class ch ON ch.oid = ci.inhrelid
+                    WHERE ci.inhparent = c.oid
+                )
+                ELSE c.reltuples::bigint
+            END AS row_estimate
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN pg_inherits i ON i.inhrelid = c.oid AND c.relispartition
+        LEFT JOIN pg_class pc ON pc.oid = i.inhparent
+        LEFT JOIN pg_namespace pn ON pn.oid = pc.relnamespace
         WHERE n.nspname = ANY($1)
-          AND c.relkind = 'r'
+          AND c.relkind IN ('r', 'p')
         ORDER BY n.nspname, c.relname
         "#,
     )
@@ -163,6 +186,8 @@ pub async fn list_tables(pool: &PgPool, schemas: &[String]) -> anyhow::Result<Ve
         .iter()
         .map(|r| {
             let raw_estimate: i64 = r.get("row_estimate");
+            let parent_schema: Option<String> = r.get("parent_schema");
+            let parent_name: Option<String> = r.get("parent_name");
             TableInfo {
                 schema: r.get("schema_name"),
                 name: r.get("table_name"),
@@ -171,6 +196,10 @@ pub async fn list_tables(pool: &PgPool, schemas: &[String]) -> anyhow::Result<Ve
                 } else {
                     Some(raw_estimate)
                 },
+                is_partitioned: r.get("is_partitioned"),
+                partition_parent: parent_schema
+                    .zip(parent_name)
+                    .map(|(ps, pn)| format!("{ps}.{pn}")),
             }
         })
         .collect();
