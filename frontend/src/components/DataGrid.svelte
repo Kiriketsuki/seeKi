@@ -11,8 +11,13 @@
     ColumnInfo,
     DateFormatPreference,
     FilterState,
+    OutgoingRelationship,
+    ReferenceEntry,
     SortState,
+    TableRelationships,
   } from '../lib/types';
+  import { buildFkColumnMap, fkBadgeTarget, fkCellValues, hasHoppableEdge } from '../lib/fk-columns';
+  import RelatedRowsMenu from './RelatedRowsMenu.svelte';
   import { onMount } from 'svelte';
   import {
     buildSortableColumn,
@@ -27,6 +32,8 @@
 
   let {
     columns = [],
+    relationships = null,
+    relatedColumnLabels = {},
     rows = [],
     dateFormat = 'system',
     sortState = [],
@@ -34,12 +41,23 @@
     filtersVisible = false,
     fetchingMore = false,
     resetSignal = 0,
+    hasIncoming = false,
+    relatedRowsOpen = false,
+    relatedRowsLoading = false,
+    relatedRowsEntries = [],
     onSortChange,
     onFilterChange,
     onNearBottom,
     onRetryAppend,
+    onRelatedRows,
+    onRelatedRowSelect,
+    onCloseRelatedRows,
+    onFkPeek,
   }: {
     columns: ColumnInfo[];
+    relationships?: TableRelationships | null;
+    /** Maps an output column name to a "from {table}" suffix, for inline related columns. */
+    relatedColumnLabels?: Record<string, string>;
     rows: Record<string, unknown>[];
     dateFormat?: DateFormatPreference;
     sortState?: SortState;
@@ -47,11 +65,28 @@
     filtersVisible?: boolean;
     fetchingMore?: boolean;
     resetSignal?: number;
+    /** Adds the trailing "Related information" column when this table has incoming FK edges. */
+    hasIncoming?: boolean;
+    /** True while the related-rows popover should be shown (loading or with entries). */
+    relatedRowsOpen?: boolean;
+    relatedRowsLoading?: boolean;
+    relatedRowsEntries?: ReferenceEntry[];
     onSortChange?: (nextSortState: SortState) => void;
     onFilterChange?: (column: string, value: string) => void;
     onNearBottom?: () => void;
     onRetryAppend?: () => void;
+    onRelatedRows?: (row: Record<string, unknown>) => void;
+    onRelatedRowSelect?: (entry: ReferenceEntry) => void;
+    onCloseRelatedRows?: () => void;
+    onFkPeek?: (edge: OutgoingRelationship, values: Record<string, string>) => void;
   } = $props();
+
+  /** Synthetic column prop for the trailing "Related information" button. Never a real column name. */
+  const RELATED_ROWS_PROP = '__sk_related';
+
+  // Viewport coordinates of the button that opened the related-rows popover.
+  // Captured locally since RevoGrid cell templates only expose the DOM event.
+  let relatedRowsAnchor = $state({ x: 0, y: 0 });
 
   let gridEl: HTMLDivElement | undefined = $state(undefined);
 
@@ -64,6 +99,7 @@
   let columnsByName = $derived(
     new Map(columns.map((column) => [column.name, column]))
   );
+  let fkColumns = $derived(buildFkColumnMap(relationships));
   let sorting = $derived(sortStateToConfig(sortState));
 
   // Columns whose names look credential-bearing are masked by default; the user
@@ -157,6 +193,8 @@
   ): VNode {
     const info = columnsByName.get(String(props.prop));
     const label = info ? getColumnDisplayName(info) : String(props.name ?? props.prop);
+    const fkBadge = fkBadgeTarget(fkColumns.get(String(props.prop)));
+    const relatedFromLabel = relatedColumnLabels[String(props.prop)] ?? null;
     const showFilters = Boolean(
       (props as ColumnTemplateProp & { showFilters?: boolean }).showFilters
     );
@@ -214,6 +252,45 @@
           },
           [
             h('span', { class: { 'sk-grid-header__label': true } }, label),
+            relatedFromLabel
+              ? h(
+                  'span',
+                  { class: { 'sk-grid-header__related': true } },
+                  relatedFromLabel,
+                )
+              : null,
+            fkBadge
+              ? h(
+                  'span',
+                  {
+                    class: { 'sk-fk-badge': true },
+                    role: 'img',
+                    title: `Linked to ${fkBadge.target.display_name}`,
+                    'aria-label': `Linked to ${fkBadge.target.display_name}`,
+                  },
+                  [
+                    h(
+                      'svg',
+                      {
+                        width: '12',
+                        height: '12',
+                        viewBox: '0 0 24 24',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        'stroke-width': '2',
+                        'stroke-linecap': 'round',
+                        'stroke-linejoin': 'round',
+                        'aria-hidden': 'true',
+                      },
+                      [
+                        // lucide link
+                        h('path', { d: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71' }),
+                        h('path', { d: 'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71' }),
+                      ]
+                    ),
+                  ]
+                )
+              : null,
             priorityAnnouncement
               ? h('span', { class: { 'sk-sr-only': true } }, priorityAnnouncement)
               : null,
@@ -335,6 +412,8 @@
             // sits on the same side as the other data in the column.
             'sk-grid-cell--number': isNumericCol,
             'sk-grid-cell--boolean': isBooleanCol,
+            // The FK wash covers the whole column, NULL cells included.
+            'sk-grid-cell--fk': fkColumns.has(String(props.prop)),
           },
         },
         [h('span', { class: { 'sk-null-pill': true } }, 'NULL')]
@@ -427,6 +506,45 @@
       );
     }
 
+    // FK cells with a hoppable target render as a clickable button that opens
+    // the peek panel. A composite FK needs every member column present on the
+    // row, so fkCellValues returns null and the cell falls back to plain text
+    // when a member is missing.
+    const fkEdges = fkColumns.get(String(props.prop));
+    if (hasHoppableEdge(fkEdges)) {
+      const targetEdge = fkBadgeTarget(fkEdges);
+      const rowValues = model ? fkCellValues(targetEdge!, model as Record<string, unknown>) : null;
+      if (targetEdge && rowValues) {
+        return h(
+          'div',
+          {
+            class: {
+              'sk-grid-cell': true,
+              'sk-grid-cell--number': isNumericCol,
+              'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
+              'sk-grid-cell--fk': true,
+            },
+            title: formatted.tooltip,
+          },
+          [
+            h(
+              'button',
+              {
+                class: { 'sk-grid-cell__fk-link': true },
+                type: 'button',
+                'aria-label': `View linked ${targetEdge.target.display_name}`,
+                onclick: (e: Event) => {
+                  e.stopPropagation();
+                  onFkPeek?.(targetEdge, rowValues);
+                },
+              },
+              [h('span', { class: { 'sk-grid-cell__text': true } }, formatted.display)]
+            ),
+          ]
+        );
+      }
+    }
+
     return h(
       'div',
       {
@@ -436,12 +554,72 @@
           // that fall through as kind:'text' still right-align with finite siblings.
           'sk-grid-cell--number': isNumericCol,
           'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
+          // FK columns get a subtle tint even without a usable peek button
+          // (missing composite member, or every target hidden by the allowlist).
+          'sk-grid-cell--fk': fkColumns.has(String(props.prop)),
         },
         title: formatted.tooltip,
       },
       // Wrap in a span so text-overflow:ellipsis applies — a flex container's bare
       // text node never truncates with an ellipsis on its own.
       [h('span', { class: { 'sk-grid-cell__text': true } }, formatted.display)]
+    );
+  }
+
+  /** Renders the trailing "Related information" button cell. Skeleton and error
+   * marker rows render empty, matching the other synthetic-row handling above. */
+  function renderRelatedRowsCell(
+    h: HyperFunc<VNode>,
+    props: CellTemplateProp,
+  ): VNode {
+    const model = props.model as Record<string | symbol, unknown> | undefined;
+    const markerVal = model?.[SKELETON_ROW_MARKER];
+    if (markerVal === 'skeleton' || markerVal === 'error') {
+      return h('div', { class: { 'sk-grid-cell': true } }, '');
+    }
+
+    return h(
+      'div',
+      { class: { 'sk-grid-cell': true, 'sk-grid-cell--related': true } },
+      [
+        h(
+          'button',
+          {
+            class: { 'sk-related-rows-button': true },
+            type: 'button',
+            'aria-label': 'Related information',
+            title: 'Related information',
+            onclick: (e: MouseEvent) => {
+              e.stopPropagation();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              relatedRowsAnchor = { x: rect.left, y: rect.bottom + 4 };
+              onRelatedRows?.(props.model as Record<string, unknown>);
+            },
+          },
+          [
+            h(
+              'svg',
+              {
+                width: '14',
+                height: '14',
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                'stroke-width': '2',
+                'stroke-linecap': 'round',
+                'stroke-linejoin': 'round',
+                'aria-hidden': 'true',
+              },
+              [
+                // lucide info
+                h('circle', { cx: '12', cy: '12', r: '10' }),
+                h('path', { d: 'M12 16v-4' }),
+                h('path', { d: 'M12 8h.01' }),
+              ]
+            ),
+          ]
+        ),
+      ]
     );
   }
 
@@ -458,7 +636,7 @@
     // Reference revealedCells so toggling a per-cell reveal rebuilds the column
     // definitions and RevoGrid re-runs the cell templates with the new state.
     void revealedCells;
-    return columns.map((column) =>
+    const dataColumns = columns.map((column) =>
       buildSortableColumn(column, {
         order: sortState.find((entry) => entry.column === column.name)?.direction,
         filterValue: filters[column.name] ?? '',
@@ -467,6 +645,17 @@
         cellTemplate: renderCell,
       })
     );
+    if (!hasIncoming) return dataColumns;
+    return [
+      ...dataColumns,
+      {
+        prop: RELATED_ROWS_PROP,
+        name: '',
+        size: 44,
+        sortable: false,
+        cellTemplate: renderRelatedRowsCell,
+      },
+    ];
   });
 </script>
 
@@ -484,6 +673,15 @@
     <div class="grid-empty" role="status">
       <span class="grid-empty__text">No rows</span>
     </div>
+  {/if}
+  {#if relatedRowsOpen}
+    <RelatedRowsMenu
+      anchor={relatedRowsAnchor}
+      loading={relatedRowsLoading}
+      entries={relatedRowsEntries}
+      onSelect={onRelatedRowSelect}
+      onClose={onCloseRelatedRows}
+    />
   {/if}
 </div>
 
@@ -650,6 +848,85 @@
   /* Active sort arrow — amber (count accent = selection/attention per token semantics) */
   .grid-card :global(.sk-grid-header__sort.is-active) {
     color: var(--sk-accent-count);
+  }
+
+  /* Inline related-column suffix — muted, sits right after the header label */
+  .grid-card :global(.sk-grid-header__related) {
+    flex: 0 0 auto;
+    color: var(--sk-ink-muted);
+    font-size: var(--sk-font-size-xs);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  /* FK link badge — teal (interaction accent), sits after the header label */
+  .grid-card :global(.sk-fk-badge) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    color: var(--sk-accent-active);
+    opacity: 0.75;
+  }
+
+  /* FK cells — a faint teal wash marks linked columns without shouting */
+  .grid-card :global(.sk-grid-cell--fk) {
+    background: rgba(var(--sk-accent-active-rgb), 0.06);
+    box-shadow: inset 2px 0 0 rgba(var(--sk-accent-active-rgb), 0.35);
+  }
+
+  /* Related-rows column — a small centered icon button, no text label */
+  .grid-card :global(.sk-grid-cell--related) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .grid-card :global(.sk-related-rows-button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sk-text-muted, currentColor);
+    cursor: pointer;
+  }
+
+  .grid-card :global(.sk-related-rows-button:hover) {
+    background: rgba(var(--sk-accent-active-rgb), 0.12);
+    color: var(--sk-accent-active);
+  }
+
+  /* FK peek button — reuses the cell's text styling, underlines on hover so it
+     reads as a link without changing the row's layout or color at rest. */
+  .grid-card :global(.sk-grid-cell__fk-link) {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+  }
+
+  .grid-card :global(.sk-grid-cell__fk-link:hover .sk-grid-cell__text),
+  .grid-card :global(.sk-grid-cell__fk-link:focus-visible .sk-grid-cell__text) {
+    text-decoration: underline;
+    text-decoration-color: rgba(var(--sk-accent-active-rgb), 0.6);
+  }
+
+  .grid-card :global(.sk-grid-cell__fk-link:focus-visible) {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
+    border-radius: var(--sk-radius-sm);
   }
 
   .grid-card :global(.sk-sr-only) {

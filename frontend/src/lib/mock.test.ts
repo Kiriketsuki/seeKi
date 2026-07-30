@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { mockFetchTables, mockFetchColumns, mockFetchRows, mockFetchDisplayConfig } from './mock';
+import {
+  mockFetchTables,
+  mockFetchColumns,
+  mockFetchRows,
+  mockFetchTableRow,
+  mockFetchDisplayConfig,
+  mockFetchTransientViewRows,
+  mockFetchTableReferences,
+} from './mock';
 
 describe('mockFetchTables', () => {
   it('returns an array of tables', () => {
@@ -65,6 +73,21 @@ describe('mockFetchRows', () => {
     ).toBe(true);
   });
 
+  it('applies exact filters as strict equality', () => {
+    const filtered = mockFetchRows('public', 'users', {
+      exact_filters: { id: '1' },
+    });
+
+    expect(filtered.total_rows).toBe(1);
+    expect(String(filtered.rows[0].id)).toBe('1');
+
+    // Substring semantics would also match 10, exact must not.
+    const substring = mockFetchRows('public', 'users', {
+      filters: { id: '1' },
+    });
+    expect(substring.total_rows).toBeGreaterThan(filtered.total_rows);
+  });
+
   it('combines multiple column filters with AND logic', () => {
     const filtered = mockFetchRows('public', 'users', {
       filters: {
@@ -121,6 +144,112 @@ describe('mockFetchRows', () => {
   });
 });
 
+describe('mockFetchTransientViewRows', () => {
+  it('projects base columns plus a joined related column from users', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [
+          { source_schema: 'public', source_table: 'orders', column_name: 'id' },
+          { source_schema: 'public', source_table: 'orders', column_name: 'user_id' },
+          { source_schema: 'public', source_table: 'users', column_name: 'name' },
+        ],
+      },
+      page: 1,
+      page_size: 5,
+    });
+
+    expect(result.columns.map((c) => c.name)).toEqual(['id', 'user_id', 'name']);
+    expect(result.rows.length).toBeLessThanOrEqual(5);
+    for (const row of result.rows) {
+      expect(row).toHaveProperty('id');
+      expect(row).toHaveProperty('user_id');
+      expect(row).toHaveProperty('name');
+    }
+  });
+
+  it('prefixes colliding column names with the source table', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [
+          { source_schema: 'public', source_table: 'orders', column_name: 'status' },
+          { source_schema: 'public', source_table: 'users', column_name: 'status' },
+        ],
+      },
+      page: 1,
+      page_size: 5,
+    });
+
+    expect(result.columns.map((c) => c.name)).toEqual(['orders__status', 'users__status']);
+  });
+
+  it('prefixes a colliding related column with its source id, as the backend does', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [
+          { source_schema: 'public', source_table: 'orders', column_name: 'status' },
+          {
+            source_id: 'fk-public.users',
+            source_schema: 'public',
+            source_table: 'users',
+            column_name: 'status',
+          },
+        ],
+      },
+      page: 1,
+      page_size: 5,
+    });
+
+    expect(result.columns.map((c) => c.name)).toEqual([
+      'orders__status',
+      'fk-public_users__status',
+    ]);
+  });
+
+  it('respects page and page_size like plain rows', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [{ source_schema: 'public', source_table: 'orders', column_name: 'id' }],
+      },
+      page: 2,
+      page_size: 10,
+    });
+
+    expect(result.page).toBe(2);
+    expect(result.page_size).toBe(10);
+    expect(result.rows.length).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('mockFetchTableRow', () => {
+  it('returns the first row matching every exact filter', () => {
+    const result = mockFetchTableRow('public', 'users', { id: '1' });
+    expect(result.row).not.toBeNull();
+    expect(String(result.row?.id)).toBe('1');
+    expect(result.multiple).toBe(false);
+    expect(result.columns.length).toBeGreaterThan(0);
+  });
+
+  it('returns null when nothing matches', () => {
+    const result = mockFetchTableRow('public', 'users', { id: '99999' });
+    expect(result.row).toBeNull();
+    expect(result.multiple).toBe(false);
+  });
+
+  it('returns null for an unknown table', () => {
+    const result = mockFetchTableRow('public', 'nonexistent', { id: '1' });
+    expect(result.row).toBeNull();
+    expect(result.columns).toEqual([]);
+  });
+});
+
 describe('mockFetchDisplayConfig', () => {
   it('returns branding and tables config', () => {
     const config = mockFetchDisplayConfig();
@@ -137,5 +266,31 @@ describe('mockFetchDisplayConfig', () => {
       expect(config.tables[key]).toBeDefined();
       expect(config.tables[key].display_name).toBe(table.display_name);
     }
+  });
+});
+
+describe('mockFetchTableReferences', () => {
+  it('counts orders and tickets referencing one user', () => {
+    const orders = mockFetchRows('public', 'orders', { page: 1, page_size: 1 });
+    const userId = orders.rows[0]?.user_id;
+    expect(userId).toBeDefined();
+
+    const result = mockFetchTableReferences('public', 'users', { id: String(userId) });
+    const tables = result.references.map((r) => r.table);
+    expect(tables).toContain('orders');
+    expect(tables).toContain('tickets');
+    for (const entry of result.references) {
+      expect(entry.count).toBeGreaterThan(0);
+      expect(entry.capped).toBe(false);
+    }
+  });
+
+  it('returns no references for a table with no incoming edges', () => {
+    expect(mockFetchTableReferences('public', 'orders', { id: '1' })).toEqual({ references: [] });
+  });
+
+  it('returns an empty list when the eq. params miss the referenced column', () => {
+    const result = mockFetchTableReferences('public', 'users', {});
+    expect(result.references).toEqual([]);
   });
 });

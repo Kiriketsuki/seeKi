@@ -1,0 +1,225 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildFkColumnMap,
+  buildPeekTargetFilters,
+  fkBadgeTarget,
+  fkCellValues,
+  hasHoppableEdge,
+  hopBadgeLabel,
+} from './fk-columns';
+import type { OutgoingRelationship, TableRelationships } from './types';
+
+function edge(
+  constraint: string,
+  columns: string[],
+  targetTable: string,
+  allowed = true,
+  targetColumns = ['id'],
+): OutgoingRelationship {
+  return {
+    constraint,
+    columns,
+    target: {
+      schema: 'public',
+      table: targetTable,
+      display_name: targetTable,
+      columns: targetColumns,
+      allowed,
+    },
+  };
+}
+
+function relationships(outgoing: OutgoingRelationship[]): TableRelationships {
+  return { outgoing, incoming: [] };
+}
+
+describe('buildFkColumnMap', () => {
+  it('returns an empty map for null relationships', () => {
+    expect(buildFkColumnMap(null).size).toBe(0);
+  });
+
+  it('maps a single-column FK to its edge', () => {
+    const map = buildFkColumnMap(
+      relationships([edge('orders_user_fkey', ['user_id'], 'users')]),
+    );
+    expect(map.get('user_id')?.[0].constraint).toBe('orders_user_fkey');
+    expect(map.has('id')).toBe(false);
+  });
+
+  it('maps every member of a composite FK to the same edge', () => {
+    const map = buildFkColumnMap(
+      relationships([
+        edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+          'region',
+          'code',
+        ]),
+      ]),
+    );
+    expect(map.get('route_region')?.[0].constraint).toBe('legs_route_fkey');
+    expect(map.get('route_code')?.[0].constraint).toBe('legs_route_fkey');
+  });
+
+  it('collects several constraints on one column', () => {
+    const map = buildFkColumnMap(
+      relationships([
+        edge('a_fkey', ['ref_id'], 'alpha'),
+        edge('b_fkey', ['ref_id'], 'beta'),
+      ]),
+    );
+    expect(map.get('ref_id')).toHaveLength(2);
+  });
+});
+
+describe('hasHoppableEdge', () => {
+  it('is false for undefined and for non-allowed targets only', () => {
+    expect(hasHoppableEdge(undefined)).toBe(false);
+    expect(hasHoppableEdge([edge('x', ['a'], 'hidden', false)])).toBe(false);
+  });
+
+  it('is true when any target is allowed', () => {
+    expect(
+      hasHoppableEdge([
+        edge('x', ['a'], 'hidden', false),
+        edge('y', ['a'], 'visible', true),
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe('fkBadgeTarget', () => {
+  it('returns null with no edges', () => {
+    expect(fkBadgeTarget(undefined)).toBeNull();
+    expect(fkBadgeTarget([])).toBeNull();
+  });
+
+  it('prefers the first allowed target', () => {
+    const picked = fkBadgeTarget([
+      edge('x', ['a'], 'hidden', false),
+      edge('y', ['a'], 'visible', true),
+    ]);
+    expect(picked?.target.table).toBe('visible');
+  });
+
+  it('falls back to the first edge when nothing is allowed', () => {
+    const picked = fkBadgeTarget([edge('x', ['a'], 'hidden', false)]);
+    expect(picked?.target.table).toBe('hidden');
+  });
+});
+
+describe('hopBadgeLabel', () => {
+  it('labels a one-hop table as directly linked', () => {
+    expect(hopBadgeLabel(1)).toBe('Directly linked');
+  });
+
+  it('labels a multi-hop table as linked through another table', () => {
+    expect(hopBadgeLabel(2)).toBe('Linked through another table');
+    expect(hopBadgeLabel(5)).toBe('Linked through another table');
+  });
+
+  it('returns an empty string for a missing or non-positive hop count', () => {
+    expect(hopBadgeLabel(undefined)).toBe('');
+    expect(hopBadgeLabel(0)).toBe('');
+  });
+});
+
+describe('fkCellValues', () => {
+  it('reads a single-column FK value as a string', () => {
+    const values = fkCellValues(edge('orders_user_fkey', ['user_id'], 'users'), {
+      user_id: 42,
+    });
+    expect(values).toEqual({ user_id: '42' });
+  });
+
+  it('reads every member of a composite FK', () => {
+    const composite = edge(
+      'legs_route_fkey',
+      ['route_region', 'route_code'],
+      'routes',
+      true,
+      ['region', 'code'],
+    );
+    const values = fkCellValues(composite, {
+      route_region: 'EU',
+      route_code: 7,
+    });
+    expect(values).toEqual({ route_region: 'EU', route_code: '7' });
+  });
+
+  it('returns null when a composite member is null', () => {
+    const composite = edge(
+      'legs_route_fkey',
+      ['route_region', 'route_code'],
+      'routes',
+      true,
+      ['region', 'code'],
+    );
+    const values = fkCellValues(composite, {
+      route_region: 'EU',
+      route_code: null,
+    });
+    expect(values).toBeNull();
+  });
+
+  it('returns null when a composite member is undefined', () => {
+    const composite = edge(
+      'legs_route_fkey',
+      ['route_region', 'route_code'],
+      'routes',
+      true,
+      ['region', 'code'],
+    );
+    const values = fkCellValues(composite, { route_region: 'EU' });
+    expect(values).toBeNull();
+  });
+});
+
+describe('buildPeekTargetFilters', () => {
+  it('keys a single-column FK by the target column name', () => {
+    const filters = buildPeekTargetFilters(edge('orders_user_fkey', ['user_id'], 'users'), {
+      user_id: '42',
+    });
+    expect(filters).toEqual({ id: '42' });
+  });
+
+  it('pairs composite members positionally, in constraint order', () => {
+    const composite = edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+      'region',
+      'code',
+    ]);
+    const filters = buildPeekTargetFilters(composite, {
+      route_region: 'EU',
+      route_code: '7',
+    });
+    expect(filters).toEqual({ region: 'EU', code: '7' });
+  });
+
+  it('keeps constraint order when the source names sort differently', () => {
+    // Source order is (b_code, a_region), target order is (code, region).
+    // An alphabetical pairing would swap the two values.
+    const composite = edge('legs_route_fkey', ['b_code', 'a_region'], 'routes', true, [
+      'code',
+      'region',
+    ]);
+    const filters = buildPeekTargetFilters(composite, { b_code: '7', a_region: 'EU' });
+    expect(filters).toEqual({ code: '7', region: 'EU' });
+  });
+
+  it('returns null when the target column list is shorter than the source list', () => {
+    const broken = edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+      'region',
+    ]);
+    expect(buildPeekTargetFilters(broken, { route_region: 'EU', route_code: '7' })).toBeNull();
+  });
+
+  it('returns null when a source value is missing', () => {
+    const composite = edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+      'region',
+      'code',
+    ]);
+    expect(buildPeekTargetFilters(composite, { route_region: 'EU' })).toBeNull();
+  });
+
+  it('returns null for an edge with no columns', () => {
+    expect(buildPeekTargetFilters(edge('broken', [], 'routes', true, []), {})).toBeNull();
+  });
+});

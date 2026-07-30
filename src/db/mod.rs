@@ -84,7 +84,10 @@ pub struct RowQueryParams<'a> {
     pub page_size: u32,
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
+    /// Substring filters from the `filter.` param namespace.
     pub filters: &'a HashMap<String, String>,
+    /// Exact-match filters from the `eq.` param namespace.
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 /// Parameters for CSV export (no pagination).
@@ -94,6 +97,7 @@ pub struct ExportQueryParams<'a> {
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +131,17 @@ pub struct ViewColumn {
     pub alias: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aggregate: Option<ViewAggregate>,
+}
+
+/// One FK edge as seen from a specific table. `columns` live on that table,
+/// `other_*` describe the far side of the constraint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RelationshipEdge {
+    pub constraint_name: String,
+    pub columns: Vec<String>,
+    pub other_schema: String,
+    pub other_table: String,
+    pub other_columns: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -512,6 +527,9 @@ pub struct ViewRowsQueryParams<'a> {
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
+    /// Exact-match filters, the `eq.` namespace. Empty for callers that
+    /// expose substring filters only.
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -563,6 +581,9 @@ impl DatabasePool {
                     .max_connections(config.max_connections)
                     .connect(&connect_url)
                     .await?;
+                // A new pool may point at a different database, so cached FK
+                // edges from the previous target must not survive.
+                postgres::clear_fk_edge_cache().await;
                 Ok(Self::Postgres(pool, tunnel))
             }
             DatabaseKind::Sqlite => {
@@ -587,6 +608,33 @@ impl DatabasePool {
     pub async fn get_columns(&self, schema: &str, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
         match self {
             Self::Postgres(pool, _) => postgres::get_columns(pool, schema, table).await,
+        }
+    }
+
+    /// FK edges touching one table: (outgoing, incoming).
+    pub async fn table_relationships(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> anyhow::Result<(Vec<RelationshipEdge>, Vec<RelationshipEdge>)> {
+        match self {
+            Self::Postgres(pool, _) => postgres::table_relationships(pool, schema, table).await,
+        }
+    }
+
+    /// Count rows in one incoming edge's source table whose FK columns equal
+    /// the given values, capped at 1000. Returns `(count, capped)`.
+    pub async fn count_referencing_rows(
+        &self,
+        schema: &str,
+        table: &str,
+        source_columns: &[String],
+        values: &[String],
+    ) -> anyhow::Result<(i64, bool)> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::count_referencing_rows(pool, schema, table, source_columns, values).await
+            }
         }
     }
 
@@ -649,6 +697,21 @@ impl DatabasePool {
         }
     }
 
+    /// Fetch at most one row matching an exact-filter set, used by the FK peek panel.
+    /// Returns the row (or `None`) plus whether more than one row matched.
+    pub async fn query_single_row(
+        &self,
+        schema: &str,
+        table: &str,
+        exact_filters: &HashMap<String, String>,
+    ) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::query_single_row(pool, schema, table, exact_filters).await
+            }
+        }
+    }
+
     pub async fn lookup_fk_path(
         &self,
         base_schema: &str,
@@ -660,6 +723,20 @@ impl DatabasePool {
             Self::Postgres(pool, _) => {
                 postgres::lookup_fk_path(pool, base_schema, base_table, target_schema, target_table)
                     .await
+            }
+        }
+    }
+
+    /// All tables reachable from `base_table` by following FK edges, with hop distance.
+    /// Returns `(schema, table, hops)` tuples, excluding the base table itself.
+    pub async fn fk_reachable_tables(
+        &self,
+        base_schema: &str,
+        base_table: &str,
+    ) -> anyhow::Result<Vec<(String, String, u32)>> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::fk_reachable_tables(pool, base_schema, base_table).await
             }
         }
     }

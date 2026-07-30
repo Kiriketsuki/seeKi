@@ -1,7 +1,9 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, X } from 'lucide-svelte';
   import { fetchColumnSamples, fetchColumns } from '../lib/api';
+  import { hopBadgeLabel } from '../lib/fk-columns';
   import type { ColumnInfo, TableInfo, ViewColumn, ViewDerivedColumn, ViewSourceRef } from '../lib/types';
+  import { buildSourceDefinition as buildSourceDefinitionShared } from '../lib/view-shape';
 
   type PickerMode = 'base' | 'fk' | 'match' | 'self';
   type PickerOperation =
@@ -40,6 +42,7 @@
     baseSchema = '',
     baseTable = '',
     reachableTables = [],
+    reachableHops = {},
     sources = [],
     value = null,
     onSave,
@@ -50,6 +53,8 @@
     baseSchema: string;
     baseTable: string;
     reachableTables: TableInfo[];
+    /** FK hop count per reachable table, keyed by `${schema}.${table}`. */
+    reachableHops?: Record<string, number>;
     sources: ViewSourceRef[];
     value?: ViewColumn | null;
     onSave: (payload: PickerPayload) => void;
@@ -267,41 +272,19 @@
   });
 
   function buildSourceDefinition(): ViewSourceRef | null {
-    if (mode === 'base') return null;
-    if (mode === 'self') {
-      return {
-        id: activeSourceId ?? `self-${selfDirection}`,
-        kind: 'self',
-        schema: baseSchema,
-        table: baseTable,
-        label: selfDirection === 'previous' ? 'This table again (previous row)' : 'This table again (next row)',
-        self: {
-          entity_column: selfEntityColumn,
-          order_column: selfOrderColumn,
-          direction: selfDirection,
-        },
-      };
-    }
-    if (mode === 'match') {
-      return {
-        id: activeSourceId ?? `match-${selectedSchema}.${selectedTable}`,
-        kind: 'match',
-        schema: selectedSchema,
-        table: selectedTable,
-        label: `Match ${selectedSchema}.${selectedTable}`,
-        match: {
-          base_column: selectedBaseMatchColumn,
-          source_column: selectedSourceMatchColumn,
-        },
-      };
-    }
-    return {
-      id: activeSourceId ?? `fk-${selectedSchema}.${selectedTable}`,
-      kind: 'fk',
-      schema: selectedSchema,
-      table: selectedTable,
-      label: `${selectedSchema}.${selectedTable}`,
-    };
+    return buildSourceDefinitionShared({
+      mode,
+      baseSchema,
+      baseTable,
+      selectedSchema,
+      selectedTable,
+      activeSourceId,
+      selfEntityColumn,
+      selfOrderColumn,
+      selfDirection,
+      selectedBaseMatchColumn,
+      selectedSourceMatchColumn,
+    });
   }
 
   function defaultAliasForOperation(): string {
@@ -549,7 +532,8 @@
                   <option value={`${baseSchema}.${baseTable}`}>{baseSchema}.{baseTable}</option>
                 {:else if mode === 'fk'}
                   {#each fkChoices as table (`${table.schema}.${table.name}`)}
-                    <option value={`${table.schema}.${table.name}`}>{table.schema}.{table.name}</option>
+                    {@const badge = hopBadgeLabel(reachableHops[`${table.schema}.${table.name}`])}
+                    <option value={`${table.schema}.${table.name}`}>{table.schema}.{table.name}{badge ? ` — ${badge}` : ''}</option>
                   {/each}
                 {:else}
                   {#each sameSchemaTables as table (`${table.schema}.${table.name}`)}

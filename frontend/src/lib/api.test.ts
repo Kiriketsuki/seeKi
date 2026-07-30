@@ -608,6 +608,28 @@ describe('custom views API helpers', () => {
     await expect(fetchFkPath('public', 'orders', 'public', 'customers')).resolves.toEqual([]);
   });
 
+  it('fetchFkReachable reads the bulk reachability endpoint', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        tables: [
+          { schema: 'public', table: 'users', display_name: 'Users', hops: 1 },
+          { schema: 'public', table: 'tickets', display_name: 'Tickets', hops: 2 },
+        ],
+      }),
+    );
+    const { fetchFkReachable } = await import('./api');
+
+    await expect(fetchFkReachable('public', 'orders')).resolves.toEqual([
+      { schema: 'public', table: 'users', display_name: 'Users', hops: 1 },
+      { schema: 'public', table: 'tickets', display_name: 'Tickets', hops: 2 },
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/views/fk-reachable?base_schema=public&base_table=orders',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
   it('fetchColumnSamples reads the dedicated samples endpoint', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ samples: ['alpha', 'beta'] }));
     const { fetchColumnSamples } = await import('./api');

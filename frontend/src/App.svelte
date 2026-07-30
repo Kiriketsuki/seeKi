@@ -15,6 +15,9 @@
   import RowCapWarning from './components/RowCapWarning.svelte';
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
+  import RelatedColumnsPicker from './components/RelatedColumnsPicker.svelte';
+  import PeekPanel from './components/PeekPanel.svelte';
+  import { buildPeekTargetFilters } from './lib/fk-columns';
   import {
     buildViewCsvUrl,
     deleteView,
@@ -24,7 +27,11 @@
     fetchRows,
     fetchSettings,
     fetchStatus,
+    fetchTableReferences,
+    fetchTableRelationships,
+    fetchTableRow,
     fetchTables,
+    fetchTransientViewRows,
     fetchUpdateStatus,
     fetchView,
     fetchViewRows,
@@ -42,8 +49,11 @@
     DisplayConfig,
     FilterState,
     PageSizePreference,
+    OutgoingRelationship,
     PaginationMode,
+    PickedRelatedColumn,
     QueryResult,
+    ReferenceEntry,
     SavedViewDefinition,
     SavedViewSummary,
     SettingsEntries,
@@ -51,6 +61,7 @@
     SortColumn,
     SortState,
     TableInfo,
+    TableRelationships,
     TablesSurface,
     UpdateStatus,
     ViewColumn,
@@ -60,6 +71,12 @@
     ViewRanking,
     ViewSourceRef,
   } from './lib/types';
+  import {
+    buildRelatedShape,
+    loadRelatedColumns,
+    resolveViewColumnOutputNames,
+    saveRelatedColumns,
+  } from './lib/view-shape';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import {
     createGridRefreshController,
@@ -84,6 +101,7 @@
     resetState,
     type RowCapState,
   } from './lib/infinite-scroll';
+  import { buildJumpFilters, buildReferenceParams, hasRelatedRows } from './lib/related-rows';
 
   function setSidebarMode(mode: SidebarMode) {
     sidebarMode.set(mode);
@@ -143,6 +161,17 @@
   let selectedTable: string = $state('');
   let selectedView: SavedViewDefinition | null = $state(null);
   let columns: ColumnInfo[] = $state([]);
+  // Base table columns as returned by fetchColumns, independent of any
+  // related-column overlay. buildRelatedShape needs the plain base-table
+  // column list, which `columns` no longer holds once a transient shape's
+  // QueryResult.columns overwrite it.
+  let baseTableColumns: ColumnInfo[] = $state([]);
+  let relationships: TableRelationships | null = $state(null);
+  // Inline related columns picked for the current table, persisted to
+  // localStorage per table. Non-empty means row fetching for this table
+  // goes through the transient view-query endpoint instead of plain rows.
+  let relatedColumns: PickedRelatedColumn[] = $state([]);
+  let relatedColumnsPickerOpen: boolean = $state(false);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
   let appSettings: SettingsEntries = $state({});
@@ -159,6 +188,29 @@
   let sortState: SortState = $state([]);
   let filtersVisible: boolean = $state(false);
   let filters: FilterState = $state({});
+  // Exact-match filters (`eq.` params). FK jump navigation creates them.
+  // There is no manual creation UI, the chips above the grid remove them.
+  let exactFilters: Record<string, string> = $state({});
+  // "Related information" popover: which row opened it, its loaded entries,
+  // and whether the /references request is still in flight.
+  let relatedRowsOpen: boolean = $state(false);
+  let relatedRowsLoading: boolean = $state(false);
+  let relatedRowsEntries: ReferenceEntry[] = $state([]);
+  let relatedRowsRow: Record<string, unknown> | null = $state(null);
+  let relatedRowsRequestId = 0;
+  // FK peek panel: previews the linked row a clicked FK cell points at, before
+  // committing to a full jump. peekTargetFilters holds the exact-match filters
+  // (keyed by target column) used both to fetch the preview and to jump.
+  let peekOpen: boolean = $state(false);
+  let peekEdge: OutgoingRelationship | null = $state(null);
+  let peekTargetFilters: Record<string, string> = $state({});
+  let peekLoading: boolean = $state(false);
+  let peekError: string | null = $state(null);
+  let peekRow: Record<string, unknown> | null = $state(null);
+  let peekMultiple: boolean = $state(false);
+  let peekColumns: ColumnInfo[] = $state([]);
+  // Guards against an older peek fetch resolving after a newer one.
+  let peekRequestId = 0;
   let searchTerm: string = $state('');
   let searchVisible: boolean = $state(false);
   let columnsOpen: boolean = $state(false);
@@ -262,6 +314,37 @@
   });
   let selectedViewId = $derived.by(() =>
     tablesSurface.kind === 'view' ? tablesSurface.viewId : null
+  );
+  // The shape of the transient view-query the current related-column picks
+  // imply. Null when there is nothing to overlay, so plain fetchRows stays
+  // the path for a table with no related columns picked.
+  let currentRelatedShape = $derived.by(() =>
+    tablesSurface.kind === 'table' && relatedColumns.length > 0 && baseTableColumns.length > 0
+      ? buildRelatedShape(selectedSchema, selectedTable, baseTableColumns, relatedColumns)
+      : null
+  );
+  // Maps an output column name (as returned by the transient view query) to
+  // a "from {table}" label, for the header suffix DataGrid renders.
+  let relatedColumnLabels = $derived.by((): Record<string, string> => {
+    const shape = currentRelatedShape;
+    if (!shape) return {};
+    const outputNames = resolveViewColumnOutputNames(shape.columns);
+    const labels: Record<string, string> = {};
+    shape.columns.forEach((column, index) => {
+      const picked = relatedColumns.find(
+        (p) =>
+          p.schema === column.source_schema &&
+          p.table === column.source_table &&
+          p.column === column.column_name,
+      );
+      if (picked) {
+        labels[outputNames[index]] = `from ${picked.tableDisplayName}`;
+      }
+    });
+    return labels;
+  });
+  let hasAllowedRelatedTargets = $derived.by(() =>
+    (relationships?.outgoing ?? []).some((edge) => edge.target.allowed)
   );
   let hasSurfaceSelection = $derived.by(() => {
     if (tablesSurface.kind === 'view') {
@@ -430,6 +513,14 @@
       }
 
       if (event.key === 'Escape') {
+        // The peek panel sits above everything, so Escape closes it first and
+        // does not also clear the search or the filters behind it.
+        if (peekOpen) {
+          event.preventDefault();
+          closePeek();
+          return;
+        }
+
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
@@ -648,6 +739,56 @@
     }, 500);
   }
 
+  // Toggling related columns on or off changes the output column set, so any
+  // stale sort or filter reference must clear rather than point at a column
+  // the next result no longer carries. A base column whose name collides with
+  // a picked related column comes back renamed, so a filter kept across the
+  // toggle would fail the backend's known-column check.
+  function handleRelatedColumnsChange(next: PickedRelatedColumn[]) {
+    relatedColumns = next;
+    saveRelatedColumns(selectedSchema, selectedTable, next);
+    sortState = [];
+    filters = {};
+    exactFilters = {};
+    // Dropping the last related column returns the grid to the plain table
+    // shape, and plain row fetches no longer overwrite `columns`. Restore the
+    // base column list here so no related column lingers as an empty column.
+    if (next.length === 0 && baseTableColumns.length > 0) {
+      columns = baseTableColumns;
+      columnVisibility = normalizeColumnVisibility(baseTableColumns, columnVisibility);
+    }
+    void resetAndLoadRows([], {}, searchTerm);
+  }
+
+  /**
+   * Fetch rows for the table surface, routing through the transient
+   * view-query endpoint when related columns are picked for this table, and
+   * through plain fetchRows otherwise. Both paths carry substring filters and
+   * exact-match (`eq.`) filters, so FK jump navigation stays filtered while
+   * related columns are active.
+   */
+  async function fetchTableSurfaceRows(
+    schema: string,
+    table: string,
+    params: FetchRowsParams,
+  ): Promise<QueryResult> {
+    if (relatedColumns.length > 0 && baseTableColumns.length > 0) {
+      const shape = buildRelatedShape(schema, table, baseTableColumns, relatedColumns);
+      return fetchTransientViewRows({
+        base_schema: schema,
+        base_table: table,
+        shape,
+        page: params.page,
+        page_size: params.page_size,
+        sort: params.sort,
+        search: params.search,
+        filters: params.filters,
+        exact_filters: params.exact_filters,
+      });
+    }
+    return fetchRows(schema, table, params);
+  }
+
   function buildRowsParams(
     page: number,
     nextSortState: SortState = sortState,
@@ -672,10 +813,83 @@
       params.search = trimmedSearch;
     }
 
+    if (Object.keys(exactFilters).length > 0) {
+      params.exact_filters = { ...exactFilters };
+    }
+
     return params;
   }
 
-  async function selectTable(table: TableInfo) {
+  function removeExactFilter(column: string) {
+    const next = { ...exactFilters };
+    delete next[column];
+    exactFilters = next;
+    void resetAndLoadRows(sortState, filters, searchTerm);
+  }
+
+  function exactFilterLabel(column: string): string {
+    const info = columns.find((c) => c.name === column);
+    return info?.display_name ?? column;
+  }
+
+  async function handleFkPeek(edge: OutgoingRelationship, values: Record<string, string>) {
+    const targetFilters = buildPeekTargetFilters(edge, values);
+    // A constraint whose source and target column lists disagree cannot name a
+    // single target row. Do not open the panel on a partial key.
+    if (!targetFilters) return;
+
+    // Two quick clicks start two fetches. Only the newest may write the panel
+    // state, otherwise a slow first response overwrites the second preview.
+    const myRequest = ++peekRequestId;
+    peekEdge = edge;
+    peekTargetFilters = targetFilters;
+    peekOpen = true;
+    peekLoading = true;
+    peekError = null;
+    peekRow = null;
+    peekMultiple = false;
+    peekColumns = [];
+
+    try {
+      const result = await fetchTableRow(edge.target.schema, edge.target.table, targetFilters);
+      if (myRequest !== peekRequestId) return;
+      peekRow = result.row;
+      peekMultiple = result.multiple;
+      peekColumns = result.columns;
+    } catch (e) {
+      if (myRequest !== peekRequestId) return;
+      peekError = e instanceof Error ? e.message : 'Failed to load linked record';
+    } finally {
+      if (myRequest === peekRequestId) peekLoading = false;
+    }
+  }
+
+  function closePeek() {
+    // Bump the request id so an in-flight fetch cannot reopen stale content.
+    peekRequestId += 1;
+    peekOpen = false;
+    peekLoading = false;
+  }
+
+  // The target table for a jump when it is present in the current allowlisted
+  // table list. A hidden target (outside the connection allowlist) never
+  // appears here, so the jump button stays absent for it.
+  let peekJumpTarget = $derived(
+    peekEdge
+      ? (tables.find(
+          (t) => t.schema === peekEdge!.target.schema && t.name === peekEdge!.target.table,
+        ) ?? null)
+      : null,
+  );
+
+  function handlePeekJump() {
+    if (!peekJumpTarget) return;
+    const targetFilters = { ...peekTargetFilters };
+    closePeek();
+    void selectTable(peekJumpTarget, { exactFilters: targetFilters });
+  }
+
+  async function selectTable(table: TableInfo, opts?: { exactFilters?: Record<string, string> }) {
     const myRequest = ++navRequestId;
     tablesSurface = { kind: 'table' };
     selectedSchema = table.schema;
@@ -685,7 +899,10 @@
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
+    exactFilters = opts?.exactFilters ? { ...opts.exactFilters } : {};
     columnsOpen = false;
+    relatedColumns = loadRelatedColumns(table.schema, table.name);
+    handleCloseRelatedRows();
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -695,20 +912,33 @@
     let initialFilters: FilterState = {};
     let initialSearch = '';
 
+    relationships = null;
+
     try {
-      const [cols, lastUsed] = await Promise.all([
+      // A relationships failure must never sink the table load, so it
+      // degrades to "no FK metadata" instead of rejecting the Promise.all.
+      const [cols, lastUsed, rels] = await Promise.all([
         fetchColumns(table.schema, table.name),
         !isSetup ? fetchLastUsedState(table.schema, table.name) : Promise.resolve(null),
+        fetchTableRelationships(table.schema, table.name).catch(() => null),
       ]);
       if (myRequest !== navRequestId) return;
 
+      relationships = rels;
+
       if (lastUsed) {
-        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
-          column: col,
-          direction: dir,
-        }));
-        initialFilters = lastUsed.filters;
-        initialSearch = lastUsed.search_term ?? '';
+        // A jump from the FK peek panel arrives with its own exact filters
+        // and wants a clean view. Fetching lastUsed still primes its cache
+        // for a later plain visit, but applying its sort/filters/search here
+        // would fight the jump target, so only that application is skipped.
+        if (!opts?.exactFilters) {
+          initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
+            column: col,
+            direction: dir,
+          }));
+          initialFilters = lastUsed.filters;
+          initialSearch = lastUsed.search_term ?? '';
+        }
         if (lastUsed.page_size != null && isPageSizePreference(lastUsed.page_size)) {
           pageSize = lastUsed.page_size;
         } else {
@@ -720,6 +950,7 @@
       }
 
       columns = cols;
+      baseTableColumns = cols;
       columnVisibility = loadColumnVisibility(visibilityKey, cols);
       sortState = initialSortState;
       filters = initialFilters;
@@ -733,7 +964,7 @@
       appendError = false;
       resetSignal++;
 
-      const result = await fetchRows(
+      const result = await fetchTableSurfaceRows(
         table.schema,
         table.name,
         buildRowsParams(1, initialSortState, initialFilters, initialSearch),
@@ -741,6 +972,10 @@
       if (myRequest !== navRequestId) return;
 
       queryResult = result;
+      if (relatedColumns.length > 0) {
+        columns = result.columns;
+        columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
+      }
       if (paginationMode === 'infinite') {
         const nextState = appendBatch(
           { rows: [], loadedCount: 0, lastLoadedPage: 0, capState: 'none' },
@@ -758,6 +993,59 @@
     } finally {
       if (myRequest === navRequestId) tableLoading = false;
     }
+  }
+
+  function handleCloseRelatedRows() {
+    relatedRowsOpen = false;
+    relatedRowsLoading = false;
+    relatedRowsEntries = [];
+    relatedRowsRow = null;
+  }
+
+  // Loads the capped reference counts for one row's "Related information" popover.
+  // Omits the request entirely when the row carries no non-null referenced value,
+  // showing the empty state right away instead of a request that would 400.
+  async function handleRelatedRows(row: Record<string, unknown>) {
+    const myRequest = ++relatedRowsRequestId;
+    relatedRowsRow = row;
+    relatedRowsOpen = true;
+    relatedRowsEntries = [];
+
+    const params = buildReferenceParams(relationships, row);
+    if (Object.keys(params).length === 0) {
+      relatedRowsLoading = false;
+      return;
+    }
+
+    relatedRowsLoading = true;
+    try {
+      const result = await fetchTableReferences(selectedSchema, selectedTable, params);
+      if (myRequest !== relatedRowsRequestId) return;
+      relatedRowsEntries = result.references;
+    } catch {
+      if (myRequest !== relatedRowsRequestId) return;
+      relatedRowsEntries = [];
+    } finally {
+      if (myRequest === relatedRowsRequestId) relatedRowsLoading = false;
+    }
+  }
+
+  // Jumps to the source table of one related-rows entry, pre-filtered on the
+  // clicked row's referenced values so the destination shows only its matches.
+  function handleRelatedRowSelect(entry: ReferenceEntry) {
+    const sourceRow = relatedRowsRow;
+    handleCloseRelatedRows();
+    if (!sourceRow) return;
+
+    const jumpFilters = buildJumpFilters(relationships, sourceRow, entry);
+    if (!jumpFilters) return;
+
+    const sourceTable = tables.find(
+      (t) => t.schema === entry.schema && t.name === entry.table,
+    );
+    if (!sourceTable) return;
+
+    void selectTable(sourceTable, { exactFilters: jumpFilters });
   }
 
   // Optimistically renames a table in the sidebar/header, persists via PUT, then
@@ -788,11 +1076,15 @@
   async function openSavedView(view: SavedViewSummary) {
     const myRequest = ++navRequestId;
     tablesSurface = { kind: 'view', viewId: view.id };
+    relationships = null;
     tableError = null;
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
+    exactFilters = {};
+    relatedColumns = [];
     columnsOpen = false;
+    handleCloseRelatedRows();
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -853,7 +1145,7 @@
         tablesSurface.kind === 'view' && selectedView
           ? await fetchViewRows(selectedView.id, params)
           : tablesSurface.kind === 'table' && selectedSchema && selectedTable
-            ? await fetchRows(selectedSchema, selectedTable, params)
+            ? await fetchTableSurfaceRows(selectedSchema, selectedTable, params)
             : null;
 
       if (myRequest !== navRequestId || result == null) return;
@@ -869,7 +1161,7 @@
         lastLoadedPage = nextState.lastLoadedPage;
         rowCapState = nextState.capState;
       }
-      if (tablesSurface.kind === 'view' && selectedView) {
+      if ((tablesSurface.kind === 'view' && selectedView) || (tablesSurface.kind === 'table' && relatedColumns.length > 0)) {
         columns = result.columns;
         columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
       }
@@ -903,7 +1195,7 @@
       return fetchViewRows(selectedView.id, params);
     }
     if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
-      return fetchRows(selectedSchema, selectedTable, params);
+      return fetchTableSurfaceRows(selectedSchema, selectedTable, params);
     }
     return null;
   }
@@ -1091,6 +1383,11 @@
     if (params.filters) {
       for (const [col, val] of Object.entries(params.filters)) {
         searchParams.set(`filter.${col}`, val);
+      }
+    }
+    if (params.exact_filters) {
+      for (const [col, val] of Object.entries(params.exact_filters)) {
+        searchParams.set(`eq.${col}`, val);
       }
     }
     const qs = searchParams.toString();
@@ -1428,6 +1725,15 @@
                   {visibleColumns}
                   {focusedTextColumnName}
                 />
+                {#if tablesSurface.kind === 'table' && hasAllowedRelatedTargets}
+                  <button
+                    type="button"
+                    class="related-columns-btn"
+                    onclick={() => (relatedColumnsPickerOpen = true)}
+                  >
+                    Add related information
+                  </button>
+                {/if}
                 <GridRefreshToolbar
                   surfaceKey={selectedRefreshSurfaceKey ?? ''}
                   intervalMs={refreshSnapshot.intervalMs}
@@ -1449,11 +1755,32 @@
                   loadedCount={cleanRowCount}
                 />
               {/if}
+              {#if Object.keys(exactFilters).length > 0}
+                <div class="exact-filter-strip" role="status">
+                  {#each Object.entries(exactFilters) as [column, value] (column)}
+                    <span class="exact-filter-chip">
+                      <span class="exact-filter-chip__text">
+                        {exactFilterLabel(column)} is exactly {value}
+                      </span>
+                      <button
+                        class="exact-filter-chip__remove"
+                        type="button"
+                        aria-label={`Remove exact filter on ${exactFilterLabel(column)}`}
+                        onclick={() => removeExactFilter(column)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
               <div class="grid-area">
                 <div class="grid-shell">
                   <div class="grid-content" class:stale={tableLoading && paginationMode === 'infinite'}>
                     <DataGrid
                       columns={visibleColumns}
+                      relationships={tablesSurface.kind === 'table' ? relationships : null}
+                      relatedColumnLabels={tablesSurface.kind === 'table' ? relatedColumnLabels : {}}
                       rows={displayRows}
                       dateFormat={appearanceSettings.dateFormat}
                       {sortState}
@@ -1462,10 +1789,18 @@
                       {fetchingMore}
 
                       {resetSignal}
+                      hasIncoming={tablesSurface.kind === 'table' && hasRelatedRows(relationships)}
+                      {relatedRowsOpen}
+                      {relatedRowsLoading}
+                      {relatedRowsEntries}
                       onSortChange={handleSortChange}
                       onFilterChange={handleFilterChange}
                       onNearBottom={() => { if (paginationMode === 'infinite' && !appendError) void loadMoreRows(); }}
                       onRetryAppend={() => { appendError = false; void loadMoreRows(); }}
+                      onRelatedRows={handleRelatedRows}
+                      onRelatedRowSelect={handleRelatedRowSelect}
+                      onCloseRelatedRows={handleCloseRelatedRows}
+                      onFkPeek={(edge, values) => void handleFkPeek(edge, values)}
                     />
                   </div>
                   {#if hasSurfaceSelection}
@@ -1558,6 +1893,27 @@
     onStatusChange={(s) => {
       applyUpdateStatus(s);
     }}
+  />
+  <RelatedColumnsPicker
+    open={relatedColumnsPickerOpen}
+    baseSchema={selectedSchema}
+    baseTable={selectedTable}
+    relationships={tablesSurface.kind === 'table' ? relationships : null}
+    picked={relatedColumns}
+    onSave={handleRelatedColumnsChange}
+    onClose={() => (relatedColumnsPickerOpen = false)}
+  />
+  <PeekPanel
+    open={peekOpen}
+    title={peekEdge?.target.display_name ?? ''}
+    loading={peekLoading}
+    error={peekError}
+    row={peekRow}
+    multiple={peekMultiple}
+    columns={peekColumns}
+    onClose={closePeek}
+    onJump={peekJumpTarget ? handlePeekJump : undefined}
+    jumpLabel={`Open in ${peekEdge?.target.display_name ?? ''}`}
   />
 {/if}
 
@@ -1669,6 +2025,21 @@
     cursor: pointer;
   }
 
+  .related-columns-btn {
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    background: var(--sk-glass-button);
+    color: var(--sk-secondary-strong);
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .related-columns-btn:hover {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.32);
+    color: var(--sk-accent-active-strong);
+  }
+
   .toolbar-row {
     display: flex;
     align-items: flex-start;
@@ -1757,6 +2128,42 @@
     border-bottom: 1px solid rgba(var(--sk-danger-rgb), 0.3);
     color: var(--sk-text);
     font-size: var(--sk-font-size-body);
+  }
+
+  /* Exact-match filter chips. Teal marks them as linked-navigation state,
+     distinct from the amber substring-filter accents. */
+  .exact-filter-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sk-space-sm);
+    padding: var(--sk-space-sm) var(--sk-space-2xl);
+  }
+
+  .exact-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sk-space-xs);
+    padding: 2px var(--sk-space-sm);
+    background: rgba(var(--sk-accent-active-rgb), 0.12);
+    border: 1px solid rgba(var(--sk-accent-active-rgb), 0.3);
+    border-radius: var(--sk-radius-full, 999px);
+    color: var(--sk-accent-active-ink);
+    font-size: var(--sk-font-size-small, var(--sk-font-size-body));
+  }
+
+  .exact-filter-chip__remove {
+    border: none;
+    background: none;
+    padding: 0 2px;
+    color: inherit;
+    font-size: 1.05em;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .exact-filter-chip__remove:hover {
+    color: var(--sk-danger, currentColor);
   }
 
   .dismiss-btn {
