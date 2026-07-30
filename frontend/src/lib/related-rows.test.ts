@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildJumpFilters, buildReferenceParams } from './related-rows';
+import {
+  buildJumpFilters,
+  buildReferenceParams,
+  hasRelatedRows,
+  referenceEntryKey,
+  referenceEntryLabel,
+} from './related-rows';
 import type { IncomingRelationship, ReferenceEntry, TableRelationships } from './types';
 
 function incomingEdge(
@@ -69,6 +75,63 @@ describe('buildReferenceParams', () => {
   it('omits a referenced column that is absent from the row', () => {
     const rels = relationships([incomingEdge('orders_user_fkey', ['id'], 'orders', ['user_id'])]);
     expect(buildReferenceParams(rels, {})).toEqual({});
+  });
+
+  it('omits edges whose source table is outside the allowlist', () => {
+    const blocked = incomingEdge('audit_user_fkey', ['id'], 'audit_log', ['user_id']);
+    blocked.source.allowed = false;
+    expect(buildReferenceParams(relationships([blocked]), { id: 42 })).toEqual({});
+  });
+});
+
+describe('hasRelatedRows', () => {
+  it('is false for null relationships and for no incoming edges', () => {
+    expect(hasRelatedRows(null)).toBe(false);
+    expect(hasRelatedRows(relationships([]))).toBe(false);
+  });
+
+  it('is false when every incoming edge is outside the allowlist', () => {
+    const blocked = incomingEdge('audit_user_fkey', ['id'], 'audit_log', ['user_id']);
+    blocked.source.allowed = false;
+    expect(hasRelatedRows(relationships([blocked]))).toBe(false);
+  });
+
+  it('is true when at least one incoming edge is allowed', () => {
+    const blocked = incomingEdge('audit_user_fkey', ['id'], 'audit_log', ['user_id']);
+    blocked.source.allowed = false;
+    const allowed = incomingEdge('orders_user_fkey', ['id'], 'orders', ['user_id']);
+    expect(hasRelatedRows(relationships([blocked, allowed]))).toBe(true);
+  });
+});
+
+describe('referenceEntryKey', () => {
+  it('separates two edges from the same source table', () => {
+    const sender = referenceEntry('messages', ['sender_id']);
+    const recipient = referenceEntry('messages', ['recipient_id']);
+    expect(referenceEntryKey(sender)).not.toBe(referenceEntryKey(recipient));
+  });
+
+  it('is stable for the same entry', () => {
+    const entry = referenceEntry('legs', ['route_region', 'route_code']);
+    expect(referenceEntryKey(entry)).toBe(referenceEntryKey(referenceEntry('legs', [
+      'route_region',
+      'route_code',
+    ])));
+  });
+});
+
+describe('referenceEntryLabel', () => {
+  it('shows the display name alone when the source table appears once', () => {
+    const entry = referenceEntry('orders', ['user_id'], { display_name: 'Orders' });
+    expect(referenceEntryLabel(entry, [entry])).toBe('Orders');
+  });
+
+  it('appends the FK columns when the source table appears twice', () => {
+    const sender = referenceEntry('messages', ['sender_id'], { display_name: 'Messages' });
+    const recipient = referenceEntry('messages', ['recipient_id'], { display_name: 'Messages' });
+    const entries = [sender, recipient];
+    expect(referenceEntryLabel(sender, entries)).toBe('Messages (sender_id)');
+    expect(referenceEntryLabel(recipient, entries)).toBe('Messages (recipient_id)');
   });
 });
 

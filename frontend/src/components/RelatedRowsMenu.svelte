@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { ReferenceEntry } from '../lib/types';
+  import { referenceEntryKey, referenceEntryLabel } from '../lib/related-rows';
 
   let {
     entries = [],
@@ -58,14 +59,14 @@
   {:else if entries.length === 0}
     <div class="menu-status">No related rows</div>
   {:else}
-    {#each entries as entry (`${entry.schema}.${entry.table}`)}
+    {#each entries as entry (referenceEntryKey(entry))}
       <button
         type="button"
         role="menuitem"
         class="menu-entry"
         onclick={() => onSelect?.(entry)}
       >
-        <span class="menu-entry__label">{entry.display_name}</span>
+        <span class="menu-entry__label">{referenceEntryLabel(entry, entries)}</span>
         <span class="menu-entry__count">{formatCount(entry)}</span>
       </button>
     {/each}

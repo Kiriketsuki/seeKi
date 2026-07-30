@@ -14,6 +14,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, patch, post, put},
 };
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
@@ -449,6 +450,35 @@ async fn get_relationships(
     ))
 }
 
+/// Upper bound on the number of `/references` count queries in flight at once.
+/// Each count takes one pool connection, so an unbounded fan-out over a table
+/// with many incoming foreign keys would starve every other request.
+const REFERENCE_COUNT_CONCURRENCY: usize = 4;
+
+/// Pick the incoming edges the `/references` endpoint counts, and pair each one
+/// with the referenced values taken from the `eq.` filters, in constraint order.
+/// An edge drops out when its source table is outside the allowlist, or when the
+/// row carries no value for one of the referenced columns. A missing value means
+/// the value is NULL on the row, and NULL matches no foreign key.
+fn select_reference_candidates<'a>(
+    incoming: &'a [RelationshipEdge],
+    tables: &crate::config::TablesConfig,
+    exact_filters: &HashMap<String, String>,
+) -> Vec<(&'a RelationshipEdge, Vec<String>)> {
+    incoming
+        .iter()
+        .filter(|edge| tables.allows(&edge.other_schema, &edge.other_table))
+        .filter_map(|edge| {
+            let values: Option<Vec<String>> = edge
+                .columns
+                .iter()
+                .map(|col| exact_filters.get(col).cloned())
+                .collect();
+            values.map(|values| (edge, values))
+        })
+        .collect()
+}
+
 /// GET /api/tables/{schema}/{table}/references — capped count of rows in every
 /// other table that references this row, one entry per matching incoming FK
 /// edge. The `eq.` query parameters carry the current row's referenced column
@@ -494,27 +524,25 @@ async fn get_references(
             .unwrap_or_else(|| display_name_table(far_schema, far_table, &state.config.display))
     };
 
-    // Keep only edges whose source table is allowlisted, and whose referenced
-    // columns on this table are all present in the `eq.` filters.
-    let candidates: Vec<(&RelationshipEdge, Vec<String>)> = incoming
-        .iter()
-        .filter(|edge| state.config.tables.allows(&edge.other_schema, &edge.other_table))
-        .filter_map(|edge| {
-            let values: Option<Vec<String>> = edge
-                .columns
-                .iter()
-                .map(|col| exact_filters.get(col).cloned())
-                .collect();
-            values.map(|values| (edge, values))
-        })
-        .collect();
+    let candidates = select_reference_candidates(&incoming, &state.config.tables, &exact_filters);
 
-    let counts = futures::future::join_all(candidates.iter().map(|(edge, values)| {
-        state
-            .db
-            .count_referencing_rows(&edge.other_schema, &edge.other_table, &edge.other_columns, values)
-    }))
-    .await;
+    // Run the per-edge counts concurrently, but never more than
+    // REFERENCE_COUNT_CONCURRENCY at a time. A table with many incoming edges
+    // would otherwise take one pool connection per edge and starve every other
+    // request while the counts run.
+    let mut count_futures = Vec::with_capacity(candidates.len());
+    for (edge, values) in &candidates {
+        count_futures.push(state.db.count_referencing_rows(
+            &edge.other_schema,
+            &edge.other_table,
+            &edge.other_columns,
+            values,
+        ));
+    }
+    let counts: Vec<anyhow::Result<(i64, bool)>> = futures::stream::iter(count_futures)
+        .buffered(REFERENCE_COUNT_CONCURRENCY)
+        .collect()
+        .await;
 
     let mut references: Vec<serde_json::Value> = Vec::with_capacity(candidates.len());
     for ((edge, _), result) in candidates.iter().zip(counts.into_iter()) {
@@ -528,11 +556,16 @@ async fn get_references(
             "capped": capped,
         }));
     }
+    // Sort on the display name, then on the source columns, so two edges from
+    // the same source table keep a stable, predictable order in the menu.
     references.sort_by(|a, b| {
-        a["display_name"]
-            .as_str()
-            .unwrap_or_default()
-            .cmp(b["display_name"].as_str().unwrap_or_default())
+        let key = |v: &serde_json::Value| {
+            (
+                v["display_name"].as_str().unwrap_or_default().to_string(),
+                v["columns"].to_string(),
+            )
+        };
+        key(a).cmp(&key(b))
     });
 
     Ok(Json(serde_json::json!({ "references": references })))
@@ -1456,6 +1489,120 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("page".into(), "1".into());
         assert!(parse_exact_filters(&params).is_empty());
+    }
+
+    fn incoming_edge(
+        constraint: &str,
+        source_table: &str,
+        source_columns: &[&str],
+        referenced_columns: &[&str],
+    ) -> RelationshipEdge {
+        RelationshipEdge {
+            constraint_name: constraint.to_string(),
+            columns: referenced_columns.iter().map(|c| c.to_string()).collect(),
+            other_schema: "public".to_string(),
+            other_table: source_table.to_string(),
+            other_columns: source_columns.iter().map(|c| c.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn select_reference_candidates_omits_non_allowed_source_tables() {
+        let incoming = vec![
+            incoming_edge("items_order_fkey", "order_items", &["order_id"], &["id"]),
+            incoming_edge("audit_order_fkey", "audit_log", &["order_id"], &["id"]),
+        ];
+        let tables = crate::config::TablesConfig {
+            include: None,
+            exclude: Some(vec!["audit_log".to_string()]),
+        };
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "7".to_string());
+
+        let candidates = select_reference_candidates(&incoming, &tables, &exact);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].0.other_table, "order_items");
+        assert_eq!(candidates[0].1, vec!["7".to_string()]);
+    }
+
+    #[test]
+    fn select_reference_candidates_drops_edges_with_a_missing_referenced_value() {
+        // A referenced column absent from the `eq.` filters means the value is
+        // NULL on the row, so the whole edge drops out.
+        let incoming = vec![
+            incoming_edge("simple_fkey", "shipments", &["order_id"], &["id"]),
+            incoming_edge(
+                "composite_fkey",
+                "stock_moves",
+                &["wh_id", "region"],
+                &["warehouse_id", "region_code"],
+            ),
+        ];
+        let tables = crate::config::TablesConfig::default();
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "7".to_string());
+        exact.insert("warehouse_id".to_string(), "3".to_string());
+
+        let candidates = select_reference_candidates(&incoming, &tables, &exact);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].0.other_table, "shipments");
+    }
+
+    #[test]
+    fn select_reference_candidates_keeps_composite_values_in_constraint_order() {
+        let incoming = vec![incoming_edge(
+            "composite_fkey",
+            "stock_moves",
+            &["wh_id", "region"],
+            &["warehouse_id", "region_code"],
+        )];
+        let tables = crate::config::TablesConfig::default();
+        let mut exact = HashMap::new();
+        // Insert in the reverse order to prove the map order does not leak in.
+        exact.insert("region_code".to_string(), "EU".to_string());
+        exact.insert("warehouse_id".to_string(), "7".to_string());
+
+        let candidates = select_reference_candidates(&incoming, &tables, &exact);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].0.other_columns,
+            vec!["wh_id".to_string(), "region".to_string()]
+        );
+        assert_eq!(
+            candidates[0].1,
+            vec!["7".to_string(), "EU".to_string()],
+            "values pair with other_columns by position"
+        );
+    }
+
+    #[test]
+    fn select_reference_candidates_keeps_two_edges_from_the_same_source_table() {
+        // A message table with a sender and a recipient both pointing at users
+        // yields two separate entries, one per constraint.
+        let incoming = vec![
+            incoming_edge("messages_sender_fkey", "messages", &["sender_id"], &["id"]),
+            incoming_edge(
+                "messages_recipient_fkey",
+                "messages",
+                &["recipient_id"],
+                &["id"],
+            ),
+        ];
+        let tables = crate::config::TablesConfig::default();
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "42".to_string());
+
+        let candidates = select_reference_candidates(&incoming, &tables, &exact);
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].0.other_columns, vec!["sender_id".to_string()]);
+        assert_eq!(
+            candidates[1].0.other_columns,
+            vec!["recipient_id".to_string()]
+        );
     }
 
     #[test]

@@ -88,7 +88,7 @@
     resetState,
     type RowCapState,
   } from './lib/infinite-scroll';
-  import { buildJumpFilters, buildReferenceParams } from './lib/related-rows';
+  import { buildJumpFilters, buildReferenceParams, hasRelatedRows } from './lib/related-rows';
 
   function setSidebarMode(mode: SidebarMode) {
     sidebarMode.set(mode);
@@ -1584,7 +1584,7 @@
                       {fetchingMore}
 
                       {resetSignal}
-                      hasIncoming={tablesSurface.kind === 'table' && (relationships?.incoming.length ?? 0) > 0}
+                      hasIncoming={tablesSurface.kind === 'table' && hasRelatedRows(relationships)}
                       {relatedRowsOpen}
                       {relatedRowsLoading}
                       {relatedRowsEntries}
