@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createView, fetchColumns, fetchFkPath, previewView } from '../lib/api';
+  import { createView, fetchColumns, fetchFkReachable, previewView } from '../lib/api';
   import type {
     ColumnInfo,
     QueryResult,
@@ -76,6 +76,8 @@
   let preview = $state<QueryResult | null>(null);
   let previewLoading = $state(false);
   let reachableTables = $state<TableInfo[]>([]);
+  /** FK hop count per reachable table, keyed by `${schema}.${table}`. */
+  let reachableHops = $state<Record<string, number>>({});
   let pickerOpen = $state(false);
   let pickerIndex = $state<number | null>(null);
   let pickerValue = $state<ViewColumn | null>(null);
@@ -236,27 +238,28 @@
   async function computeReachableTables(schema: string, table: string) {
     if (!schema || !table) {
       reachableTables = [];
+      reachableHops = {};
       return;
     }
     const myRequest = ++reachabilityRequestId;
     try {
-      const sameSchemaTables = tables.filter((candidate) => candidate.schema === schema);
-      const reachable = await Promise.all(
-        sameSchemaTables.map(async (candidate) => {
-          if (candidate.schema === schema && candidate.name === table) return true;
-          try {
-            const path = await fetchFkPath(schema, table, candidate.schema, candidate.name);
-            return path.length > 0;
-          } catch {
-            return false;
-          }
-        }),
-      );
+      const reachable = await fetchFkReachable(schema, table);
       if (myRequest !== reachabilityRequestId) return;
-      reachableTables = sameSchemaTables.filter((_, index) => reachable[index]);
-    } finally {
+
+      const hops: Record<string, number> = {};
+      const matched: TableInfo[] = [];
+      for (const entry of reachable) {
+        const key = `${entry.schema}.${entry.table}`;
+        hops[key] = entry.hops;
+        const known = tables.find((t) => t.schema === entry.schema && t.name === entry.table);
+        if (known) matched.push(known);
+      }
+      reachableTables = matched;
+      reachableHops = hops;
+    } catch {
       if (myRequest === reachabilityRequestId) {
-        // no-op
+        reachableTables = [];
+        reachableHops = {};
       }
     }
   }
@@ -1068,6 +1071,7 @@
       open={pickerOpen}
       {tables}
       {reachableTables}
+      {reachableHops}
       {sources}
       baseSchema={baseSchema}
       baseTable={baseTable}

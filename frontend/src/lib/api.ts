@@ -25,6 +25,7 @@ import type {
   SavedViewDefinition,
   ViewDraft,
   FkHop,
+  ReachableTable,
   ColumnSamplesResponse,
   TableRelationships,
 } from './types';
@@ -32,6 +33,7 @@ import {
   mockFetchTables,
   mockFetchColumns,
   mockFetchTableRelationships,
+  mockFetchFkReachable,
   mockFetchRows,
   mockFetchConnectionStatus,
   mockFetchDisplayConfig,
@@ -434,6 +436,21 @@ export async function fetchFkPath(
     }
     throw error;
   }
+}
+
+export async function fetchFkReachable(
+  baseSchema: string,
+  baseTable: string,
+): Promise<ReachableTable[]> {
+  if (USE_MOCK) return mockFetchFkReachable(baseSchema, baseTable);
+  const searchParams = new URLSearchParams({
+    base_schema: baseSchema,
+    base_table: baseTable,
+  });
+  const path = `/api/views/fk-reachable?${searchParams.toString()}`;
+  const data = await apiFetch<{ tables: ReachableTable[] }>(path);
+  assertShape(data, ['tables'], '/api/views/fk-reachable');
+  return data.tables;
 }
 
 export async function fetchColumnSamples(

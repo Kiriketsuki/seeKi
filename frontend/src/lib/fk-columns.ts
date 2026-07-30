@@ -38,3 +38,15 @@ export function fkBadgeTarget(
   if (!edges || edges.length === 0) return null;
   return edges.find((edge) => edge.target.allowed) ?? edges[0];
 }
+
+/**
+ * The plain-language badge for an FK reachability hop count. One hop means
+ * the table sits behind a single foreign key, more than one means the path
+ * runs through at least one other table. Returns an empty string when the
+ * hop count is missing or not positive, so the caller can skip the badge.
+ */
+export function hopBadgeLabel(hops: number | undefined): string {
+  if (hops === 1) return 'Directly linked';
+  if (hops !== undefined && hops > 1) return 'Linked through another table';
+  return '';
+}
