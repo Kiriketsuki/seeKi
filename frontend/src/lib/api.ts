@@ -253,7 +253,10 @@ export interface FetchRowsParams {
   page_size?: number;
   sort?: string;
   search?: string;
+  /** Substring filters, serialized as `filter.{column}`. */
   filters?: Record<string, string>;
+  /** Exact-match filters, serialized as `eq.{column}`. */
+  exact_filters?: Record<string, string>;
 }
 
 export interface ViewRowsParams extends FetchRowsParams {}
@@ -288,6 +291,11 @@ function buildRowsQueryString(params?: FetchRowsParams): string {
   if (params?.filters) {
     for (const [col, val] of Object.entries(params.filters)) {
       searchParams.set(`filter.${col}`, val);
+    }
+  }
+  if (params?.exact_filters) {
+    for (const [col, val] of Object.entries(params.exact_filters)) {
+      searchParams.set(`eq.${col}`, val);
     }
   }
   const qs = searchParams.toString();
