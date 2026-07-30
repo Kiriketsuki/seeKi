@@ -11,8 +11,8 @@ use tokio::sync::RwLock;
 use super::{
     ColumnInfo, ExportQueryParams, FkHop, QueryResult, RelationshipEdge, RowQueryParams,
     SavedViewAggregate, SavedViewColumn, SavedViewColumnKind, SavedViewSortDirection,
-    SortDirection, SortEntry, TableInfo, ValidationError, ViewAggregate, ViewColumn,
-    ViewColumnRef, ViewDefinitionShape, ViewDerivedColumn, ViewDerivedInput, ViewDerivedInputKind,
+    SortDirection, SortEntry, TableInfo, ValidationError, ViewAggregate, ViewColumn, ViewColumnRef,
+    ViewDefinitionShape, ViewDerivedColumn, ViewDerivedInput, ViewDerivedInputKind,
     ViewDerivedOperation, ViewDraft, ViewExportQueryParams, ViewFilterValue, ViewOrderBy,
     ViewRowsQueryParams, ViewSelfDirection, ViewSourceKind,
 };
@@ -893,7 +893,9 @@ fn reachable_tables_bfs(edges: &[FkEdge], base: &TableKey) -> Vec<(TableKey, u32
         }
     }
 
-    result.sort_by(|(a_key, a_hops), (b_key, b_hops)| a_hops.cmp(b_hops).then_with(|| a_key.cmp(b_key)));
+    result.sort_by(|(a_key, a_hops), (b_key, b_hops)| {
+        a_hops.cmp(b_hops).then_with(|| a_key.cmp(b_key))
+    });
     result
 }
 
@@ -1492,7 +1494,10 @@ pub async fn table_relationships(
         anyhow::bail!("Invalid table name: {table}");
     }
     let edges = get_fk_edges_cached(pool, schema).await?;
-    Ok(build_table_relationships(&edges, &TableKey::new(schema, table)))
+    Ok(build_table_relationships(
+        &edges,
+        &TableKey::new(schema, table),
+    ))
 }
 
 pub async fn lookup_fk_path(
@@ -1521,7 +1526,11 @@ pub async fn lookup_fk_path(
 /// Cap a raw row count at 1000 and report whether the true count exceeds it.
 /// The UI shows "1000+" instead of an unbounded number for a heavily referenced row.
 fn cap_count(count: i64) -> (i64, bool) {
-    if count > 1000 { (1000, true) } else { (count, false) }
+    if count > 1000 {
+        (1000, true)
+    } else {
+        (count, false)
+    }
 }
 
 /// Count rows in the source table of one incoming FK edge whose FK columns equal
@@ -4275,12 +4284,8 @@ mod tests {
         assert_eq!(cond, "\"price\" = $1::numeric");
         assert_eq!(bind.as_deref(), Some("19.99"));
 
-        let (cond, bind) = exact_filter_condition(
-            "token",
-            "uuid",
-            "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-            1,
-        );
+        let (cond, bind) =
+            exact_filter_condition("token", "uuid", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", 1);
         assert_eq!(cond, "\"token\" = $1::uuid");
         assert!(bind.is_some());
 
@@ -4294,10 +4299,22 @@ mod tests {
 
     #[test]
     fn exact_filter_condition_collapses_malformed_values_to_false() {
-        assert_eq!(exact_filter_condition("id", "bigint", "42abc", 1).0, "FALSE");
-        assert_eq!(exact_filter_condition("price", "numeric", "cheap", 1).0, "FALSE");
-        assert_eq!(exact_filter_condition("token", "uuid", "not-a-uuid", 1).0, "FALSE");
-        assert_eq!(exact_filter_condition("ok", "boolean", "maybe", 1).0, "FALSE");
+        assert_eq!(
+            exact_filter_condition("id", "bigint", "42abc", 1).0,
+            "FALSE"
+        );
+        assert_eq!(
+            exact_filter_condition("price", "numeric", "cheap", 1).0,
+            "FALSE"
+        );
+        assert_eq!(
+            exact_filter_condition("token", "uuid", "not-a-uuid", 1).0,
+            "FALSE"
+        );
+        assert_eq!(
+            exact_filter_condition("ok", "boolean", "maybe", 1).0,
+            "FALSE"
+        );
     }
 
     #[test]
@@ -4387,8 +4404,8 @@ mod tests {
         exact.insert("vehicle_id".to_string(), "ADT3".to_string());
         exact.insert("is_active".to_string(), "yes".to_string());
 
-        let qb = build_query_clauses(&columns, None, &HashMap::new(), &exact, &[], false, 1)
-            .unwrap();
+        let qb =
+            build_query_clauses(&columns, None, &HashMap::new(), &exact, &[], false, 1).unwrap();
 
         // Sorted by column name: id, is_active, vehicle_id.
         assert_eq!(
@@ -4901,13 +4918,7 @@ mod tests {
                 &["id"],
                 "orders_apple_fkey",
             ),
-            fk_edge(
-                "apples",
-                "trees",
-                &["tree_id"],
-                &["id"],
-                "apples_tree_fkey",
-            ),
+            fk_edge("apples", "trees", &["tree_id"], &["id"], "apples_tree_fkey"),
         ];
 
         let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));

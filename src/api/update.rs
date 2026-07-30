@@ -339,7 +339,7 @@ pub async fn apply_update(
 
             // Require the SHA256 sidecar to be present in the release manifest
             // before downloading anything — fail fast if the release is incomplete.
-            let sha256_asset_name = format!("{}.sha256", &asset.name);
+            let sha256_asset_name = format!("{}.sha256", asset.name);
             let sha256_asset = release
                 .assets
                 .iter()
