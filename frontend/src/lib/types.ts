@@ -3,6 +3,10 @@ export interface TableInfo {
   name: string;
   display_name: string;
   row_count_estimate: number | null;
+  /** True when the relation is a partitioned parent table. */
+  is_partitioned?: boolean;
+  /** Qualified "schema.name" of the parent when the relation is a partition child. */
+  partition_parent?: string | null;
 }
 
 export interface ColumnInfo {
