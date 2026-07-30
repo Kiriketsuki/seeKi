@@ -183,6 +183,18 @@ export interface TableRelationships {
   incoming: IncomingRelationship[];
 }
 
+/** One incoming FK edge's capped row count, as returned by /references. */
+export interface ReferenceEntry {
+  schema: string;
+  table: string;
+  display_name: string;
+  /** FK columns on the source table, in constraint order. */
+  columns: string[];
+  count: number;
+  /** True when `count` is 1000 because the true count exceeds the cap. */
+  capped: boolean;
+}
+
 export interface SavedViewSummary {
   id: number;
   name: string;
@@ -240,6 +252,10 @@ export interface SavedViewResponse {
 
 export interface FkPathResponse {
   path: FkHop[];
+}
+
+export interface ReferencesResponse {
+  references: ReferenceEntry[];
 }
 
 export interface ColumnSamplesResponse {

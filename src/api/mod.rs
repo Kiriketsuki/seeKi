@@ -21,7 +21,8 @@ use crate::app_mode::{AppMode, SharedAppMode};
 use crate::config::{display_name_column, display_name_table};
 use crate::db::postgres::is_valid_identifier;
 use crate::db::{
-    ColumnInfo, ExportQueryParams, RowQueryParams, SortDirection, SortEntry, ValidationError,
+    ColumnInfo, ExportQueryParams, RelationshipEdge, RowQueryParams, SortDirection, SortEntry,
+    ValidationError,
 };
 use crate::store::{Store, display_names};
 
@@ -37,6 +38,10 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
         .route(
             "/tables/{schema}/{table}/relationships",
             get(get_relationships),
+        )
+        .route(
+            "/tables/{schema}/{table}/references",
+            get(get_references),
         )
         .route("/tables/{schema}/{table}/samples", get(get_column_samples))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
@@ -442,6 +447,95 @@ async fn get_relationships(
     Ok(Json(
         serde_json::json!({ "outgoing": outgoing, "incoming": incoming }),
     ))
+}
+
+/// GET /api/tables/{schema}/{table}/references — capped count of rows in every
+/// other table that references this row, one entry per matching incoming FK
+/// edge. The `eq.` query parameters carry the current row's referenced column
+/// values, the same namespace `get_rows` uses for exact-match filters.
+async fn get_references(
+    Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
+    Path((schema, table)): Path<(String, String)>,
+    Query(all_params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
+    if !is_valid_identifier(&schema) || !is_valid_identifier(&table) {
+        return Err(AppError::bad_request("Invalid schema or table name"));
+    }
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
+    }
+
+    let exact_filters = parse_exact_filters(&all_params);
+    if exact_filters.is_empty() {
+        return Err(AppError::bad_request(
+            "At least one `eq.` filter is required to look up related rows",
+        ));
+    }
+
+    let (_, incoming) = state
+        .db
+        .table_relationships(&schema, &table)
+        .await
+        .map_err(|e| map_table_query_error(e, &table))?;
+
+    let overrides = display_names::list_display_names(store.pool()).await?;
+    let override_map: HashMap<(String, String), String> = overrides
+        .into_iter()
+        .map(|e| ((e.schema_name, e.table_name), e.display_name))
+        .collect();
+    let far_display_name = |far_schema: &str, far_table: &str| {
+        override_map
+            .get(&(far_schema.to_string(), far_table.to_string()))
+            .cloned()
+            .unwrap_or_else(|| display_name_table(far_schema, far_table, &state.config.display))
+    };
+
+    // Keep only edges whose source table is allowlisted, and whose referenced
+    // columns on this table are all present in the `eq.` filters.
+    let candidates: Vec<(&RelationshipEdge, Vec<String>)> = incoming
+        .iter()
+        .filter(|edge| state.config.tables.allows(&edge.other_schema, &edge.other_table))
+        .filter_map(|edge| {
+            let values: Option<Vec<String>> = edge
+                .columns
+                .iter()
+                .map(|col| exact_filters.get(col).cloned())
+                .collect();
+            values.map(|values| (edge, values))
+        })
+        .collect();
+
+    let counts = futures::future::join_all(candidates.iter().map(|(edge, values)| {
+        state
+            .db
+            .count_referencing_rows(&edge.other_schema, &edge.other_table, &edge.other_columns, values)
+    }))
+    .await;
+
+    let mut references: Vec<serde_json::Value> = Vec::with_capacity(candidates.len());
+    for ((edge, _), result) in candidates.iter().zip(counts.into_iter()) {
+        let (count, capped) = result.map_err(|e| map_table_query_error(e, &edge.other_table))?;
+        references.push(serde_json::json!({
+            "schema": edge.other_schema,
+            "table": edge.other_table,
+            "display_name": far_display_name(&edge.other_schema, &edge.other_table),
+            "columns": edge.other_columns,
+            "count": count,
+            "capped": capped,
+        }));
+    }
+    references.sort_by(|a, b| {
+        a["display_name"]
+            .as_str()
+            .unwrap_or_default()
+            .cmp(b["display_name"].as_str().unwrap_or_default())
+    });
+
+    Ok(Json(serde_json::json!({ "references": references })))
 }
 
 #[derive(Deserialize)]

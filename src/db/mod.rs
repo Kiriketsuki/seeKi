@@ -619,6 +619,22 @@ impl DatabasePool {
         }
     }
 
+    /// Count rows in one incoming edge's source table whose FK columns equal
+    /// the given values, capped at 1000. Returns `(count, capped)`.
+    pub async fn count_referencing_rows(
+        &self,
+        schema: &str,
+        table: &str,
+        source_columns: &[String],
+        values: &[String],
+    ) -> anyhow::Result<(i64, bool)> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::count_referencing_rows(pool, schema, table, source_columns, values).await
+            }
+        }
+    }
+
     pub async fn sample_column_values(
         &self,
         schema: &str,

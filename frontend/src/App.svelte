@@ -24,6 +24,7 @@
     fetchRows,
     fetchSettings,
     fetchStatus,
+    fetchTableReferences,
     fetchTableRelationships,
     fetchTables,
     fetchUpdateStatus,
@@ -45,6 +46,7 @@
     PageSizePreference,
     PaginationMode,
     QueryResult,
+    ReferenceEntry,
     SavedViewDefinition,
     SavedViewSummary,
     SettingsEntries,
@@ -86,6 +88,7 @@
     resetState,
     type RowCapState,
   } from './lib/infinite-scroll';
+  import { buildJumpFilters, buildReferenceParams } from './lib/related-rows';
 
   function setSidebarMode(mode: SidebarMode) {
     sidebarMode.set(mode);
@@ -165,6 +168,13 @@
   // Exact-match filters (`eq.` params). FK jump navigation creates them.
   // There is no manual creation UI, the chips above the grid remove them.
   let exactFilters: Record<string, string> = $state({});
+  // "Related information" popover: which row opened it, its loaded entries,
+  // and whether the /references request is still in flight.
+  let relatedRowsOpen: boolean = $state(false);
+  let relatedRowsLoading: boolean = $state(false);
+  let relatedRowsEntries: ReferenceEntry[] = $state([]);
+  let relatedRowsRow: Record<string, unknown> | null = $state(null);
+  let relatedRowsRequestId = 0;
   let searchTerm: string = $state('');
   let searchVisible: boolean = $state(false);
   let columnsOpen: boolean = $state(false);
@@ -697,7 +707,7 @@
     return info?.display_name ?? column;
   }
 
-  async function selectTable(table: TableInfo) {
+  async function selectTable(table: TableInfo, opts?: { exactFilters?: Record<string, string> }) {
     const myRequest = ++navRequestId;
     tablesSurface = { kind: 'table' };
     selectedSchema = table.schema;
@@ -707,8 +717,9 @@
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
-    exactFilters = {};
+    exactFilters = opts?.exactFilters ? { ...opts.exactFilters } : {};
     columnsOpen = false;
+    handleCloseRelatedRows();
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -732,19 +743,19 @@
 
       relationships = rels;
 
-      if (lastUsed) {
+      // A jump from "Related information" lands on a clean exact-filtered view:
+      // the last-used sort/filter/search state stays unapplied so it does not
+      // fight the jump's own filters. The page-size preference still applies.
+      if (lastUsed && !opts?.exactFilters) {
         initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
           column: col,
           direction: dir,
         }));
         initialFilters = lastUsed.filters;
         initialSearch = lastUsed.search_term ?? '';
-        if (lastUsed.page_size != null && isPageSizePreference(lastUsed.page_size)) {
-          pageSize = lastUsed.page_size;
-        } else {
-          const globalPageSize = parseDataSettings(appSettings).pageSize;
-          pageSize = globalPageSize;
-        }
+      }
+      if (lastUsed?.page_size != null && isPageSizePreference(lastUsed.page_size)) {
+        pageSize = lastUsed.page_size;
       } else {
         pageSize = parseDataSettings(appSettings).pageSize;
       }
@@ -790,6 +801,59 @@
     }
   }
 
+  function handleCloseRelatedRows() {
+    relatedRowsOpen = false;
+    relatedRowsLoading = false;
+    relatedRowsEntries = [];
+    relatedRowsRow = null;
+  }
+
+  // Loads the capped reference counts for one row's "Related information" popover.
+  // Omits the request entirely when the row carries no non-null referenced value,
+  // showing the empty state right away instead of a request that would 400.
+  async function handleRelatedRows(row: Record<string, unknown>) {
+    const myRequest = ++relatedRowsRequestId;
+    relatedRowsRow = row;
+    relatedRowsOpen = true;
+    relatedRowsEntries = [];
+
+    const params = buildReferenceParams(relationships, row);
+    if (Object.keys(params).length === 0) {
+      relatedRowsLoading = false;
+      return;
+    }
+
+    relatedRowsLoading = true;
+    try {
+      const result = await fetchTableReferences(selectedSchema, selectedTable, params);
+      if (myRequest !== relatedRowsRequestId) return;
+      relatedRowsEntries = result.references;
+    } catch {
+      if (myRequest !== relatedRowsRequestId) return;
+      relatedRowsEntries = [];
+    } finally {
+      if (myRequest === relatedRowsRequestId) relatedRowsLoading = false;
+    }
+  }
+
+  // Jumps to the source table of one related-rows entry, pre-filtered on the
+  // clicked row's referenced values so the destination shows only its matches.
+  function handleRelatedRowSelect(entry: ReferenceEntry) {
+    const sourceRow = relatedRowsRow;
+    handleCloseRelatedRows();
+    if (!sourceRow) return;
+
+    const jumpFilters = buildJumpFilters(relationships, sourceRow, entry);
+    if (!jumpFilters) return;
+
+    const sourceTable = tables.find(
+      (t) => t.schema === entry.schema && t.name === entry.table,
+    );
+    if (!sourceTable) return;
+
+    void selectTable(sourceTable, { exactFilters: jumpFilters });
+  }
+
   // Optimistically renames a table in the sidebar/header, persists via PUT, then
   // reconciles with the server-resolved name (UI override > seeki.toml > heuristic).
   // Reverts and surfaces an error through the existing tableError banner on failure.
@@ -825,6 +889,7 @@
     filtersVisible = false;
     exactFilters = {};
     columnsOpen = false;
+    handleCloseRelatedRows();
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -1519,10 +1584,17 @@
                       {fetchingMore}
 
                       {resetSignal}
+                      hasIncoming={tablesSurface.kind === 'table' && (relationships?.incoming.length ?? 0) > 0}
+                      {relatedRowsOpen}
+                      {relatedRowsLoading}
+                      {relatedRowsEntries}
                       onSortChange={handleSortChange}
                       onFilterChange={handleFilterChange}
                       onNearBottom={() => { if (paginationMode === 'infinite' && !appendError) void loadMoreRows(); }}
                       onRetryAppend={() => { appendError = false; void loadMoreRows(); }}
+                      onRelatedRows={handleRelatedRows}
+                      onRelatedRowSelect={handleRelatedRowSelect}
+                      onCloseRelatedRows={handleCloseRelatedRows}
                     />
                   </div>
                   {#if hasSurfaceSelection}
