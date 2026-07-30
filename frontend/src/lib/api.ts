@@ -24,6 +24,7 @@ import type {
   SavedViewSummary,
   SavedViewDefinition,
   ViewDraft,
+  ViewDefinitionShape,
   FkHop,
   ColumnSamplesResponse,
   TableRelationships,
@@ -36,6 +37,7 @@ import {
   mockFetchTableRelationships,
   mockFetchTableReferences,
   mockFetchRows,
+  mockFetchTransientViewRows,
   mockFetchTableRow,
   mockFetchConnectionStatus,
   mockFetchDisplayConfig,
@@ -305,6 +307,33 @@ export async function fetchRows(
   const result = await apiFetch<QueryResult>(path);
   assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], base);
   return result;
+}
+
+export interface TransientViewQueryBody {
+  base_schema: string;
+  base_table: string;
+  shape: ViewDefinitionShape;
+  page?: number;
+  page_size?: number;
+  sort?: string;
+  search?: string;
+  filters?: Record<string, string>;
+  exact_filters?: Record<string, string>;
+}
+
+/**
+ * Run a view shape without saving it. Used for inline related columns: the
+ * caller builds a shape on the fly (see buildRelatedShape in view-shape.ts)
+ * and gets back the same QueryResult shape a table or saved view returns.
+ */
+export async function fetchTransientViewRows(
+  body: TransientViewQueryBody,
+): Promise<QueryResult> {
+  if (USE_MOCK) return mockFetchTransientViewRows(body);
+  const path = '/api/views/query';
+  const data = await apiPost<QueryResult>(path, body);
+  assertShape(data, ['columns', 'rows', 'total_rows', 'page', 'page_size'], path);
+  return data;
 }
 
 /**

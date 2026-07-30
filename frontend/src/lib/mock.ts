@@ -11,7 +11,9 @@ import type {
   TableRowResponse,
   UpdateStatus,
   VersionInfo,
+  ViewColumn,
 } from './types';
+import { resolveViewColumnOutputNames } from './view-shape';
 
 const MOCK_ROW_COUNT = 200;
 
@@ -622,6 +624,81 @@ export function mockFetchRows(
     total_rows: filteredTotal,
     page,
     page_size: pageSize,
+  };
+}
+
+export type MockTransientViewQueryColumn = ViewColumn;
+
+export interface MockTransientViewQueryBody {
+  base_schema: string;
+  base_table: string;
+  shape: { columns: MockTransientViewQueryColumn[] };
+  page?: number;
+  page_size?: number;
+  sort?: string;
+  search?: string;
+  filters?: Record<string, string>;
+  exact_filters?: Record<string, string>;
+}
+
+/**
+ * Mock support for POST /api/views/query. Covers the orders -> users join
+ * fixture only, joining on `user_id`, which is enough for mock mode to
+ * render a picked user column inline on the orders table.
+ */
+export function mockFetchTransientViewRows(
+  body: MockTransientViewQueryBody,
+): QueryResult {
+  const baseResult = mockFetchRows(body.base_schema, body.base_table, {
+    page: body.page,
+    page_size: body.page_size,
+    sort: body.sort,
+    search: body.search,
+    filters: body.filters,
+  });
+
+  const usersById =
+    body.base_table === 'orders'
+      ? new Map(getRows('users', TABLES.find((t) => t.name === 'users')?.row_count_estimate ?? 50)
+          .map((row) => [Number(row.id), row] as const))
+      : new Map<number, Record<string, unknown>>();
+
+  // Mock mode shares the real output-name resolution, so a collision renames
+  // a column here exactly as the backend renames it.
+  const outputNames = resolveViewColumnOutputNames(body.shape.columns);
+
+  const rows = baseResult.rows.map((row) => {
+    const related = usersById.get(Number(row.user_id));
+    const output: Record<string, unknown> = {};
+    body.shape.columns.forEach((column, index) => {
+      const outputName = outputNames[index];
+      output[outputName] =
+        column.source_table === body.base_table
+          ? row[column.column_name]
+          : (related?.[column.column_name] ?? null);
+    });
+    return output;
+  });
+
+  const columns: ColumnInfo[] = body.shape.columns.map((column, index) => {
+    const sourceColumns = COLUMNS[column.source_table] ?? [];
+    const info = sourceColumns.find((c) => c.name === column.column_name);
+    return {
+      name: outputNames[index],
+      display_name: info?.display_name ?? column.column_name,
+      data_type: info?.data_type ?? 'text',
+      display_type: info?.display_type ?? 'text',
+      is_nullable: info?.is_nullable ?? true,
+      is_primary_key: false,
+    };
+  });
+
+  return {
+    columns,
+    rows,
+    total_rows: baseResult.total_rows,
+    page: baseResult.page,
+    page_size: baseResult.page_size,
   };
 }
 

@@ -23,6 +23,7 @@ pub fn router() -> Router {
     Router::new()
         .route("/", get(list_saved_views).post(create_saved_view))
         .route("/preview", post(preview_saved_view))
+        .route("/query", post(query_transient_view))
         .route("/fk-path", get(get_fk_path))
         .route(
             "/{id}",
@@ -54,6 +55,31 @@ struct PreviewSavedViewBody {
 #[derive(Debug, Deserialize)]
 struct RenameSavedViewBody {
     name: String,
+}
+
+/// Body for a one-off (transient) view query. Unlike a saved view, this
+/// shape never touches the local SQLite store. The caller supplies the full
+/// definition and the paging/sort/search/filter parameters in one request,
+/// so the frontend can preview inline related columns without first saving
+/// a view.
+#[derive(Debug, Deserialize)]
+struct TransientViewQueryBody {
+    base_schema: String,
+    base_table: String,
+    shape: ViewDefinitionShape,
+    #[serde(default = "super::default_page")]
+    page: u32,
+    #[serde(default = "super::default_page_size")]
+    page_size: u32,
+    sort: Option<String>,
+    search: Option<String>,
+    #[serde(default)]
+    filters: HashMap<String, String>,
+    /// Exact-match filters, the body equivalent of the `eq.` query-param
+    /// namespace. An FK jump carries these, so the transient path must apply
+    /// them instead of returning the whole table.
+    #[serde(default)]
+    exact_filters: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -420,6 +446,71 @@ async fn preview_saved_view(
     Ok(Json(serde_json::json!(result)))
 }
 
+/// POST /api/views/query — run a view shape without persisting it.
+/// Mirrors `preview_saved_view` for validation and `get_saved_view_rows` for
+/// execution, so a transient shape (built on the fly for inline related
+/// columns) goes through the exact same allowlist and identifier checks as
+/// a saved view.
+async fn query_transient_view(
+    Extension(mode): Extension<SharedAppMode>,
+    Json(body): Json<TransientViewQueryBody>,
+) -> Result<Json<serde_json::Value>, super::AppError> {
+    let (state, _conn_id) = current_state_and_conn_id(&mode).await?;
+    if body.shape.columns.is_empty() {
+        return Err(super::AppError::bad_request(
+            "Views must include at least one selected column",
+        ));
+    }
+    validate_view_definition(&state, &body.base_schema, &body.base_table, &body.shape)?;
+
+    let sort = parse_sort_without_validation(body.sort.as_deref())?;
+    let page = body.page.max(1);
+    let page_size = body.page_size.clamp(1, super::MAX_PAGE_SIZE);
+
+    let result = match planner_compatibility_for_shape(&body.shape)? {
+        PlannerCompatibility::Legacy(legacy) => {
+            state
+                .db
+                .query_view_rows(&ViewRowsQueryParams {
+                    draft: ViewDraft {
+                        base_schema: &body.base_schema,
+                        base_table: &body.base_table,
+                        columns: &legacy.columns,
+                        filters: &legacy.filters,
+                    },
+                    page,
+                    page_size,
+                    sort: &sort,
+                    search: body.search.as_deref(),
+                    filters: &body.filters,
+                    exact_filters: &body.exact_filters,
+                })
+                .await?
+        }
+        PlannerCompatibility::RequiresPlannerV2(_) => {
+            let pg_pool = state.db.pg_pool().ok_or_else(|| {
+                super::AppError::bad_request(
+                    "Advanced view planning is not supported for this database type",
+                )
+            })?;
+            crate::db::postgres::query_view_shape_rows(
+                pg_pool,
+                &body.base_schema,
+                &body.base_table,
+                &body.shape,
+                page,
+                page_size,
+                &sort,
+                body.search.as_deref(),
+                &body.filters,
+                &body.exact_filters,
+            )
+            .await?
+        }
+    };
+    Ok(Json(serde_json::json!(result)))
+}
+
 async fn get_fk_path(
     Extension(mode): Extension<SharedAppMode>,
     Query(query): Query<FkPathQuery>,
@@ -452,6 +543,9 @@ async fn get_saved_view_rows(
     super::reject_legacy_sort_params(&all_params)?;
     let sort = parse_sort_without_validation(params.sort.as_deref())?;
     let filters = super::parse_filters(&all_params);
+    // Saved-view rows keep the substring-filter-only contract they shipped
+    // with. The `eq.` namespace stays a table-surface feature.
+    let exact_filters: HashMap<String, String> = HashMap::new();
     let result = match planner_compatibility_for_shape(&view.shape)? {
         PlannerCompatibility::Legacy(legacy) => {
             state
@@ -468,6 +562,7 @@ async fn get_saved_view_rows(
                     sort: &sort,
                     search: params.search.as_deref(),
                     filters: &filters,
+                    exact_filters: &exact_filters,
                 })
                 .await?
         }
@@ -487,6 +582,7 @@ async fn get_saved_view_rows(
                 &sort,
                 params.search.as_deref(),
                 &filters,
+                &exact_filters,
             )
             .await?
         }
@@ -928,6 +1024,128 @@ mod tests {
                 .unwrap()
                 .contains("is not exposed in this SeeKi connection")
         );
+    }
+
+    #[tokio::test]
+    async fn query_transient_view_rejects_non_exposed_table_before_touching_postgres() {
+        let mut config = test_app_config();
+        config.tables = TablesConfig {
+            include: Some(vec!["public.orders".into()]),
+            exclude: None,
+        };
+        let (app, _dir) = test_router(config).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/views/query")
+                    .header(axum::http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "base_schema":"public",
+                            "base_table":"orders",
+                            "shape":{
+                                "columns":[
+                                    {"source_schema":"public","source_table":"customers","column_name":"id"}
+                                ],
+                                "filters":{}
+                            }
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("is not exposed in this SeeKi connection")
+        );
+    }
+
+    #[tokio::test]
+    async fn query_transient_view_rejects_empty_column_list() {
+        let (app, _dir) = test_router(test_app_config()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/views/query")
+                    .header(axum::http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "base_schema":"public",
+                            "base_table":"orders",
+                            "shape":{"columns":[],"filters":{}}
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("at least one selected column")
+        );
+    }
+
+    #[test]
+    fn transient_view_query_page_size_clamps_to_max() {
+        let requested: u32 = 5000;
+        assert_eq!(requested.clamp(1, super::super::MAX_PAGE_SIZE), 1000);
+        let requested_zero: u32 = 0;
+        assert_eq!(requested_zero.clamp(1, super::super::MAX_PAGE_SIZE), 1);
+    }
+
+    #[test]
+    fn transient_view_query_body_carries_both_filter_namespaces() {
+        // An FK jump sends exact filters. The transient body must keep them
+        // separate from substring filters instead of dropping them.
+        let body: super::TransientViewQueryBody = serde_json::from_str(
+            r#"{
+                "base_schema":"public",
+                "base_table":"orders",
+                "shape":{"columns":[{"source_schema":"public","source_table":"orders","column_name":"id"}],"filters":{}},
+                "filters":{"status":"ship"},
+                "exact_filters":{"user_id":"42"}
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(body.filters.get("status").map(String::as_str), Some("ship"));
+        assert_eq!(
+            body.exact_filters.get("user_id").map(String::as_str),
+            Some("42")
+        );
+        assert_eq!(body.page, 1);
+    }
+
+    #[test]
+    fn transient_view_query_body_defaults_exact_filters_to_empty() {
+        let body: super::TransientViewQueryBody = serde_json::from_str(
+            r#"{
+                "base_schema":"public",
+                "base_table":"orders",
+                "shape":{"columns":[{"source_schema":"public","source_table":"orders","column_name":"id"}],"filters":{}}
+            }"#,
+        )
+        .unwrap();
+
+        assert!(body.exact_filters.is_empty());
+        assert!(body.filters.is_empty());
     }
 
     #[tokio::test]
