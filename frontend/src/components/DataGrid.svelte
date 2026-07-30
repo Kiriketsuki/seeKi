@@ -30,6 +30,7 @@
   let {
     columns = [],
     relationships = null,
+    relatedColumnLabels = {},
     rows = [],
     dateFormat = 'system',
     sortState = [],
@@ -44,6 +45,8 @@
   }: {
     columns: ColumnInfo[];
     relationships?: TableRelationships | null;
+    /** Maps an output column name to a "from {table}" suffix, for inline related columns. */
+    relatedColumnLabels?: Record<string, string>;
     rows: Record<string, unknown>[];
     dateFormat?: DateFormatPreference;
     sortState?: SortState;
@@ -163,6 +166,7 @@
     const info = columnsByName.get(String(props.prop));
     const label = info ? getColumnDisplayName(info) : String(props.name ?? props.prop);
     const fkBadge = fkBadgeTarget(fkColumns.get(String(props.prop)));
+    const relatedFromLabel = relatedColumnLabels[String(props.prop)] ?? null;
     const showFilters = Boolean(
       (props as ColumnTemplateProp & { showFilters?: boolean }).showFilters
     );
@@ -220,6 +224,13 @@
           },
           [
             h('span', { class: { 'sk-grid-header__label': true } }, label),
+            relatedFromLabel
+              ? h(
+                  'span',
+                  { class: { 'sk-grid-header__related': true } },
+                  relatedFromLabel,
+                )
+              : null,
             fkBadge
               ? h(
                   'span',
@@ -693,6 +704,15 @@
   /* Active sort arrow — amber (count accent = selection/attention per token semantics) */
   .grid-card :global(.sk-grid-header__sort.is-active) {
     color: var(--sk-accent-count);
+  }
+
+  /* Inline related-column suffix — muted, sits right after the header label */
+  .grid-card :global(.sk-grid-header__related) {
+    flex: 0 0 auto;
+    color: var(--sk-ink-muted);
+    font-size: var(--sk-font-size-xs);
+    font-weight: 400;
+    white-space: nowrap;
   }
 
   /* FK link badge — teal (interaction accent), sits after the header label */

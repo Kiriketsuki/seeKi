@@ -15,6 +15,7 @@
   import RowCapWarning from './components/RowCapWarning.svelte';
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
+  import RelatedColumnsPicker from './components/RelatedColumnsPicker.svelte';
   import {
     buildViewCsvUrl,
     deleteView,
@@ -26,6 +27,7 @@
     fetchStatus,
     fetchTableRelationships,
     fetchTables,
+    fetchTransientViewRows,
     fetchUpdateStatus,
     fetchView,
     fetchViewRows,
@@ -44,6 +46,7 @@
     FilterState,
     PageSizePreference,
     PaginationMode,
+    PickedRelatedColumn,
     QueryResult,
     SavedViewDefinition,
     SavedViewSummary,
@@ -62,6 +65,12 @@
     ViewRanking,
     ViewSourceRef,
   } from './lib/types';
+  import {
+    buildRelatedShape,
+    loadRelatedColumns,
+    resolveViewColumnOutputNames,
+    saveRelatedColumns,
+  } from './lib/view-shape';
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import {
     createGridRefreshController,
@@ -145,7 +154,17 @@
   let selectedTable: string = $state('');
   let selectedView: SavedViewDefinition | null = $state(null);
   let columns: ColumnInfo[] = $state([]);
+  // Base table columns as returned by fetchColumns, independent of any
+  // related-column overlay. buildRelatedShape needs the plain base-table
+  // column list, which `columns` no longer holds once a transient shape's
+  // QueryResult.columns overwrite it.
+  let baseTableColumns: ColumnInfo[] = $state([]);
   let relationships: TableRelationships | null = $state(null);
+  // Inline related columns picked for the current table, persisted to
+  // localStorage per table. Non-empty means row fetching for this table
+  // goes through the transient view-query endpoint instead of plain rows.
+  let relatedColumns: PickedRelatedColumn[] = $state([]);
+  let relatedColumnsPickerOpen: boolean = $state(false);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
   let appSettings: SettingsEntries = $state({});
@@ -268,6 +287,37 @@
   });
   let selectedViewId = $derived.by(() =>
     tablesSurface.kind === 'view' ? tablesSurface.viewId : null
+  );
+  // The shape of the transient view-query the current related-column picks
+  // imply. Null when there is nothing to overlay, so plain fetchRows stays
+  // the path for a table with no related columns picked.
+  let currentRelatedShape = $derived.by(() =>
+    tablesSurface.kind === 'table' && relatedColumns.length > 0 && baseTableColumns.length > 0
+      ? buildRelatedShape(selectedSchema, selectedTable, baseTableColumns, relatedColumns)
+      : null
+  );
+  // Maps an output column name (as returned by the transient view query) to
+  // a "from {table}" label, for the header suffix DataGrid renders.
+  let relatedColumnLabels = $derived.by((): Record<string, string> => {
+    const shape = currentRelatedShape;
+    if (!shape) return {};
+    const outputNames = resolveViewColumnOutputNames(shape.columns);
+    const labels: Record<string, string> = {};
+    shape.columns.forEach((column, index) => {
+      const picked = relatedColumns.find(
+        (p) =>
+          p.schema === column.source_schema &&
+          p.table === column.source_table &&
+          p.column === column.column_name,
+      );
+      if (picked) {
+        labels[outputNames[index]] = `from ${picked.tableDisplayName}`;
+      }
+    });
+    return labels;
+  });
+  let hasAllowedRelatedTargets = $derived.by(() =>
+    (relationships?.outgoing ?? []).some((edge) => edge.target.allowed)
   );
   let hasSurfaceSelection = $derived.by(() => {
     if (tablesSurface.kind === 'view') {
@@ -654,6 +704,44 @@
     }, 500);
   }
 
+  // Toggling related columns on or off changes the output column set, so any
+  // stale sort reference must clear rather than point at a column that no
+  // longer exists in the result.
+  function handleRelatedColumnsChange(next: PickedRelatedColumn[]) {
+    relatedColumns = next;
+    saveRelatedColumns(selectedSchema, selectedTable, next);
+    sortState = [];
+    void resetAndLoadRows([], filters, searchTerm);
+  }
+
+  /**
+   * Fetch rows for the table surface, routing through the transient
+   * view-query endpoint when related columns are picked for this table, and
+   * through plain fetchRows otherwise. Exact-match (`eq.`) filters from FK
+   * jump navigation are not supported by the transient endpoint, so they are
+   * dropped from the request while related columns are active.
+   */
+  async function fetchTableSurfaceRows(
+    schema: string,
+    table: string,
+    params: FetchRowsParams,
+  ): Promise<QueryResult> {
+    if (relatedColumns.length > 0 && baseTableColumns.length > 0) {
+      const shape = buildRelatedShape(schema, table, baseTableColumns, relatedColumns);
+      return fetchTransientViewRows({
+        base_schema: schema,
+        base_table: table,
+        shape,
+        page: params.page,
+        page_size: params.page_size,
+        sort: params.sort,
+        search: params.search,
+        filters: params.filters,
+      });
+    }
+    return fetchRows(schema, table, params);
+  }
+
   function buildRowsParams(
     page: number,
     nextSortState: SortState = sortState,
@@ -709,6 +797,7 @@
     filtersVisible = false;
     exactFilters = {};
     columnsOpen = false;
+    relatedColumns = loadRelatedColumns(table.schema, table.name);
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -750,6 +839,7 @@
       }
 
       columns = cols;
+      baseTableColumns = cols;
       columnVisibility = loadColumnVisibility(visibilityKey, cols);
       sortState = initialSortState;
       filters = initialFilters;
@@ -763,7 +853,7 @@
       appendError = false;
       resetSignal++;
 
-      const result = await fetchRows(
+      const result = await fetchTableSurfaceRows(
         table.schema,
         table.name,
         buildRowsParams(1, initialSortState, initialFilters, initialSearch),
@@ -771,6 +861,10 @@
       if (myRequest !== navRequestId) return;
 
       queryResult = result;
+      if (relatedColumns.length > 0) {
+        columns = result.columns;
+        columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
+      }
       if (paginationMode === 'infinite') {
         const nextState = appendBatch(
           { rows: [], loadedCount: 0, lastLoadedPage: 0, capState: 'none' },
@@ -824,6 +918,7 @@
     currentPage = 1;
     filtersVisible = false;
     exactFilters = {};
+    relatedColumns = [];
     columnsOpen = false;
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
@@ -885,7 +980,7 @@
         tablesSurface.kind === 'view' && selectedView
           ? await fetchViewRows(selectedView.id, params)
           : tablesSurface.kind === 'table' && selectedSchema && selectedTable
-            ? await fetchRows(selectedSchema, selectedTable, params)
+            ? await fetchTableSurfaceRows(selectedSchema, selectedTable, params)
             : null;
 
       if (myRequest !== navRequestId || result == null) return;
@@ -901,7 +996,7 @@
         lastLoadedPage = nextState.lastLoadedPage;
         rowCapState = nextState.capState;
       }
-      if (tablesSurface.kind === 'view' && selectedView) {
+      if ((tablesSurface.kind === 'view' && selectedView) || (tablesSurface.kind === 'table' && relatedColumns.length > 0)) {
         columns = result.columns;
         columnVisibility = normalizeColumnVisibility(result.columns, columnVisibility);
       }
@@ -935,7 +1030,7 @@
       return fetchViewRows(selectedView.id, params);
     }
     if (tablesSurface.kind === 'table' && selectedSchema && selectedTable) {
-      return fetchRows(selectedSchema, selectedTable, params);
+      return fetchTableSurfaceRows(selectedSchema, selectedTable, params);
     }
     return null;
   }
@@ -1465,6 +1560,15 @@
                   {visibleColumns}
                   {focusedTextColumnName}
                 />
+                {#if tablesSurface.kind === 'table' && hasAllowedRelatedTargets}
+                  <button
+                    type="button"
+                    class="related-columns-btn"
+                    onclick={() => (relatedColumnsPickerOpen = true)}
+                  >
+                    Add related information
+                  </button>
+                {/if}
                 <GridRefreshToolbar
                   surfaceKey={selectedRefreshSurfaceKey ?? ''}
                   intervalMs={refreshSnapshot.intervalMs}
@@ -1511,6 +1615,7 @@
                     <DataGrid
                       columns={visibleColumns}
                       relationships={tablesSurface.kind === 'table' ? relationships : null}
+                      relatedColumnLabels={tablesSurface.kind === 'table' ? relatedColumnLabels : {}}
                       rows={displayRows}
                       dateFormat={appearanceSettings.dateFormat}
                       {sortState}
@@ -1615,6 +1720,15 @@
     onStatusChange={(s) => {
       applyUpdateStatus(s);
     }}
+  />
+  <RelatedColumnsPicker
+    open={relatedColumnsPickerOpen}
+    baseSchema={selectedSchema}
+    baseTable={selectedTable}
+    relationships={tablesSurface.kind === 'table' ? relationships : null}
+    picked={relatedColumns}
+    onSave={handleRelatedColumnsChange}
+    onClose={() => (relatedColumnsPickerOpen = false)}
   />
 {/if}
 
@@ -1724,6 +1838,21 @@
     padding: var(--sk-space-sm) var(--sk-space-sm);
     font: inherit;
     cursor: pointer;
+  }
+
+  .related-columns-btn {
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    background: var(--sk-glass-button);
+    color: var(--sk-secondary-strong);
+    padding: var(--sk-space-sm) var(--sk-space-md);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .related-columns-btn:hover {
+    border-color: rgba(var(--sk-accent-active-rgb), 0.32);
+    color: var(--sk-accent-active-strong);
   }
 
   .toolbar-row {

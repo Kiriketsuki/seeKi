@@ -23,3 +23,6 @@ export const GRID_REFRESH_KEY_PREFIX = 'sk-grid-refresh-';
 
 /** Supported auto-refresh intervals for table and saved-view surfaces. */
 export const GRID_REFRESH_INTERVALS = [0, 15_000, 60_000, 300_000] as const;
+
+/** localStorage key prefix for per-table picked inline related columns. */
+export const RELATED_COLUMNS_KEY_PREFIX = 'sk-related-columns:';

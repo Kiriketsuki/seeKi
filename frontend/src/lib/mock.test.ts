@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { mockFetchTables, mockFetchColumns, mockFetchRows, mockFetchDisplayConfig } from './mock';
+import {
+  mockFetchTables,
+  mockFetchColumns,
+  mockFetchRows,
+  mockFetchDisplayConfig,
+  mockFetchTransientViewRows,
+} from './mock';
 
 describe('mockFetchTables', () => {
   it('returns an array of tables', () => {
@@ -133,6 +139,65 @@ describe('mockFetchRows', () => {
         expect(prevRole <= currRole).toBe(true);
       }
     }
+  });
+});
+
+describe('mockFetchTransientViewRows', () => {
+  it('projects base columns plus a joined related column from users', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [
+          { source_schema: 'public', source_table: 'orders', column_name: 'id' },
+          { source_schema: 'public', source_table: 'orders', column_name: 'user_id' },
+          { source_schema: 'public', source_table: 'users', column_name: 'name' },
+        ],
+      },
+      page: 1,
+      page_size: 5,
+    });
+
+    expect(result.columns.map((c) => c.name)).toEqual(['id', 'user_id', 'name']);
+    expect(result.rows.length).toBeLessThanOrEqual(5);
+    for (const row of result.rows) {
+      expect(row).toHaveProperty('id');
+      expect(row).toHaveProperty('user_id');
+      expect(row).toHaveProperty('name');
+    }
+  });
+
+  it('prefixes colliding column names with the source table', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [
+          { source_schema: 'public', source_table: 'orders', column_name: 'status' },
+          { source_schema: 'public', source_table: 'users', column_name: 'status' },
+        ],
+      },
+      page: 1,
+      page_size: 5,
+    });
+
+    expect(result.columns.map((c) => c.name)).toEqual(['orders__status', 'users__status']);
+  });
+
+  it('respects page and page_size like plain rows', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [{ source_schema: 'public', source_table: 'orders', column_name: 'id' }],
+      },
+      page: 2,
+      page_size: 10,
+    });
+
+    expect(result.page).toBe(2);
+    expect(result.page_size).toBe(10);
+    expect(result.rows.length).toBeLessThanOrEqual(10);
   });
 });
 

@@ -204,6 +204,15 @@ export interface ViewDefinitionShape {
 
 export interface SavedViewDefinition extends SavedViewSummary, ViewDefinitionShape {}
 
+/** One related column picked in RelatedColumnsPicker.svelte, for inline denormalization. */
+export interface PickedRelatedColumn {
+  schema: string;
+  table: string;
+  tableDisplayName: string;
+  column: string;
+  columnDisplayName: string;
+}
+
 export interface ViewDraft extends ViewDefinitionShape {
   name: string;
   base_schema: string;
