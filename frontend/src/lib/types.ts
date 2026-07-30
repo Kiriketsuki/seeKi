@@ -183,6 +183,18 @@ export interface TableRelationships {
   incoming: IncomingRelationship[];
 }
 
+/** One incoming FK edge's capped row count, as returned by /references. */
+export interface ReferenceEntry {
+  schema: string;
+  table: string;
+  display_name: string;
+  /** FK columns on the source table, in constraint order. */
+  columns: string[];
+  count: number;
+  /** True when `count` is 1000 because the true count exceeds the cap. */
+  capped: boolean;
+}
+
 export interface SavedViewSummary {
   id: number;
   name: string;
@@ -203,6 +215,15 @@ export interface ViewDefinitionShape {
 }
 
 export interface SavedViewDefinition extends SavedViewSummary, ViewDefinitionShape {}
+
+/** One related column picked in RelatedColumnsPicker.svelte, for inline denormalization. */
+export interface PickedRelatedColumn {
+  schema: string;
+  table: string;
+  tableDisplayName: string;
+  column: string;
+  columnDisplayName: string;
+}
 
 export interface ViewDraft extends ViewDefinitionShape {
   name: string;
@@ -255,8 +276,20 @@ export interface FkReachableResponse {
   tables: ReachableTable[];
 }
 
+export interface ReferencesResponse {
+  references: ReferenceEntry[];
+}
+
 export interface ColumnSamplesResponse {
   samples: string[];
+}
+
+/** Response of GET /tables/{schema}/{table}/row, used by the FK peek panel. */
+export interface TableRowResponse {
+  row: Record<string, unknown> | null;
+  /** True when the eq. filters matched more than one row; the peek panel shows only the first. */
+  multiple: boolean;
+  columns: ColumnInfo[];
 }
 
 export interface StatusResponse {

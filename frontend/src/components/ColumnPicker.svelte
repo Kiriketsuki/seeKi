@@ -3,6 +3,7 @@
   import { fetchColumnSamples, fetchColumns } from '../lib/api';
   import { hopBadgeLabel } from '../lib/fk-columns';
   import type { ColumnInfo, TableInfo, ViewColumn, ViewDerivedColumn, ViewSourceRef } from '../lib/types';
+  import { buildSourceDefinition as buildSourceDefinitionShared } from '../lib/view-shape';
 
   type PickerMode = 'base' | 'fk' | 'match' | 'self';
   type PickerOperation =
@@ -271,41 +272,19 @@
   });
 
   function buildSourceDefinition(): ViewSourceRef | null {
-    if (mode === 'base') return null;
-    if (mode === 'self') {
-      return {
-        id: activeSourceId ?? `self-${selfDirection}`,
-        kind: 'self',
-        schema: baseSchema,
-        table: baseTable,
-        label: selfDirection === 'previous' ? 'This table again (previous row)' : 'This table again (next row)',
-        self: {
-          entity_column: selfEntityColumn,
-          order_column: selfOrderColumn,
-          direction: selfDirection,
-        },
-      };
-    }
-    if (mode === 'match') {
-      return {
-        id: activeSourceId ?? `match-${selectedSchema}.${selectedTable}`,
-        kind: 'match',
-        schema: selectedSchema,
-        table: selectedTable,
-        label: `Match ${selectedSchema}.${selectedTable}`,
-        match: {
-          base_column: selectedBaseMatchColumn,
-          source_column: selectedSourceMatchColumn,
-        },
-      };
-    }
-    return {
-      id: activeSourceId ?? `fk-${selectedSchema}.${selectedTable}`,
-      kind: 'fk',
-      schema: selectedSchema,
-      table: selectedTable,
-      label: `${selectedSchema}.${selectedTable}`,
-    };
+    return buildSourceDefinitionShared({
+      mode,
+      baseSchema,
+      baseTable,
+      selectedSchema,
+      selectedTable,
+      activeSourceId,
+      selfEntityColumn,
+      selfOrderColumn,
+      selfDirection,
+      selectedBaseMatchColumn,
+      selectedSourceMatchColumn,
+    });
   }
 
   function defaultAliasForOperation(): string {

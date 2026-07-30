@@ -7,9 +7,14 @@ import type {
   SettingsEntries,
   TableRelationships,
   ReachableTable,
+  ReferenceEntry,
+  ReferencesResponse,
+  TableRowResponse,
   UpdateStatus,
   VersionInfo,
+  ViewColumn,
 } from './types';
+import { resolveViewColumnOutputNames } from './view-shape';
 
 const MOCK_ROW_COUNT = 200;
 
@@ -535,6 +540,46 @@ export function mockFetchFkReachable(
   return REACHABLE[table] ?? [];
 }
 
+/**
+ * Capped counts of referencing rows, derived from the same generated mock
+ * rows `mockFetchRows` reads from. Covers users referenced by orders and
+ * tickets, matching the `RELATIONSHIPS.users.incoming` fixture.
+ */
+export function mockFetchTableReferences(
+  _schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): ReferencesResponse {
+  const relationships = RELATIONSHIPS[table];
+  if (!relationships) return { references: [] };
+
+  const references: ReferenceEntry[] = [];
+  for (const edge of relationships.incoming) {
+    const values = edge.columns.map((col) => exactFilters[col]);
+    if (values.some((value) => value == null)) continue;
+
+    const sourceTable = edge.source.table;
+    const info = TABLES.find((t) => t.name === sourceTable);
+    const totalRows = info?.row_count_estimate ?? 0;
+    const allRows = getRows(sourceTable, totalRows);
+    const count = allRows.filter((row) =>
+      edge.source.columns.every((col, i) => String(row[col] ?? '') === values[i]),
+    ).length;
+
+    references.push({
+      schema: edge.source.schema,
+      table: sourceTable,
+      display_name: edge.source.display_name,
+      columns: edge.source.columns,
+      count: Math.min(count, 1000),
+      capped: count > 1000,
+    });
+  }
+
+  references.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  return { references };
+}
+
 export function mockFetchRows(
   _schema: string,
   table: string,
@@ -604,6 +649,111 @@ export function mockFetchRows(
     total_rows: filteredTotal,
     page,
     page_size: pageSize,
+  };
+}
+
+export type MockTransientViewQueryColumn = ViewColumn;
+
+export interface MockTransientViewQueryBody {
+  base_schema: string;
+  base_table: string;
+  shape: { columns: MockTransientViewQueryColumn[] };
+  page?: number;
+  page_size?: number;
+  sort?: string;
+  search?: string;
+  filters?: Record<string, string>;
+  exact_filters?: Record<string, string>;
+}
+
+/**
+ * Mock support for POST /api/views/query. Covers the orders -> users join
+ * fixture only, joining on `user_id`, which is enough for mock mode to
+ * render a picked user column inline on the orders table.
+ */
+export function mockFetchTransientViewRows(
+  body: MockTransientViewQueryBody,
+): QueryResult {
+  const baseResult = mockFetchRows(body.base_schema, body.base_table, {
+    page: body.page,
+    page_size: body.page_size,
+    sort: body.sort,
+    search: body.search,
+    filters: body.filters,
+  });
+
+  const usersById =
+    body.base_table === 'orders'
+      ? new Map(getRows('users', TABLES.find((t) => t.name === 'users')?.row_count_estimate ?? 50)
+          .map((row) => [Number(row.id), row] as const))
+      : new Map<number, Record<string, unknown>>();
+
+  // Mock mode shares the real output-name resolution, so a collision renames
+  // a column here exactly as the backend renames it.
+  const outputNames = resolveViewColumnOutputNames(body.shape.columns);
+
+  const rows = baseResult.rows.map((row) => {
+    const related = usersById.get(Number(row.user_id));
+    const output: Record<string, unknown> = {};
+    body.shape.columns.forEach((column, index) => {
+      const outputName = outputNames[index];
+      output[outputName] =
+        column.source_table === body.base_table
+          ? row[column.column_name]
+          : (related?.[column.column_name] ?? null);
+    });
+    return output;
+  });
+
+  const columns: ColumnInfo[] = body.shape.columns.map((column, index) => {
+    const sourceColumns = COLUMNS[column.source_table] ?? [];
+    const info = sourceColumns.find((c) => c.name === column.column_name);
+    return {
+      name: outputNames[index],
+      display_name: info?.display_name ?? column.column_name,
+      data_type: info?.data_type ?? 'text',
+      display_type: info?.display_type ?? 'text',
+      is_nullable: info?.is_nullable ?? true,
+      is_primary_key: false,
+    };
+  });
+
+  return {
+    columns,
+    rows,
+    total_rows: baseResult.total_rows,
+    page: baseResult.page,
+    page_size: baseResult.page_size,
+  };
+}
+
+/**
+ * Mock counterpart of GET /tables/{schema}/{table}/row, used by the FK peek
+ * panel. Looks up the generated fixture rows for the table and returns the
+ * first exact match. Mock mode never generates a second colliding row, so
+ * `multiple` is always false here.
+ */
+export function mockFetchTableRow(
+  _schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): TableRowResponse {
+  const info = TABLES.find((t) => t.name === table);
+  const totalRows = info?.row_count_estimate ?? 50;
+  const allRows = getRows(table, totalRows);
+  const entries = Object.entries(exactFilters);
+
+  const row =
+    entries.length === 0
+      ? null
+      : (allRows.find((candidate) =>
+          entries.every(([column, value]) => String(candidate[column] ?? '') === value),
+        ) ?? null);
+
+  return {
+    row,
+    multiple: false,
+    columns: COLUMNS[table] ?? [],
   };
 }
 

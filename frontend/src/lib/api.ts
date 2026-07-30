@@ -24,17 +24,23 @@ import type {
   SavedViewSummary,
   SavedViewDefinition,
   ViewDraft,
+  ViewDefinitionShape,
   FkHop,
   ReachableTable,
   ColumnSamplesResponse,
   TableRelationships,
+  ReferencesResponse,
+  TableRowResponse,
 } from './types';
 import {
   mockFetchTables,
   mockFetchColumns,
   mockFetchTableRelationships,
   mockFetchFkReachable,
+  mockFetchTableReferences,
   mockFetchRows,
+  mockFetchTransientViewRows,
+  mockFetchTableRow,
   mockFetchConnectionStatus,
   mockFetchDisplayConfig,
   mockFetchSettings,
@@ -250,6 +256,35 @@ export async function fetchTableRelationships(
   return data;
 }
 
+/** Serialize exact-match filters as `eq.{column}` query parameters. */
+function buildExactFiltersQueryString(exactFilters?: Record<string, string>): string {
+  const searchParams = new URLSearchParams();
+  if (exactFilters) {
+    for (const [col, val] of Object.entries(exactFilters)) {
+      searchParams.set(`eq.${col}`, val);
+    }
+  }
+  const qs = searchParams.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Capped counts of rows in every other table that references the row identified
+ * by `exactFilters`. Every entry pairs one incoming FK edge with its row count.
+ */
+export async function fetchTableReferences(
+  schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): Promise<ReferencesResponse> {
+  if (USE_MOCK) return mockFetchTableReferences(schema, table, exactFilters);
+  const base = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/references`;
+  const path = `${base}${buildExactFiltersQueryString(exactFilters)}`;
+  const data = await apiFetch<ReferencesResponse>(path);
+  assertShape(data, ['references'], base);
+  return data;
+}
+
 export interface FetchRowsParams {
   page?: number;
   page_size?: number;
@@ -274,6 +309,51 @@ export async function fetchRows(
   const result = await apiFetch<QueryResult>(path);
   assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], base);
   return result;
+}
+
+export interface TransientViewQueryBody {
+  base_schema: string;
+  base_table: string;
+  shape: ViewDefinitionShape;
+  page?: number;
+  page_size?: number;
+  sort?: string;
+  search?: string;
+  filters?: Record<string, string>;
+  exact_filters?: Record<string, string>;
+}
+
+/**
+ * Run a view shape without saving it. Used for inline related columns: the
+ * caller builds a shape on the fly (see buildRelatedShape in view-shape.ts)
+ * and gets back the same QueryResult shape a table or saved view returns.
+ */
+export async function fetchTransientViewRows(
+  body: TransientViewQueryBody,
+): Promise<QueryResult> {
+  if (USE_MOCK) return mockFetchTransientViewRows(body);
+  const path = '/api/views/query';
+  const data = await apiPost<QueryResult>(path, body);
+  assertShape(data, ['columns', 'rows', 'total_rows', 'page', 'page_size'], path);
+  return data;
+}
+
+/**
+ * Fetch one row matching an exact-filter set, for the FK peek panel. Every
+ * member of a composite FK must appear in `exactFilters` so the match is
+ * unambiguous.
+ */
+export async function fetchTableRow(
+  schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): Promise<TableRowResponse> {
+  if (USE_MOCK) return mockFetchTableRow(schema, table, exactFilters);
+  const base = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/row`;
+  const path = `${base}${buildRowsQueryString({ exact_filters: exactFilters })}`;
+  const data = await apiFetch<TableRowResponse>(path);
+  assertShape(data, ['row', 'multiple', 'columns'], base);
+  return data;
 }
 
 export async function fetchDisplayConfig(): Promise<DisplayConfig> {

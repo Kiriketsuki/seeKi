@@ -527,6 +527,9 @@ pub struct ViewRowsQueryParams<'a> {
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
+    /// Exact-match filters, the `eq.` namespace. Empty for callers that
+    /// expose substring filters only.
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -619,6 +622,22 @@ impl DatabasePool {
         }
     }
 
+    /// Count rows in one incoming edge's source table whose FK columns equal
+    /// the given values, capped at 1000. Returns `(count, capped)`.
+    pub async fn count_referencing_rows(
+        &self,
+        schema: &str,
+        table: &str,
+        source_columns: &[String],
+        values: &[String],
+    ) -> anyhow::Result<(i64, bool)> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::count_referencing_rows(pool, schema, table, source_columns, values).await
+            }
+        }
+    }
+
     pub async fn sample_column_values(
         &self,
         schema: &str,
@@ -675,6 +694,21 @@ impl DatabasePool {
     pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
         match self {
             Self::Postgres(pool, _) => postgres::query_rows(pool, params).await,
+        }
+    }
+
+    /// Fetch at most one row matching an exact-filter set, used by the FK peek panel.
+    /// Returns the row (or `None`) plus whether more than one row matched.
+    pub async fn query_single_row(
+        &self,
+        schema: &str,
+        table: &str,
+        exact_filters: &HashMap<String, String>,
+    ) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::query_single_row(pool, schema, table, exact_filters).await
+            }
         }
     }
 
