@@ -3,6 +3,7 @@
   import type { ColumnInfo } from '../lib/types';
   import { formatCellValue, getColumnDisplayName } from '../lib/data-grid';
   import { isSensitiveColumn } from '../lib/sensitive-columns';
+  import { peekCanJump, peekPanelState } from '../lib/peek-panel';
 
   let {
     open = false,
@@ -27,6 +28,9 @@
     onJump?: () => void;
     jumpLabel?: string;
   } = $props();
+
+  let state = $derived(peekPanelState({ loading, error, row }));
+  let showJump = $derived(peekCanJump({ loading, error, row }, onJump !== undefined));
 </script>
 
 {#if open}
@@ -43,7 +47,6 @@
       tabindex="-1"
       data-testid="fk-peek-panel"
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.key === 'Escape' && onClose()}
     >
       <div class="peek-panel__header">
         <div>
@@ -56,16 +59,16 @@
       </div>
 
       <div class="peek-panel__body">
-        {#if loading}
+        {#if state === 'loading'}
           <div class="peek-panel__state" role="status">
             <div class="peek-panel__spinner"></div>
             <span>Loading…</span>
           </div>
-        {:else if error}
+        {:else if state === 'error'}
           <div class="peek-panel__state peek-panel__state--error" role="alert">
             <span>{error}</span>
           </div>
-        {:else if row === null}
+        {:else if state === 'empty'}
           <div class="peek-panel__state" role="status">
             <span>No linked record found</span>
           </div>
@@ -75,9 +78,10 @@
               Several records match. Showing the first.
             </div>
           {/if}
+          {@const fields = row ?? {}}
           <dl class="peek-panel__fields">
             {#each columns as column (column.name)}
-              {@const formatted = formatCellValue(column, row[column.name])}
+              {@const formatted = formatCellValue(column, fields[column.name])}
               <div class="peek-panel__field">
                 <dt>{getColumnDisplayName(column)}</dt>
                 <dd class:is-null={formatted.kind === 'null'}>
@@ -93,7 +97,7 @@
         {/if}
       </div>
 
-      {#if onJump && !loading && !error && row !== null}
+      {#if showJump && onJump}
         <div class="peek-panel__footer">
           <button type="button" class="peek-panel__jump" onclick={onJump}>
             {jumpLabel}

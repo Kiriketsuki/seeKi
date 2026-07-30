@@ -688,14 +688,16 @@ async fn get_single_row(
             "Table '{schema}.{table}' not found"
         )));
     }
-    let columns = load_table_columns(&state, &schema, &table).await?;
-
+    // Reject a filter-less request before the schema round trip. The check needs
+    // no column metadata, so paying for it first wastes a database call.
     let exact_filters = parse_exact_filters(&all_params);
     if exact_filters.is_empty() {
         return Err(AppError::bad_request(
             "At least one eq. filter is required",
         ));
     }
+
+    let columns = load_table_columns(&state, &schema, &table).await?;
     let valid_column_names: std::collections::HashSet<&str> =
         columns.iter().map(|c| c.name.as_str()).collect();
     for col_name in exact_filters.keys() {
@@ -1253,6 +1255,73 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn single_row_route_hides_non_exposed_tables() {
+        let mut config = test_app_config();
+        config.tables = TablesConfig {
+            include: Some(vec!["public.visible_table".into()]),
+            exclude: None,
+        };
+        let app = test_api_router(config).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tables/public/orders/row?eq.id=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn single_row_route_requires_at_least_one_exact_filter() {
+        let app = test_api_router(test_app_config()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tables/public/orders/row")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("eq. filter"),
+            "unexpected error body: {json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn single_row_route_ignores_non_eq_query_params() {
+        // A `search=` or `page=` param carries no exact filter, so the request
+        // must still fail closed rather than return an arbitrary first row.
+        let app = test_api_router(test_app_config()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tables/public/orders/row?search=abc&page=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
     }
 
     #[test]

@@ -16,6 +16,7 @@
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
   import PeekPanel from './components/PeekPanel.svelte';
+  import { buildPeekTargetFilters } from './lib/fk-columns';
   import {
     buildViewCsvUrl,
     deleteView,
@@ -179,6 +180,8 @@
   let peekRow: Record<string, unknown> | null = $state(null);
   let peekMultiple: boolean = $state(false);
   let peekColumns: ColumnInfo[] = $state([]);
+  // Guards against an older peek fetch resolving after a newer one.
+  let peekRequestId = 0;
   let searchTerm: string = $state('');
   let searchVisible: boolean = $state(false);
   let columnsOpen: boolean = $state(false);
@@ -450,6 +453,14 @@
       }
 
       if (event.key === 'Escape') {
+        // The peek panel sits above everything, so Escape closes it first and
+        // does not also clear the search or the filters behind it.
+        if (peekOpen) {
+          event.preventDefault();
+          closePeek();
+          return;
+        }
+
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
@@ -711,25 +722,17 @@
     return info?.display_name ?? column;
   }
 
-  // Pairs each source FK column with its target column, in constraint order,
-  // to build the exact-match filters that identify the linked row.
-  function buildPeekTargetFilters(
-    edge: OutgoingRelationship,
-    values: Record<string, string>,
-  ): Record<string, string> {
-    const targetFilters: Record<string, string> = {};
-    edge.columns.forEach((sourceColumn, index) => {
-      const targetColumn = edge.target.columns[index];
-      if (targetColumn) {
-        targetFilters[targetColumn] = values[sourceColumn];
-      }
-    });
-    return targetFilters;
-  }
-
   async function handleFkPeek(edge: OutgoingRelationship, values: Record<string, string>) {
+    const targetFilters = buildPeekTargetFilters(edge, values);
+    // A constraint whose source and target column lists disagree cannot name a
+    // single target row. Do not open the panel on a partial key.
+    if (!targetFilters) return;
+
+    // Two quick clicks start two fetches. Only the newest may write the panel
+    // state, otherwise a slow first response overwrites the second preview.
+    const myRequest = ++peekRequestId;
     peekEdge = edge;
-    peekTargetFilters = buildPeekTargetFilters(edge, values);
+    peekTargetFilters = targetFilters;
     peekOpen = true;
     peekLoading = true;
     peekError = null;
@@ -738,19 +741,24 @@
     peekColumns = [];
 
     try {
-      const result = await fetchTableRow(edge.target.schema, edge.target.table, peekTargetFilters);
+      const result = await fetchTableRow(edge.target.schema, edge.target.table, targetFilters);
+      if (myRequest !== peekRequestId) return;
       peekRow = result.row;
       peekMultiple = result.multiple;
       peekColumns = result.columns;
     } catch (e) {
+      if (myRequest !== peekRequestId) return;
       peekError = e instanceof Error ? e.message : 'Failed to load linked record';
     } finally {
-      peekLoading = false;
+      if (myRequest === peekRequestId) peekLoading = false;
     }
   }
 
   function closePeek() {
+    // Bump the request id so an in-flight fetch cannot reopen stale content.
+    peekRequestId += 1;
     peekOpen = false;
+    peekLoading = false;
   }
 
   // The target table for a jump when it is present in the current allowlisted
@@ -767,7 +775,7 @@
   function handlePeekJump() {
     if (!peekJumpTarget) return;
     const targetFilters = { ...peekTargetFilters };
-    peekOpen = false;
+    closePeek();
     void selectTable(peekJumpTarget, { exactFilters: targetFilters });
   }
 

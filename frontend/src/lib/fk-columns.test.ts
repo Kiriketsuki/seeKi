@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildFkColumnMap, fkBadgeTarget, fkCellValues, hasHoppableEdge } from './fk-columns';
+import {
+  buildFkColumnMap,
+  buildPeekTargetFilters,
+  fkBadgeTarget,
+  fkCellValues,
+  hasHoppableEdge,
+} from './fk-columns';
 import type { OutgoingRelationship, TableRelationships } from './types';
 
 function edge(
@@ -147,5 +153,56 @@ describe('fkCellValues', () => {
     );
     const values = fkCellValues(composite, { route_region: 'EU' });
     expect(values).toBeNull();
+  });
+});
+
+describe('buildPeekTargetFilters', () => {
+  it('keys a single-column FK by the target column name', () => {
+    const filters = buildPeekTargetFilters(edge('orders_user_fkey', ['user_id'], 'users'), {
+      user_id: '42',
+    });
+    expect(filters).toEqual({ id: '42' });
+  });
+
+  it('pairs composite members positionally, in constraint order', () => {
+    const composite = edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+      'region',
+      'code',
+    ]);
+    const filters = buildPeekTargetFilters(composite, {
+      route_region: 'EU',
+      route_code: '7',
+    });
+    expect(filters).toEqual({ region: 'EU', code: '7' });
+  });
+
+  it('keeps constraint order when the source names sort differently', () => {
+    // Source order is (b_code, a_region), target order is (code, region).
+    // An alphabetical pairing would swap the two values.
+    const composite = edge('legs_route_fkey', ['b_code', 'a_region'], 'routes', true, [
+      'code',
+      'region',
+    ]);
+    const filters = buildPeekTargetFilters(composite, { b_code: '7', a_region: 'EU' });
+    expect(filters).toEqual({ code: '7', region: 'EU' });
+  });
+
+  it('returns null when the target column list is shorter than the source list', () => {
+    const broken = edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+      'region',
+    ]);
+    expect(buildPeekTargetFilters(broken, { route_region: 'EU', route_code: '7' })).toBeNull();
+  });
+
+  it('returns null when a source value is missing', () => {
+    const composite = edge('legs_route_fkey', ['route_region', 'route_code'], 'routes', true, [
+      'region',
+      'code',
+    ]);
+    expect(buildPeekTargetFilters(composite, { route_region: 'EU' })).toBeNull();
+  });
+
+  it('returns null for an edge with no columns', () => {
+    expect(buildPeekTargetFilters(edge('broken', [], 'routes', true, []), {})).toBeNull();
   });
 });
