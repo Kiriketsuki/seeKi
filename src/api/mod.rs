@@ -40,10 +40,7 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
             "/tables/{schema}/{table}/relationships",
             get(get_relationships),
         )
-        .route(
-            "/tables/{schema}/{table}/references",
-            get(get_references),
-        )
+        .route("/tables/{schema}/{table}/references", get(get_references))
         .route("/tables/{schema}/{table}/samples", get(get_column_samples))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
         .route("/tables/{schema}/{table}/row", get(get_single_row))
@@ -430,7 +427,12 @@ async fn get_relationships(
         .collect();
     let incoming: Vec<serde_json::Value> = incoming
         .iter()
-        .filter(|edge| state.config.tables.allows(&edge.other_schema, &edge.other_table))
+        .filter(|edge| {
+            state
+                .config
+                .tables
+                .allows(&edge.other_schema, &edge.other_table)
+        })
         .map(|edge| {
             serde_json::json!({
                 "constraint": edge.constraint_name,
@@ -546,7 +548,7 @@ async fn get_references(
         .await;
 
     let mut references: Vec<serde_json::Value> = Vec::with_capacity(candidates.len());
-    for ((edge, _), result) in candidates.iter().zip(counts.into_iter()) {
+    for ((edge, _), result) in candidates.iter().zip(counts) {
         let (count, capped) = result.map_err(|e| map_table_query_error(e, &edge.other_table))?;
         references.push(serde_json::json!({
             "schema": edge.other_schema,
@@ -648,7 +650,10 @@ fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String
 fn parse_exact_filters(all_params: &HashMap<String, String>) -> HashMap<String, String> {
     all_params
         .iter()
-        .filter_map(|(k, v)| k.strip_prefix("eq.").map(|col| (col.to_string(), v.clone())))
+        .filter_map(|(k, v)| {
+            k.strip_prefix("eq.")
+                .map(|col| (col.to_string(), v.clone()))
+        })
         .collect()
 }
 
@@ -819,9 +824,7 @@ async fn get_single_row(
     // no column metadata, so paying for it first wastes a database call.
     let exact_filters = parse_exact_filters(&all_params);
     if exact_filters.is_empty() {
-        return Err(AppError::bad_request(
-            "At least one eq. filter is required",
-        ));
+        return Err(AppError::bad_request("At least one eq. filter is required"));
     }
 
     let columns = load_table_columns(&state, &schema, &table).await?;
