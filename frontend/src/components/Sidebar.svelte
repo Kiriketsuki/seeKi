@@ -1,7 +1,13 @@
 <script lang="ts">
   import { type Snippet } from 'svelte';
   import { ChevronLeft, LayoutGrid, Settings } from 'lucide-svelte';
-  import { SIDEBAR_COLLAPSED_KEY } from '../lib/constants';
+  import {
+    SIDEBAR_COLLAPSED_KEY,
+    SIDEBAR_WIDTH_DEFAULT,
+    SIDEBAR_WIDTH_KEY,
+    SIDEBAR_WIDTH_MAX,
+    SIDEBAR_WIDTH_MIN,
+  } from '../lib/constants';
   import type { SidebarMode } from '../lib/types';
 
   let {
@@ -39,9 +45,64 @@
   function selectMode(nextMode: SidebarMode) {
     onSelectMode?.(nextMode);
   }
+
+  function clampWidth(value: number): number {
+    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, value));
+  }
+
+  function readStoredWidth(): number {
+    const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return SIDEBAR_WIDTH_DEFAULT;
+    }
+    return clampWidth(raw);
+  }
+
+  let width = $state(readStoredWidth());
+  let resizing = $state(false);
+
+  function startResize(event: PointerEvent) {
+    if (collapsed) return;
+    event.preventDefault();
+    resizing = true;
+    const startX = event.clientX;
+    const startWidth = width;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      width = clampWidth(startWidth + moveEvent.clientX - startX);
+    };
+    const onUp = () => {
+      resizing = false;
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  function handleResizeKeydown(event: KeyboardEvent) {
+    const step = event.shiftKey ? 32 : 8;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      width = clampWidth(width + (event.key === 'ArrowRight' ? step : -step));
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+    }
+  }
+
+  function resetWidth() {
+    width = SIDEBAR_WIDTH_DEFAULT;
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+  }
 </script>
 
-<aside class="sidebar" class:collapsed data-testid="app-sidebar">
+<aside
+  class="sidebar"
+  class:collapsed
+  class:resizing
+  style={collapsed ? '' : `width: ${width}px; min-width: ${width}px;`}
+  data-testid="app-sidebar"
+>
   <div class="header">
     {#if collapsed}
       <!-- collapsed: logo mark IS the expand button — no separate chevron -->
@@ -151,6 +212,21 @@
     <div class="footer">
       <span class="footer-text">Powered by SeeKi</span>
     </div>
+    <div
+      class="resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_WIDTH_MIN}
+      aria-valuemax={SIDEBAR_WIDTH_MAX}
+      tabindex="0"
+      title="Drag to resize. Double-click to reset."
+      onpointerdown={startResize}
+      ondblclick={resetWidth}
+      onkeydown={handleResizeKeydown}
+      data-testid="sidebar-resize-handle"
+    ></div>
   {/if}
 </aside>
 
@@ -178,6 +254,38 @@
   .sidebar.collapsed {
     width: var(--sk-sidebar-collapsed);
     min-width: var(--sk-sidebar-collapsed);
+  }
+
+  /* while dragging, the width transition would lag behind the pointer */
+  .sidebar.resizing {
+    transition: none;
+    user-select: none;
+  }
+
+  /* ── Resize handle: invisible strip on the right edge, accent line on hover ── */
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 5;
+    touch-action: none;
+  }
+
+  .resize-handle:hover,
+  .sidebar.resizing .resize-handle {
+    background: linear-gradient(
+      to right,
+      transparent,
+      rgba(var(--marble-active-rgb), 0.35)
+    );
+  }
+
+  .resize-handle:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: -2px;
   }
 
   /* ── Header ── */
