@@ -1,17 +1,20 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use futures::Stream;
 use serde::Serialize;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use tokio::sync::RwLock;
 
 use super::{
-    ColumnInfo, ExportQueryParams, FkHop, QueryResult, RowQueryParams, SavedViewAggregate,
-    SavedViewColumn, SavedViewColumnKind, SavedViewSortDirection, SortDirection, SortEntry,
-    TableInfo, ValidationError, ViewAggregate, ViewColumn, ViewColumnRef, ViewDefinitionShape,
-    ViewDerivedColumn, ViewDerivedInput, ViewDerivedInputKind, ViewDerivedOperation, ViewDraft,
-    ViewExportQueryParams, ViewFilterValue, ViewOrderBy, ViewRowsQueryParams, ViewSelfDirection,
-    ViewSourceKind,
+    ColumnInfo, ExportQueryParams, FkHop, QueryResult, RelationshipEdge, RowQueryParams,
+    SavedViewAggregate, SavedViewColumn, SavedViewColumnKind, SavedViewSortDirection,
+    SortDirection, SortEntry, TableInfo, ValidationError, ViewAggregate, ViewColumn,
+    ViewColumnRef, ViewDefinitionShape, ViewDerivedColumn, ViewDerivedInput, ViewDerivedInputKind,
+    ViewDerivedOperation, ViewDraft, ViewExportQueryParams, ViewFilterValue, ViewOrderBy,
+    ViewRowsQueryParams, ViewSelfDirection, ViewSourceKind,
 };
 
 /// Result of a connection test — describes a single table visible to the server.
@@ -1263,6 +1266,90 @@ async fn load_fk_edges(pool: &PgPool, schema: &str) -> anyhow::Result<Vec<FkEdge
         .collect())
 }
 
+/// FK edges change only on DDL, so a short cache absorbs the repeated
+/// pg_constraint scans that relationship lookups and view planning issue.
+const FK_EDGE_CACHE_TTL: Duration = Duration::from_secs(300);
+
+type FkEdgeCacheMap = HashMap<String, (Instant, Arc<Vec<FkEdge>>)>;
+
+static FK_EDGE_CACHE: OnceLock<RwLock<FkEdgeCacheMap>> = OnceLock::new();
+
+fn fk_edge_cache() -> &'static RwLock<FkEdgeCacheMap> {
+    FK_EDGE_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn fk_cache_entry_is_fresh(inserted: Instant, now: Instant, ttl: Duration) -> bool {
+    now.duration_since(inserted) < ttl
+}
+
+/// Drops every cached FK edge. Called when a new database pool connects, so a
+/// reconfigured target never serves edges from the previous database.
+pub async fn clear_fk_edge_cache() {
+    fk_edge_cache().write().await.clear();
+}
+
+async fn get_fk_edges_cached(pool: &PgPool, schema: &str) -> anyhow::Result<Arc<Vec<FkEdge>>> {
+    let now = Instant::now();
+    if let Some((inserted, edges)) = fk_edge_cache().read().await.get(schema)
+        && fk_cache_entry_is_fresh(*inserted, now, FK_EDGE_CACHE_TTL)
+    {
+        return Ok(Arc::clone(edges));
+    }
+
+    let edges = Arc::new(load_fk_edges(pool, schema).await?);
+    fk_edge_cache()
+        .write()
+        .await
+        .insert(schema.to_string(), (now, Arc::clone(&edges)));
+    Ok(edges)
+}
+
+fn build_table_relationships(
+    edges: &[FkEdge],
+    key: &TableKey,
+) -> (Vec<RelationshipEdge>, Vec<RelationshipEdge>) {
+    let outgoing = edges
+        .iter()
+        .filter(|edge| edge.source == *key)
+        .map(|edge| RelationshipEdge {
+            constraint_name: edge.constraint_name.clone(),
+            columns: edge.source_columns.clone(),
+            other_schema: edge.target.schema.clone(),
+            other_table: edge.target.table.clone(),
+            other_columns: edge.target_columns.clone(),
+        })
+        .collect();
+    let incoming = edges
+        .iter()
+        .filter(|edge| edge.target == *key)
+        .map(|edge| RelationshipEdge {
+            constraint_name: edge.constraint_name.clone(),
+            columns: edge.target_columns.clone(),
+            other_schema: edge.source.schema.clone(),
+            other_table: edge.source.table.clone(),
+            other_columns: edge.source_columns.clone(),
+        })
+        .collect();
+    (outgoing, incoming)
+}
+
+/// FK edges that touch one table: (outgoing, incoming). `columns` on each edge
+/// are the columns on the requested table, `other_*` describe the far side.
+pub async fn table_relationships(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+) -> anyhow::Result<(Vec<RelationshipEdge>, Vec<RelationshipEdge>)> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name: {schema}");
+    }
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name: {table}");
+    }
+    let edges = get_fk_edges_cached(pool, schema).await?;
+    Ok(build_table_relationships(&edges, &TableKey::new(schema, table)))
+}
+
 pub async fn lookup_fk_path(
     pool: &PgPool,
     base_schema: &str,
@@ -1282,7 +1369,7 @@ pub async fn lookup_fk_path(
 
     let base = TableKey::new(base_schema, base_table);
     let target = TableKey::new(target_schema, target_table);
-    let edges = load_fk_edges(pool, base_schema).await?;
+    let edges = get_fk_edges_cached(pool, base_schema).await?;
     Ok(find_fk_path(&edges, &base, &target))
 }
 
@@ -2316,7 +2403,10 @@ async fn load_planner_catalog(
         .collect::<Vec<_>>();
 
     let columns_by_table = get_columns_bulk(pool, &refs).await?;
-    let fk_edges = load_fk_edges(pool, &base_binding.table.schema).await?;
+    let fk_edges = get_fk_edges_cached(pool, &base_binding.table.schema)
+        .await?
+        .as_ref()
+        .clone();
 
     Ok(PlannerCatalog {
         columns_by_table,
@@ -4152,6 +4242,112 @@ mod tests {
 
         let err = resolve_view_output_names(&columns).unwrap_err();
         assert!(err.to_string().contains("Duplicate output column name"));
+    }
+
+    #[test]
+    fn fk_cache_entry_freshness_respects_ttl() {
+        let ttl = Duration::from_secs(300);
+        let inserted = Instant::now();
+        assert!(fk_cache_entry_is_fresh(inserted, inserted, ttl));
+        assert!(fk_cache_entry_is_fresh(
+            inserted,
+            inserted + Duration::from_secs(299),
+            ttl
+        ));
+        assert!(!fk_cache_entry_is_fresh(
+            inserted,
+            inserted + Duration::from_secs(300),
+            ttl
+        ));
+        assert!(!fk_cache_entry_is_fresh(
+            inserted,
+            inserted + Duration::from_secs(301),
+            ttl
+        ));
+    }
+
+    #[test]
+    fn table_relationships_split_outgoing_and_incoming() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "orders_customer_fkey",
+            ),
+            fk_edge(
+                "order_items",
+                "orders",
+                &["order_id"],
+                &["id"],
+                "items_order_fkey",
+            ),
+            fk_edge(
+                "shipments",
+                "warehouses",
+                &["warehouse_id"],
+                &["id"],
+                "shipments_warehouse_fkey",
+            ),
+        ];
+
+        let (outgoing, incoming) =
+            build_table_relationships(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(outgoing[0].constraint_name, "orders_customer_fkey");
+        assert_eq!(outgoing[0].columns, vec!["customer_id".to_string()]);
+        assert_eq!(outgoing[0].other_table, "customers");
+        assert_eq!(outgoing[0].other_columns, vec!["id".to_string()]);
+
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(incoming[0].constraint_name, "items_order_fkey");
+        assert_eq!(incoming[0].columns, vec!["id".to_string()]);
+        assert_eq!(incoming[0].other_table, "order_items");
+        assert_eq!(incoming[0].other_columns, vec!["order_id".to_string()]);
+    }
+
+    #[test]
+    fn table_relationships_keep_composite_column_order() {
+        let edges = vec![fk_edge(
+            "shipment_legs",
+            "routes",
+            &["route_region", "route_code"],
+            &["region", "code"],
+            "legs_route_fkey",
+        )];
+
+        let (outgoing, _) =
+            build_table_relationships(&edges, &TableKey::new("public", "shipment_legs"));
+
+        assert_eq!(
+            outgoing[0].columns,
+            vec!["route_region".to_string(), "route_code".to_string()]
+        );
+        assert_eq!(
+            outgoing[0].other_columns,
+            vec!["region".to_string(), "code".to_string()]
+        );
+    }
+
+    #[test]
+    fn table_relationships_self_reference_appears_in_both_directions() {
+        let edges = vec![fk_edge(
+            "employees",
+            "employees",
+            &["manager_id"],
+            &["id"],
+            "employees_manager_fkey",
+        )];
+
+        let (outgoing, incoming) =
+            build_table_relationships(&edges, &TableKey::new("public", "employees"));
+
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(outgoing[0].columns, vec!["manager_id".to_string()]);
+        assert_eq!(incoming[0].columns, vec!["id".to_string()]);
     }
 
     #[test]
