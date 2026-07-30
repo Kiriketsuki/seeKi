@@ -12,7 +12,9 @@
     DateFormatPreference,
     FilterState,
     SortState,
+    TableRelationships,
   } from '../lib/types';
+  import { buildFkColumnMap, fkBadgeTarget } from '../lib/fk-columns';
   import { onMount } from 'svelte';
   import {
     buildSortableColumn,
@@ -27,6 +29,7 @@
 
   let {
     columns = [],
+    relationships = null,
     rows = [],
     dateFormat = 'system',
     sortState = [],
@@ -40,6 +43,7 @@
     onRetryAppend,
   }: {
     columns: ColumnInfo[];
+    relationships?: TableRelationships | null;
     rows: Record<string, unknown>[];
     dateFormat?: DateFormatPreference;
     sortState?: SortState;
@@ -64,6 +68,7 @@
   let columnsByName = $derived(
     new Map(columns.map((column) => [column.name, column]))
   );
+  let fkColumns = $derived(buildFkColumnMap(relationships));
   let sorting = $derived(sortStateToConfig(sortState));
 
   // Columns whose names look credential-bearing are masked by default; the user
@@ -157,6 +162,7 @@
   ): VNode {
     const info = columnsByName.get(String(props.prop));
     const label = info ? getColumnDisplayName(info) : String(props.name ?? props.prop);
+    const fkBadge = fkBadgeTarget(fkColumns.get(String(props.prop)));
     const showFilters = Boolean(
       (props as ColumnTemplateProp & { showFilters?: boolean }).showFilters
     );
@@ -214,6 +220,38 @@
           },
           [
             h('span', { class: { 'sk-grid-header__label': true } }, label),
+            fkBadge
+              ? h(
+                  'span',
+                  {
+                    class: { 'sk-fk-badge': true },
+                    role: 'img',
+                    title: `Linked to ${fkBadge.target.display_name}`,
+                    'aria-label': `Linked to ${fkBadge.target.display_name}`,
+                  },
+                  [
+                    h(
+                      'svg',
+                      {
+                        width: '12',
+                        height: '12',
+                        viewBox: '0 0 24 24',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        'stroke-width': '2',
+                        'stroke-linecap': 'round',
+                        'stroke-linejoin': 'round',
+                        'aria-hidden': 'true',
+                      },
+                      [
+                        // lucide link
+                        h('path', { d: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71' }),
+                        h('path', { d: 'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71' }),
+                      ]
+                    ),
+                  ]
+                )
+              : null,
             priorityAnnouncement
               ? h('span', { class: { 'sk-sr-only': true } }, priorityAnnouncement)
               : null,
@@ -335,6 +373,8 @@
             // sits on the same side as the other data in the column.
             'sk-grid-cell--number': isNumericCol,
             'sk-grid-cell--boolean': isBooleanCol,
+            // The FK wash covers the whole column, NULL cells included.
+            'sk-grid-cell--fk': fkColumns.has(String(props.prop)),
           },
         },
         [h('span', { class: { 'sk-null-pill': true } }, 'NULL')]
@@ -436,6 +476,9 @@
           // that fall through as kind:'text' still right-align with finite siblings.
           'sk-grid-cell--number': isNumericCol,
           'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
+          // FK columns get a subtle tint. Click behavior arrives with the
+          // peek panel feature, this phase only marks the column visually.
+          'sk-grid-cell--fk': fkColumns.has(String(props.prop)),
         },
         title: formatted.tooltip,
       },
@@ -650,6 +693,21 @@
   /* Active sort arrow — amber (count accent = selection/attention per token semantics) */
   .grid-card :global(.sk-grid-header__sort.is-active) {
     color: var(--sk-accent-count);
+  }
+
+  /* FK link badge — teal (interaction accent), sits after the header label */
+  .grid-card :global(.sk-fk-badge) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    color: var(--sk-accent-active);
+    opacity: 0.75;
+  }
+
+  /* FK cells — a faint teal wash marks linked columns without shouting */
+  .grid-card :global(.sk-grid-cell--fk) {
+    background: rgba(var(--sk-accent-active-rgb), 0.06);
+    box-shadow: inset 2px 0 0 rgba(var(--sk-accent-active-rgb), 0.35);
   }
 
   .grid-card :global(.sk-sr-only) {

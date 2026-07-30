@@ -5,6 +5,7 @@ import type {
   QueryResult,
   DisplayConfig,
   SettingsEntries,
+  TableRelationships,
   UpdateStatus,
   VersionInfo,
 } from './types';
@@ -425,6 +426,88 @@ export function mockFetchTables(): TableInfo[] {
 
 export function mockFetchColumns(_schema: string, table: string): ColumnInfo[] {
   return COLUMNS[table] ?? [];
+}
+
+// FK fixtures for mock mode. Cover a plain FK, an incoming edge, a composite
+// FK, and a target outside the allowlist so the grid hides its hop affordance.
+const RELATIONSHIPS: Record<string, TableRelationships> = {
+  orders: {
+    outgoing: [
+      {
+        constraint: 'orders_user_id_fkey',
+        columns: ['user_id'],
+        target: {
+          schema: 'public',
+          table: 'users',
+          display_name: 'Users',
+          columns: ['id'],
+          allowed: true,
+        },
+      },
+      {
+        constraint: 'orders_warehouse_fkey',
+        columns: ['warehouse_region', 'warehouse_code'],
+        target: {
+          schema: 'public',
+          table: 'warehouses',
+          display_name: 'Warehouses',
+          columns: ['region', 'code'],
+          allowed: false,
+        },
+      },
+    ],
+    incoming: [],
+  },
+  tickets: {
+    outgoing: [
+      {
+        constraint: 'tickets_user_id_fkey',
+        columns: ['user_id'],
+        target: {
+          schema: 'public',
+          table: 'users',
+          display_name: 'Users',
+          columns: ['id'],
+          allowed: true,
+        },
+      },
+    ],
+    incoming: [],
+  },
+  users: {
+    outgoing: [],
+    incoming: [
+      {
+        constraint: 'orders_user_id_fkey',
+        columns: ['id'],
+        source: {
+          schema: 'public',
+          table: 'orders',
+          display_name: 'Orders',
+          columns: ['user_id'],
+          allowed: true,
+        },
+      },
+      {
+        constraint: 'tickets_user_id_fkey',
+        columns: ['id'],
+        source: {
+          schema: 'public',
+          table: 'tickets',
+          display_name: 'Tickets',
+          columns: ['user_id'],
+          allowed: true,
+        },
+      },
+    ],
+  },
+};
+
+export function mockFetchTableRelationships(
+  _schema: string,
+  table: string,
+): TableRelationships {
+  return RELATIONSHIPS[table] ?? { outgoing: [], incoming: [] };
 }
 
 export function mockFetchRows(
