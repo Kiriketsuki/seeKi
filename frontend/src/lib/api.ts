@@ -28,6 +28,7 @@ import type {
   ColumnSamplesResponse,
   TableRelationships,
   ReferencesResponse,
+  TableRowResponse,
 } from './types';
 import {
   mockFetchTables,
@@ -35,6 +36,7 @@ import {
   mockFetchTableRelationships,
   mockFetchTableReferences,
   mockFetchRows,
+  mockFetchTableRow,
   mockFetchConnectionStatus,
   mockFetchDisplayConfig,
   mockFetchSettings,
@@ -303,6 +305,24 @@ export async function fetchRows(
   const result = await apiFetch<QueryResult>(path);
   assertShape(result, ['rows', 'total_rows', 'page', 'page_size'], base);
   return result;
+}
+
+/**
+ * Fetch one row matching an exact-filter set, for the FK peek panel. Every
+ * member of a composite FK must appear in `exactFilters` so the match is
+ * unambiguous.
+ */
+export async function fetchTableRow(
+  schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): Promise<TableRowResponse> {
+  if (USE_MOCK) return mockFetchTableRow(schema, table, exactFilters);
+  const base = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/row`;
+  const path = `${base}${buildRowsQueryString({ exact_filters: exactFilters })}`;
+  const data = await apiFetch<TableRowResponse>(path);
+  assertShape(data, ['row', 'multiple', 'columns'], base);
+  return data;
 }
 
 export async function fetchDisplayConfig(): Promise<DisplayConfig> {

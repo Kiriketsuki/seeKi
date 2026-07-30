@@ -8,6 +8,7 @@ import type {
   TableRelationships,
   ReferenceEntry,
   ReferencesResponse,
+  TableRowResponse,
   UpdateStatus,
   VersionInfo,
 } from './types';
@@ -621,6 +622,36 @@ export function mockFetchRows(
     total_rows: filteredTotal,
     page,
     page_size: pageSize,
+  };
+}
+
+/**
+ * Mock counterpart of GET /tables/{schema}/{table}/row, used by the FK peek
+ * panel. Looks up the generated fixture rows for the table and returns the
+ * first exact match. Mock mode never generates a second colliding row, so
+ * `multiple` is always false here.
+ */
+export function mockFetchTableRow(
+  _schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): TableRowResponse {
+  const info = TABLES.find((t) => t.name === table);
+  const totalRows = info?.row_count_estimate ?? 50;
+  const allRows = getRows(table, totalRows);
+  const entries = Object.entries(exactFilters);
+
+  const row =
+    entries.length === 0
+      ? null
+      : (allRows.find((candidate) =>
+          entries.every(([column, value]) => String(candidate[column] ?? '') === value),
+        ) ?? null);
+
+  return {
+    row,
+    multiple: false,
+    columns: COLUMNS[table] ?? [],
   };
 }
 

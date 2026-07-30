@@ -11,11 +11,12 @@
     ColumnInfo,
     DateFormatPreference,
     FilterState,
+    OutgoingRelationship,
     ReferenceEntry,
     SortState,
     TableRelationships,
   } from '../lib/types';
-  import { buildFkColumnMap, fkBadgeTarget } from '../lib/fk-columns';
+  import { buildFkColumnMap, fkBadgeTarget, fkCellValues, hasHoppableEdge } from '../lib/fk-columns';
   import RelatedRowsMenu from './RelatedRowsMenu.svelte';
   import { onMount } from 'svelte';
   import {
@@ -50,6 +51,7 @@
     onRelatedRows,
     onRelatedRowSelect,
     onCloseRelatedRows,
+    onFkPeek,
   }: {
     columns: ColumnInfo[];
     relationships?: TableRelationships | null;
@@ -73,6 +75,7 @@
     onRelatedRows?: (row: Record<string, unknown>) => void;
     onRelatedRowSelect?: (entry: ReferenceEntry) => void;
     onCloseRelatedRows?: () => void;
+    onFkPeek?: (edge: OutgoingRelationship, values: Record<string, string>) => void;
   } = $props();
 
   /** Synthetic column prop for the trailing "Related information" button. Never a real column name. */
@@ -492,6 +495,45 @@
       );
     }
 
+    // FK cells with a hoppable target render as a clickable button that opens
+    // the peek panel. A composite FK needs every member column present on the
+    // row, so fkCellValues returns null and the cell falls back to plain text
+    // when a member is missing.
+    const fkEdges = fkColumns.get(String(props.prop));
+    if (hasHoppableEdge(fkEdges)) {
+      const targetEdge = fkBadgeTarget(fkEdges);
+      const rowValues = model ? fkCellValues(targetEdge!, model as Record<string, unknown>) : null;
+      if (targetEdge && rowValues) {
+        return h(
+          'div',
+          {
+            class: {
+              'sk-grid-cell': true,
+              'sk-grid-cell--number': isNumericCol,
+              'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
+              'sk-grid-cell--fk': true,
+            },
+            title: formatted.tooltip,
+          },
+          [
+            h(
+              'button',
+              {
+                class: { 'sk-grid-cell__fk-link': true },
+                type: 'button',
+                'aria-label': `View linked ${targetEdge.target.display_name}`,
+                onclick: (e: Event) => {
+                  e.stopPropagation();
+                  onFkPeek?.(targetEdge, rowValues);
+                },
+              },
+              [h('span', { class: { 'sk-grid-cell__text': true } }, formatted.display)]
+            ),
+          ]
+        );
+      }
+    }
+
     return h(
       'div',
       {
@@ -501,8 +543,8 @@
           // that fall through as kind:'text' still right-align with finite siblings.
           'sk-grid-cell--number': isNumericCol,
           'sk-grid-cell--timestamp': formatted.kind === 'timestamp',
-          // FK columns get a subtle tint. Click behavior arrives with the
-          // peek panel feature, this phase only marks the column visually.
+          // FK columns get a subtle tint even without a usable peek button
+          // (missing composite member, or every target hidden by the allowlist).
           'sk-grid-cell--fk': fkColumns.has(String(props.prop)),
         },
         title: formatted.tooltip,
@@ -837,6 +879,34 @@
   .grid-card :global(.sk-related-rows-button:hover) {
     background: rgba(var(--sk-accent-active-rgb), 0.12);
     color: var(--sk-accent-active);
+  }
+
+  /* FK peek button — reuses the cell's text styling, underlines on hover so it
+     reads as a link without changing the row's layout or color at rest. */
+  .grid-card :global(.sk-grid-cell__fk-link) {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+  }
+
+  .grid-card :global(.sk-grid-cell__fk-link:hover .sk-grid-cell__text),
+  .grid-card :global(.sk-grid-cell__fk-link:focus-visible .sk-grid-cell__text) {
+    text-decoration: underline;
+    text-decoration-color: rgba(var(--sk-accent-active-rgb), 0.6);
+  }
+
+  .grid-card :global(.sk-grid-cell__fk-link:focus-visible) {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--sk-ring-data);
+    border-radius: var(--sk-radius-sm);
   }
 
   .grid-card :global(.sk-sr-only) {

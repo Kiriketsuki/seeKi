@@ -3843,6 +3843,53 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
     })
 }
 
+/// Fetch at most one row matching an exact-filter set, used by the FK peek panel to
+/// preview a linked record before the user jumps to it. Returns the first matching row
+/// as JSON (or `None` when nothing matches) and a flag for whether more than one row
+/// matched, so the caller can warn that the preview shows only one of several.
+pub async fn query_single_row(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+    exact_filters: &HashMap<String, String>,
+) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name");
+    }
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name");
+    }
+
+    let columns = get_columns(pool, schema, table).await?;
+    let no_filters = HashMap::new();
+    let qb = build_query_clauses(&columns, None, &no_filters, exact_filters, &[], false, 1)?;
+
+    let spatial = spatial_columns(pool, schema, table).await?;
+    let select_list = build_row_select_list(&columns, &spatial);
+    let query_sql = format!(
+        "SELECT {select_list} FROM \"{schema}\".\"{table}\" {} LIMIT 2",
+        qb.where_clause
+    );
+
+    let mut query = sqlx::query(&query_sql);
+    for val in &qb.bind_values {
+        query = query.bind(val);
+    }
+    let rows = query.fetch_all(pool).await?;
+
+    let multiple = rows.len() > 1;
+    let first_row = rows.first().map(|row| {
+        let mut map = serde_json::Map::new();
+        for col in &columns {
+            let val = pg_value_to_json(row, &col.name, &col.data_type);
+            map.insert(col.name.clone(), val);
+        }
+        serde_json::Value::Object(map)
+    });
+
+    Ok((first_row, multiple))
+}
+
 /// Build a streaming query for CSV export — returns all matching rows without pagination.
 /// The returned stream yields `Result<PgRow>` items for incremental processing.
 pub async fn export_rows_stream<'a>(
@@ -4249,6 +4296,36 @@ mod tests {
             "WHERE \"vehicle_id\"::text ILIKE $1 AND \"id\" = $2::bigint"
         );
         assert_eq!(qb.bind_values, vec!["%ADT%".to_string(), "7".to_string()]);
+    }
+
+    #[test]
+    fn build_query_clauses_indexes_composite_exact_filter_params_in_order() {
+        // A composite FK carries more than one exact filter at once (the
+        // peek-panel path, for example). Param indices must stay sequential
+        // and skip the boolean condition, which binds nothing.
+        let mut columns = test_columns();
+        columns.push(ColumnInfo {
+            name: "is_active".into(),
+            data_type: "boolean".into(),
+            display_type: "Yes/No".into(),
+            is_nullable: false,
+            is_primary_key: false,
+        });
+
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "7".to_string());
+        exact.insert("vehicle_id".to_string(), "ADT3".to_string());
+        exact.insert("is_active".to_string(), "yes".to_string());
+
+        let qb = build_query_clauses(&columns, None, &HashMap::new(), &exact, &[], false, 1)
+            .unwrap();
+
+        // Sorted by column name: id, is_active, vehicle_id.
+        assert_eq!(
+            qb.where_clause,
+            "WHERE \"id\" = $1::bigint AND \"is_active\" = TRUE AND \"vehicle_id\" = $2::text"
+        );
+        assert_eq!(qb.bind_values, vec!["7".to_string(), "ADT3".to_string()]);
     }
 
     #[test]
