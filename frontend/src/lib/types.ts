@@ -154,6 +154,35 @@ export interface FkHop {
   constraint_name: string;
 }
 
+/** The far side of an FK edge as returned by /relationships. */
+export interface RelationshipTableRef {
+  schema: string;
+  table: string;
+  display_name: string;
+  columns: string[];
+  /** False when the far table is outside the connection allowlist. */
+  allowed: boolean;
+}
+
+export interface OutgoingRelationship {
+  constraint: string;
+  /** FK columns on the current table, in constraint order. */
+  columns: string[];
+  target: RelationshipTableRef;
+}
+
+export interface IncomingRelationship {
+  constraint: string;
+  /** Referenced columns on the current table, in constraint order. */
+  columns: string[];
+  source: RelationshipTableRef;
+}
+
+export interface TableRelationships {
+  outgoing: OutgoingRelationship[];
+  incoming: IncomingRelationship[];
+}
+
 export interface SavedViewSummary {
   id: number;
   name: string;
