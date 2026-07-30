@@ -866,6 +866,60 @@ fn find_fk_path(edges: &[FkEdge], base: &TableKey, target: &TableKey) -> Vec<FkH
     Vec::new()
 }
 
+/// BFS over the FK adjacency graph, starting from `base`. Returns every reachable
+/// table (excluding `base` itself) paired with its hop distance. The result order
+/// is deterministic: sorted by hop count, then by schema and table name.
+fn reachable_tables_bfs(edges: &[FkEdge], base: &TableKey) -> Vec<(TableKey, u32)> {
+    let adjacency = build_fk_adjacency(edges);
+    let mut visited: HashSet<TableKey> = HashSet::from([base.clone()]);
+    let mut queue: VecDeque<(TableKey, u32)> = VecDeque::from([(base.clone(), 0)]);
+    let mut result: Vec<(TableKey, u32)> = Vec::new();
+
+    while let Some((current, hop_count)) = queue.pop_front() {
+        let Some(hops) = adjacency.get(&current) else {
+            continue;
+        };
+
+        for hop in hops {
+            let next = TableKey::new(&hop.to_schema, &hop.to_table);
+            if visited.contains(&next) {
+                continue;
+            }
+
+            visited.insert(next.clone());
+            let next_hop_count = hop_count + 1;
+            result.push((next.clone(), next_hop_count));
+            queue.push_back((next, next_hop_count));
+        }
+    }
+
+    result.sort_by(|(a_key, a_hops), (b_key, b_hops)| a_hops.cmp(b_hops).then_with(|| a_key.cmp(b_key)));
+    result
+}
+
+/// All tables reachable from `base_table` by following FK edges in either direction,
+/// within `base_schema`. FK edges never cross a schema boundary (see `load_fk_edges`),
+/// so the search stays inside one schema.
+pub async fn fk_reachable_tables(
+    pool: &PgPool,
+    base_schema: &str,
+    base_table: &str,
+) -> anyhow::Result<Vec<(String, String, u32)>> {
+    if !is_valid_identifier(base_schema) {
+        anyhow::bail!("Invalid schema name: {base_schema}");
+    }
+    if !is_valid_identifier(base_table) {
+        anyhow::bail!("Invalid table name: {base_table}");
+    }
+
+    let base = TableKey::new(base_schema, base_table);
+    let edges = get_fk_edges_cached(pool, base_schema).await?;
+    Ok(reachable_tables_bfs(&edges, &base)
+        .into_iter()
+        .map(|(key, hops)| (key.schema, key.table, hops))
+        .collect())
+}
+
 fn resolve_view_output_names(columns: &[ViewColumn]) -> anyhow::Result<Vec<String>> {
     let mut bare_name_counts: HashMap<&str, usize> = HashMap::new();
     for column in columns {
@@ -4769,6 +4823,118 @@ mod tests {
         assert_eq!(path[0].constraint_name, "a_orders_accounts");
         assert_eq!(path[0].to_table, "accounts");
         assert_eq!(path[1].constraint_name, "z_accounts_regions");
+    }
+
+    #[test]
+    fn reachable_tables_bfs_returns_linear_chain_distances() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "orders_customer_fkey",
+            ),
+            fk_edge(
+                "customers",
+                "regions",
+                &["region_id"],
+                &["id"],
+                "customers_region_fkey",
+            ),
+        ];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(
+            reachable,
+            vec![
+                (TableKey::new("public", "customers"), 1),
+                (TableKey::new("public", "regions"), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn reachable_tables_bfs_excludes_unreachable_table() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "customers",
+                &["customer_id"],
+                &["id"],
+                "orders_customer_fkey",
+            ),
+            fk_edge(
+                "shipments",
+                "warehouses",
+                &["warehouse_id"],
+                &["id"],
+                "shipments_warehouse_fkey",
+            ),
+        ];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(reachable, vec![(TableKey::new("public", "customers"), 1)]);
+        assert!(
+            !reachable
+                .iter()
+                .any(|(key, _)| key.table == "warehouses" || key.table == "shipments")
+        );
+    }
+
+    #[test]
+    fn reachable_tables_bfs_orders_deterministically_by_hop_then_name() {
+        let edges = vec![
+            fk_edge(
+                "orders",
+                "zebras",
+                &["zebra_id"],
+                &["id"],
+                "orders_zebra_fkey",
+            ),
+            fk_edge(
+                "orders",
+                "apples",
+                &["apple_id"],
+                &["id"],
+                "orders_apple_fkey",
+            ),
+            fk_edge(
+                "apples",
+                "trees",
+                &["tree_id"],
+                &["id"],
+                "apples_tree_fkey",
+            ),
+        ];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "orders"));
+
+        assert_eq!(
+            reachable,
+            vec![
+                (TableKey::new("public", "apples"), 1),
+                (TableKey::new("public", "zebras"), 1),
+                (TableKey::new("public", "trees"), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn reachable_tables_bfs_handles_composite_edges() {
+        let edges = vec![fk_edge(
+            "shipment_legs",
+            "routes",
+            &["route_region", "route_code"],
+            &["region", "code"],
+            "legs_route_fkey",
+        )];
+
+        let reachable = reachable_tables_bfs(&edges, &TableKey::new("public", "shipment_legs"));
+
+        assert_eq!(reachable, vec![(TableKey::new("public", "routes"), 1)]);
     }
 
     #[test]

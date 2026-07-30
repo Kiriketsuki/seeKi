@@ -17,7 +17,7 @@ use crate::db::{
     ValidationError, ViewDefinitionShape, ViewDerivedInputKind, ViewDraft, ViewExportQueryParams,
     ViewRowsQueryParams,
 };
-use crate::store::{Store, connection_id, views};
+use crate::store::{Store, connection_id, display_names, views};
 
 pub fn router() -> Router {
     Router::new()
@@ -25,6 +25,7 @@ pub fn router() -> Router {
         .route("/preview", post(preview_saved_view))
         .route("/query", post(query_transient_view))
         .route("/fk-path", get(get_fk_path))
+        .route("/fk-reachable", get(get_fk_reachable))
         .route(
             "/{id}",
             get(get_saved_view)
@@ -88,6 +89,12 @@ struct FkPathQuery {
     base_table: String,
     target_schema: String,
     target_table: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FkReachableQuery {
+    base_schema: String,
+    base_table: String,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -528,6 +535,55 @@ async fn get_fk_path(
         )
         .await?;
     Ok(Json(serde_json::json!({ "path": path })))
+}
+
+/// Every table reachable from `base_table` by following FK edges, allowlist-filtered.
+/// Response: `{"tables": [{schema, table, display_name, hops}]}`, sorted by hop count
+/// then by schema and table name (see `reachable_tables_bfs` in `db/postgres.rs`).
+async fn get_fk_reachable(
+    Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
+    Query(query): Query<FkReachableQuery>,
+) -> Result<Json<serde_json::Value>, super::AppError> {
+    let (state, _conn_id) = current_state_and_conn_id(&mode).await?;
+    if !crate::db::postgres::is_valid_identifier(&query.base_schema)
+        || !crate::db::postgres::is_valid_identifier(&query.base_table)
+    {
+        return Err(super::AppError::bad_request("Invalid schema or table name"));
+    }
+    validate_allowed_table(&state, &query.base_schema, &query.base_table)?;
+
+    let reachable = state
+        .db
+        .fk_reachable_tables(&query.base_schema, &query.base_table)
+        .await?;
+
+    let overrides = display_names::list_display_names(store.pool()).await?;
+    let override_map: HashMap<(String, String), String> = overrides
+        .into_iter()
+        .map(|e| ((e.schema_name, e.table_name), e.display_name))
+        .collect();
+
+    let tables: Vec<serde_json::Value> = reachable
+        .into_iter()
+        .filter(|(schema, table, _)| state.config.tables.allows(schema, table))
+        .map(|(schema, table, hops)| {
+            let display_name = override_map
+                .get(&(schema.clone(), table.clone()))
+                .cloned()
+                .unwrap_or_else(|| {
+                    crate::config::display_name_table(&schema, &table, &state.config.display)
+                });
+            serde_json::json!({
+                "schema": schema,
+                "table": table,
+                "display_name": display_name,
+                "hops": hops,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "tables": tables })))
 }
 
 async fn get_saved_view_rows(

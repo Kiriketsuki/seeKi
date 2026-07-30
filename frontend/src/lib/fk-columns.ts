@@ -40,6 +40,18 @@ export function fkBadgeTarget(
 }
 
 /**
+ * The plain-language badge for an FK reachability hop count. One hop means
+ * the table sits behind a single foreign key, more than one means the path
+ * runs through at least one other table. Returns an empty string when the
+ * hop count is missing or not positive, so the caller can skip the badge.
+ */
+export function hopBadgeLabel(hops: number | undefined): string {
+  if (hops === 1) return 'Directly linked';
+  if (hops !== undefined && hops > 1) return 'Linked through another table';
+  return '';
+}
+
+/**
  * Reads every source-column value the edge needs to peek at its target row.
  * Returns null when any member of a composite FK is null or undefined on
  * this row, since a partial key cannot identify a unique target row.

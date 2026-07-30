@@ -727,6 +727,20 @@ impl DatabasePool {
         }
     }
 
+    /// All tables reachable from `base_table` by following FK edges, with hop distance.
+    /// Returns `(schema, table, hops)` tuples, excluding the base table itself.
+    pub async fn fk_reachable_tables(
+        &self,
+        base_schema: &str,
+        base_table: &str,
+    ) -> anyhow::Result<Vec<(String, String, u32)>> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::fk_reachable_tables(pool, base_schema, base_table).await
+            }
+        }
+    }
+
     pub async fn preview_view(
         &self,
         draft: &ViewDraft<'_>,

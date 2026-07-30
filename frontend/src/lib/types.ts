@@ -263,6 +263,19 @@ export interface FkPathResponse {
   path: FkHop[];
 }
 
+/** One table reachable from a base table by following FK edges. */
+export interface ReachableTable {
+  schema: string;
+  table: string;
+  display_name: string;
+  /** Number of FK hops from the base table. 1 means directly linked. */
+  hops: number;
+}
+
+export interface FkReachableResponse {
+  tables: ReachableTable[];
+}
+
 export interface ReferencesResponse {
   references: ReferenceEntry[];
 }

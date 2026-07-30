@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, X } from 'lucide-svelte';
   import { fetchColumnSamples, fetchColumns } from '../lib/api';
+  import { hopBadgeLabel } from '../lib/fk-columns';
   import type { ColumnInfo, TableInfo, ViewColumn, ViewDerivedColumn, ViewSourceRef } from '../lib/types';
   import { buildSourceDefinition as buildSourceDefinitionShared } from '../lib/view-shape';
 
@@ -41,6 +42,7 @@
     baseSchema = '',
     baseTable = '',
     reachableTables = [],
+    reachableHops = {},
     sources = [],
     value = null,
     onSave,
@@ -51,6 +53,8 @@
     baseSchema: string;
     baseTable: string;
     reachableTables: TableInfo[];
+    /** FK hop count per reachable table, keyed by `${schema}.${table}`. */
+    reachableHops?: Record<string, number>;
     sources: ViewSourceRef[];
     value?: ViewColumn | null;
     onSave: (payload: PickerPayload) => void;
@@ -528,7 +532,8 @@
                   <option value={`${baseSchema}.${baseTable}`}>{baseSchema}.{baseTable}</option>
                 {:else if mode === 'fk'}
                   {#each fkChoices as table (`${table.schema}.${table.name}`)}
-                    <option value={`${table.schema}.${table.name}`}>{table.schema}.{table.name}</option>
+                    {@const badge = hopBadgeLabel(reachableHops[`${table.schema}.${table.name}`])}
+                    <option value={`${table.schema}.${table.name}`}>{table.schema}.{table.name}{badge ? ` — ${badge}` : ''}</option>
                   {/each}
                 {:else}
                   {#each sameSchemaTables as table (`${table.schema}.${table.name}`)}

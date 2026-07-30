@@ -6,6 +6,7 @@ import type {
   DisplayConfig,
   SettingsEntries,
   TableRelationships,
+  ReachableTable,
   ReferenceEntry,
   ReferencesResponse,
   TableRowResponse,
@@ -513,6 +514,30 @@ export function mockFetchTableRelationships(
   table: string,
 ): TableRelationships {
   return RELATIONSHIPS[table] ?? { outgoing: [], incoming: [] };
+}
+
+// Bulk FK reachability fixtures, consistent with RELATIONSHIPS above.
+// `warehouses` never appears: its only edge (from orders) is outside the allowlist.
+const REACHABLE: Record<string, ReachableTable[]> = {
+  orders: [
+    { schema: 'public', table: 'users', display_name: 'Users', hops: 1 },
+    { schema: 'public', table: 'tickets', display_name: 'Tickets', hops: 2 },
+  ],
+  tickets: [
+    { schema: 'public', table: 'users', display_name: 'Users', hops: 1 },
+    { schema: 'public', table: 'orders', display_name: 'Orders', hops: 2 },
+  ],
+  users: [
+    { schema: 'public', table: 'orders', display_name: 'Orders', hops: 1 },
+    { schema: 'public', table: 'tickets', display_name: 'Tickets', hops: 1 },
+  ],
+};
+
+export function mockFetchFkReachable(
+  _schema: string,
+  table: string,
+): ReachableTable[] {
+  return REACHABLE[table] ?? [];
 }
 
 /**

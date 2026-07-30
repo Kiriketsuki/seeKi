@@ -5,6 +5,7 @@ import {
   fkBadgeTarget,
   fkCellValues,
   hasHoppableEdge,
+  hopBadgeLabel,
 } from './fk-columns';
 import type { OutgoingRelationship, TableRelationships } from './types';
 
@@ -102,6 +103,22 @@ describe('fkBadgeTarget', () => {
   it('falls back to the first edge when nothing is allowed', () => {
     const picked = fkBadgeTarget([edge('x', ['a'], 'hidden', false)]);
     expect(picked?.target.table).toBe('hidden');
+  });
+});
+
+describe('hopBadgeLabel', () => {
+  it('labels a one-hop table as directly linked', () => {
+    expect(hopBadgeLabel(1)).toBe('Directly linked');
+  });
+
+  it('labels a multi-hop table as linked through another table', () => {
+    expect(hopBadgeLabel(2)).toBe('Linked through another table');
+    expect(hopBadgeLabel(5)).toBe('Linked through another table');
+  });
+
+  it('returns an empty string for a missing or non-positive hop count', () => {
+    expect(hopBadgeLabel(undefined)).toBe('');
+    expect(hopBadgeLabel(0)).toBe('');
   });
 });
 
