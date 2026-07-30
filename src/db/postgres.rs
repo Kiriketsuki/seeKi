@@ -1464,6 +1464,71 @@ pub async fn lookup_fk_path(
     Ok(find_fk_path(&edges, &base, &target))
 }
 
+/// Cap a raw row count at 1000 and report whether the true count exceeds it.
+/// The UI shows "1000+" instead of an unbounded number for a heavily referenced row.
+fn cap_count(count: i64) -> (i64, bool) {
+    if count > 1000 { (1000, true) } else { (count, false) }
+}
+
+/// Count rows in the source table of one incoming FK edge whose FK columns equal
+/// the given values, capped at 1000 so a heavily referenced row cannot trigger an
+/// unbounded scan. `source_columns` and `values` pair up by position.
+pub async fn count_referencing_rows(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+    source_columns: &[String],
+    values: &[String],
+) -> anyhow::Result<(i64, bool)> {
+    if !is_valid_identifier(schema) {
+        anyhow::bail!("Invalid schema name: {schema}");
+    }
+    if !is_valid_identifier(table) {
+        anyhow::bail!("Invalid table name: {table}");
+    }
+    if source_columns.is_empty() || source_columns.len() != values.len() {
+        anyhow::bail!("Mismatched FK columns and values for reference count");
+    }
+    for col in source_columns {
+        if !is_valid_identifier(col) {
+            anyhow::bail!("Invalid FK column name: {col}");
+        }
+    }
+
+    let columns = get_columns(pool, schema, table).await?;
+    let column_types: std::collections::HashMap<&str, &str> = columns
+        .iter()
+        .map(|c| (c.name.as_str(), c.data_type.as_str()))
+        .collect();
+
+    let mut conditions: Vec<String> = Vec::new();
+    let mut bind_values: Vec<String> = Vec::new();
+    let mut param_idx: u32 = 1;
+
+    for (col_name, value) in source_columns.iter().zip(values.iter()) {
+        let col_type = column_types.get(col_name.as_str()).copied().unwrap_or("");
+        let (condition, bind) = exact_filter_condition(col_name, col_type, value, param_idx);
+        conditions.push(condition);
+        if let Some(bind_value) = bind {
+            bind_values.push(bind_value);
+            param_idx += 1;
+        }
+    }
+
+    let where_clause = conditions.join(" AND ");
+    let count_sql = format!(
+        "SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM \"{schema}\".\"{table}\" WHERE {where_clause} LIMIT 1001) capped"
+    );
+
+    let mut count_query = sqlx::query(&count_sql);
+    for val in &bind_values {
+        count_query = count_query.bind(val);
+    }
+    let count: i64 = count_query.fetch_one(pool).await?.get("cnt");
+
+    Ok(cap_count(count))
+}
+
 fn normalize_boolean_filter(value: &str) -> Option<bool> {
     match value.trim().to_lowercase().as_str() {
         "yes" | "true" | "t" | "1" => Some(true),
@@ -4175,6 +4240,46 @@ mod tests {
         let (cond, bind) = exact_filter_condition("geom", "USER-DEFINED", "POINT(0 0)", 4);
         assert_eq!(cond, "\"geom\"::text = $4");
         assert_eq!(bind.as_deref(), Some("POINT(0 0)"));
+    }
+
+    #[test]
+    fn exact_filter_condition_builds_composite_edge_conditions_in_order() {
+        // Simulates the per-column loop `count_referencing_rows` runs for a
+        // composite FK edge: each column keeps its own type and parameter index.
+        let columns = ["warehouse_id", "region_code"];
+        let types = ["integer", "text"];
+        let values = ["7", "EU"];
+
+        let mut conditions = Vec::new();
+        let mut param_idx = 1u32;
+        for ((col, col_type), value) in columns.iter().zip(types.iter()).zip(values.iter()) {
+            let (cond, bind) = exact_filter_condition(col, col_type, value, param_idx);
+            conditions.push(cond);
+            if bind.is_some() {
+                param_idx += 1;
+            }
+        }
+
+        assert_eq!(
+            conditions,
+            vec![
+                "\"warehouse_id\" = $1::bigint",
+                "\"region_code\" = $2::text",
+            ]
+        );
+    }
+
+    #[test]
+    fn cap_count_reports_true_count_under_the_cap() {
+        assert_eq!(cap_count(0), (0, false));
+        assert_eq!(cap_count(500), (500, false));
+        assert_eq!(cap_count(1000), (1000, false));
+    }
+
+    #[test]
+    fn cap_count_caps_at_1000_and_flags_capped() {
+        assert_eq!(cap_count(1001), (1000, true));
+        assert_eq!(cap_count(50_000), (1000, true));
     }
 
     #[test]

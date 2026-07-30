@@ -12,10 +12,12 @@
     DateFormatPreference,
     FilterState,
     OutgoingRelationship,
+    ReferenceEntry,
     SortState,
     TableRelationships,
   } from '../lib/types';
   import { buildFkColumnMap, fkBadgeTarget, fkCellValues, hasHoppableEdge } from '../lib/fk-columns';
+  import RelatedRowsMenu from './RelatedRowsMenu.svelte';
   import { onMount } from 'svelte';
   import {
     buildSortableColumn,
@@ -38,10 +40,17 @@
     filtersVisible = false,
     fetchingMore = false,
     resetSignal = 0,
+    hasIncoming = false,
+    relatedRowsOpen = false,
+    relatedRowsLoading = false,
+    relatedRowsEntries = [],
     onSortChange,
     onFilterChange,
     onNearBottom,
     onRetryAppend,
+    onRelatedRows,
+    onRelatedRowSelect,
+    onCloseRelatedRows,
     onFkPeek,
   }: {
     columns: ColumnInfo[];
@@ -53,12 +62,28 @@
     filtersVisible?: boolean;
     fetchingMore?: boolean;
     resetSignal?: number;
+    /** Adds the trailing "Related information" column when this table has incoming FK edges. */
+    hasIncoming?: boolean;
+    /** True while the related-rows popover should be shown (loading or with entries). */
+    relatedRowsOpen?: boolean;
+    relatedRowsLoading?: boolean;
+    relatedRowsEntries?: ReferenceEntry[];
     onSortChange?: (nextSortState: SortState) => void;
     onFilterChange?: (column: string, value: string) => void;
     onNearBottom?: () => void;
     onRetryAppend?: () => void;
+    onRelatedRows?: (row: Record<string, unknown>) => void;
+    onRelatedRowSelect?: (entry: ReferenceEntry) => void;
+    onCloseRelatedRows?: () => void;
     onFkPeek?: (edge: OutgoingRelationship, values: Record<string, string>) => void;
   } = $props();
+
+  /** Synthetic column prop for the trailing "Related information" button. Never a real column name. */
+  const RELATED_ROWS_PROP = '__sk_related';
+
+  // Viewport coordinates of the button that opened the related-rows popover.
+  // Captured locally since RevoGrid cell templates only expose the DOM event.
+  let relatedRowsAnchor = $state({ x: 0, y: 0 });
 
   let gridEl: HTMLDivElement | undefined = $state(undefined);
 
@@ -530,6 +555,63 @@
     );
   }
 
+  /** Renders the trailing "Related information" button cell. Skeleton and error
+   * marker rows render empty, matching the other synthetic-row handling above. */
+  function renderRelatedRowsCell(
+    h: HyperFunc<VNode>,
+    props: CellTemplateProp,
+  ): VNode {
+    const model = props.model as Record<string | symbol, unknown> | undefined;
+    const markerVal = model?.[SKELETON_ROW_MARKER];
+    if (markerVal === 'skeleton' || markerVal === 'error') {
+      return h('div', { class: { 'sk-grid-cell': true } }, '');
+    }
+
+    return h(
+      'div',
+      { class: { 'sk-grid-cell': true, 'sk-grid-cell--related': true } },
+      [
+        h(
+          'button',
+          {
+            class: { 'sk-related-rows-button': true },
+            type: 'button',
+            'aria-label': 'Related information',
+            title: 'Related information',
+            onclick: (e: MouseEvent) => {
+              e.stopPropagation();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              relatedRowsAnchor = { x: rect.left, y: rect.bottom + 4 };
+              onRelatedRows?.(props.model as Record<string, unknown>);
+            },
+          },
+          [
+            h(
+              'svg',
+              {
+                width: '14',
+                height: '14',
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                'stroke-width': '2',
+                'stroke-linecap': 'round',
+                'stroke-linejoin': 'round',
+                'aria-hidden': 'true',
+              },
+              [
+                // lucide info
+                h('circle', { cx: '12', cy: '12', r: '10' }),
+                h('path', { d: 'M12 16v-4' }),
+                h('path', { d: 'M12 8h.01' }),
+              ]
+            ),
+          ]
+        ),
+      ]
+    );
+  }
+
   function handleBeforeSorting(event: CustomEvent<SortEventDetail>) {
     event.preventDefault();
     const column = String(event.detail.column.prop);
@@ -543,7 +625,7 @@
     // Reference revealedCells so toggling a per-cell reveal rebuilds the column
     // definitions and RevoGrid re-runs the cell templates with the new state.
     void revealedCells;
-    return columns.map((column) =>
+    const dataColumns = columns.map((column) =>
       buildSortableColumn(column, {
         order: sortState.find((entry) => entry.column === column.name)?.direction,
         filterValue: filters[column.name] ?? '',
@@ -552,6 +634,17 @@
         cellTemplate: renderCell,
       })
     );
+    if (!hasIncoming) return dataColumns;
+    return [
+      ...dataColumns,
+      {
+        prop: RELATED_ROWS_PROP,
+        name: '',
+        size: 44,
+        sortable: false,
+        cellTemplate: renderRelatedRowsCell,
+      },
+    ];
   });
 </script>
 
@@ -569,6 +662,15 @@
     <div class="grid-empty" role="status">
       <span class="grid-empty__text">No rows</span>
     </div>
+  {/if}
+  {#if relatedRowsOpen}
+    <RelatedRowsMenu
+      anchor={relatedRowsAnchor}
+      loading={relatedRowsLoading}
+      entries={relatedRowsEntries}
+      onSelect={onRelatedRowSelect}
+      onClose={onCloseRelatedRows}
+    />
   {/if}
 </div>
 
@@ -750,6 +852,33 @@
   .grid-card :global(.sk-grid-cell--fk) {
     background: rgba(var(--sk-accent-active-rgb), 0.06);
     box-shadow: inset 2px 0 0 rgba(var(--sk-accent-active-rgb), 0.35);
+  }
+
+  /* Related-rows column — a small centered icon button, no text label */
+  .grid-card :global(.sk-grid-cell--related) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .grid-card :global(.sk-related-rows-button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sk-text-muted, currentColor);
+    cursor: pointer;
+  }
+
+  .grid-card :global(.sk-related-rows-button:hover) {
+    background: rgba(var(--sk-accent-active-rgb), 0.12);
+    color: var(--sk-accent-active);
   }
 
   /* FK peek button — reuses the cell's text styling, underlines on hover so it
