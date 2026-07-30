@@ -40,6 +40,7 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
         )
         .route("/tables/{schema}/{table}/samples", get(get_column_samples))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
+        .route("/tables/{schema}/{table}/row", get(get_single_row))
         .route("/config/display", get(get_display_config))
         .route("/connection-status", get(get_connection_status))
         .route("/export/{schema}/{table}/csv", get(export_csv))
@@ -671,6 +672,74 @@ async fn get_rows(
         .await
         .map_err(|e| map_table_query_error(e, &table))?;
     Ok(Json(serde_json::json!(result)))
+}
+
+/// GET /api/tables/{schema}/{table}/row — one row matching an `eq.` exact-filter
+/// set, for the FK peek panel. Requires at least one `eq.` filter so the query
+/// cannot degrade into "the first row of the whole table".
+async fn get_single_row(
+    Extension(mode): Extension<SharedAppMode>,
+    Path((schema, table)): Path<(String, String)>,
+    Query(all_params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
+    }
+    let columns = load_table_columns(&state, &schema, &table).await?;
+
+    let exact_filters = parse_exact_filters(&all_params);
+    if exact_filters.is_empty() {
+        return Err(AppError::bad_request(
+            "At least one eq. filter is required",
+        ));
+    }
+    let valid_column_names: std::collections::HashSet<&str> =
+        columns.iter().map(|c| c.name.as_str()).collect();
+    for col_name in exact_filters.keys() {
+        if !valid_column_names.contains(col_name.as_str()) {
+            return Err(AppError::bad_request(format!(
+                "Unknown column '{}' on table '{schema}.{table}'",
+                truncate_for_error(col_name)
+            )));
+        }
+    }
+
+    let (row, multiple) = state
+        .db
+        .query_single_row(&schema, &table, &exact_filters)
+        .await
+        .map_err(|e| map_table_query_error(e, &table))?;
+
+    let sibling_names: Vec<&str> = columns.iter().map(|c| c.name.as_str()).collect();
+    let response_columns: Vec<serde_json::Value> = columns
+        .iter()
+        .map(|c| {
+            let display = display_name_column(
+                &schema,
+                &table,
+                &c.name,
+                &sibling_names,
+                &state.config.display,
+            );
+            serde_json::json!({
+                "name": c.name,
+                "display_name": display,
+                "data_type": c.data_type,
+                "display_type": c.display_type,
+                "is_nullable": c.is_nullable,
+                "is_primary_key": c.is_primary_key,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "row": row,
+        "multiple": multiple,
+        "columns": response_columns,
+    })))
 }
 
 async fn export_csv(

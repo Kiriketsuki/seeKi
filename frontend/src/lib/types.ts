@@ -246,6 +246,14 @@ export interface ColumnSamplesResponse {
   samples: string[];
 }
 
+/** Response of GET /tables/{schema}/{table}/row, used by the FK peek panel. */
+export interface TableRowResponse {
+  row: Record<string, unknown> | null;
+  /** True when the eq. filters matched more than one row; the peek panel shows only the first. */
+  multiple: boolean;
+  columns: ColumnInfo[];
+}
+
 export interface StatusResponse {
   mode: 'normal' | 'setup';
 }

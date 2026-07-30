@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { mockFetchTables, mockFetchColumns, mockFetchRows, mockFetchDisplayConfig } from './mock';
+import {
+  mockFetchTables,
+  mockFetchColumns,
+  mockFetchRows,
+  mockFetchTableRow,
+  mockFetchDisplayConfig,
+} from './mock';
 
 describe('mockFetchTables', () => {
   it('returns an array of tables', () => {
@@ -133,6 +139,28 @@ describe('mockFetchRows', () => {
         expect(prevRole <= currRole).toBe(true);
       }
     }
+  });
+});
+
+describe('mockFetchTableRow', () => {
+  it('returns the first row matching every exact filter', () => {
+    const result = mockFetchTableRow('public', 'users', { id: '1' });
+    expect(result.row).not.toBeNull();
+    expect(String(result.row?.id)).toBe('1');
+    expect(result.multiple).toBe(false);
+    expect(result.columns.length).toBeGreaterThan(0);
+  });
+
+  it('returns null when nothing matches', () => {
+    const result = mockFetchTableRow('public', 'users', { id: '99999' });
+    expect(result.row).toBeNull();
+    expect(result.multiple).toBe(false);
+  });
+
+  it('returns null for an unknown table', () => {
+    const result = mockFetchTableRow('public', 'nonexistent', { id: '1' });
+    expect(result.row).toBeNull();
+    expect(result.columns).toEqual([]);
   });
 });
 

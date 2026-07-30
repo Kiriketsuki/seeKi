@@ -15,6 +15,7 @@
   import RowCapWarning from './components/RowCapWarning.svelte';
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
+  import PeekPanel from './components/PeekPanel.svelte';
   import {
     buildViewCsvUrl,
     deleteView,
@@ -25,6 +26,7 @@
     fetchSettings,
     fetchStatus,
     fetchTableRelationships,
+    fetchTableRow,
     fetchTables,
     fetchUpdateStatus,
     fetchView,
@@ -43,6 +45,7 @@
     DisplayConfig,
     FilterState,
     PageSizePreference,
+    OutgoingRelationship,
     PaginationMode,
     QueryResult,
     SavedViewDefinition,
@@ -165,6 +168,17 @@
   // Exact-match filters (`eq.` params). FK jump navigation creates them.
   // There is no manual creation UI, the chips above the grid remove them.
   let exactFilters: Record<string, string> = $state({});
+  // FK peek panel: previews the linked row a clicked FK cell points at, before
+  // committing to a full jump. peekTargetFilters holds the exact-match filters
+  // (keyed by target column) used both to fetch the preview and to jump.
+  let peekOpen: boolean = $state(false);
+  let peekEdge: OutgoingRelationship | null = $state(null);
+  let peekTargetFilters: Record<string, string> = $state({});
+  let peekLoading: boolean = $state(false);
+  let peekError: string | null = $state(null);
+  let peekRow: Record<string, unknown> | null = $state(null);
+  let peekMultiple: boolean = $state(false);
+  let peekColumns: ColumnInfo[] = $state([]);
   let searchTerm: string = $state('');
   let searchVisible: boolean = $state(false);
   let columnsOpen: boolean = $state(false);
@@ -697,7 +711,67 @@
     return info?.display_name ?? column;
   }
 
-  async function selectTable(table: TableInfo) {
+  // Pairs each source FK column with its target column, in constraint order,
+  // to build the exact-match filters that identify the linked row.
+  function buildPeekTargetFilters(
+    edge: OutgoingRelationship,
+    values: Record<string, string>,
+  ): Record<string, string> {
+    const targetFilters: Record<string, string> = {};
+    edge.columns.forEach((sourceColumn, index) => {
+      const targetColumn = edge.target.columns[index];
+      if (targetColumn) {
+        targetFilters[targetColumn] = values[sourceColumn];
+      }
+    });
+    return targetFilters;
+  }
+
+  async function handleFkPeek(edge: OutgoingRelationship, values: Record<string, string>) {
+    peekEdge = edge;
+    peekTargetFilters = buildPeekTargetFilters(edge, values);
+    peekOpen = true;
+    peekLoading = true;
+    peekError = null;
+    peekRow = null;
+    peekMultiple = false;
+    peekColumns = [];
+
+    try {
+      const result = await fetchTableRow(edge.target.schema, edge.target.table, peekTargetFilters);
+      peekRow = result.row;
+      peekMultiple = result.multiple;
+      peekColumns = result.columns;
+    } catch (e) {
+      peekError = e instanceof Error ? e.message : 'Failed to load linked record';
+    } finally {
+      peekLoading = false;
+    }
+  }
+
+  function closePeek() {
+    peekOpen = false;
+  }
+
+  // The target table for a jump when it is present in the current allowlisted
+  // table list. A hidden target (outside the connection allowlist) never
+  // appears here, so the jump button stays absent for it.
+  let peekJumpTarget = $derived(
+    peekEdge
+      ? (tables.find(
+          (t) => t.schema === peekEdge!.target.schema && t.name === peekEdge!.target.table,
+        ) ?? null)
+      : null,
+  );
+
+  function handlePeekJump() {
+    if (!peekJumpTarget) return;
+    const targetFilters = { ...peekTargetFilters };
+    peekOpen = false;
+    void selectTable(peekJumpTarget, { exactFilters: targetFilters });
+  }
+
+  async function selectTable(table: TableInfo, opts?: { exactFilters?: Record<string, string> }) {
     const myRequest = ++navRequestId;
     tablesSurface = { kind: 'table' };
     selectedSchema = table.schema;
@@ -707,7 +781,7 @@
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
-    exactFilters = {};
+    exactFilters = opts?.exactFilters ? { ...opts.exactFilters } : {};
     columnsOpen = false;
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
@@ -733,12 +807,18 @@
       relationships = rels;
 
       if (lastUsed) {
-        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
-          column: col,
-          direction: dir,
-        }));
-        initialFilters = lastUsed.filters;
-        initialSearch = lastUsed.search_term ?? '';
+        // A jump from the FK peek panel arrives with its own exact filters
+        // and wants a clean view. Fetching lastUsed still primes its cache
+        // for a later plain visit, but applying its sort/filters/search here
+        // would fight the jump target, so only that application is skipped.
+        if (!opts?.exactFilters) {
+          initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
+            column: col,
+            direction: dir,
+          }));
+          initialFilters = lastUsed.filters;
+          initialSearch = lastUsed.search_term ?? '';
+        }
         if (lastUsed.page_size != null && isPageSizePreference(lastUsed.page_size)) {
           pageSize = lastUsed.page_size;
         } else {
@@ -1523,6 +1603,7 @@
                       onFilterChange={handleFilterChange}
                       onNearBottom={() => { if (paginationMode === 'infinite' && !appendError) void loadMoreRows(); }}
                       onRetryAppend={() => { appendError = false; void loadMoreRows(); }}
+                      onFkPeek={(edge, values) => void handleFkPeek(edge, values)}
                     />
                   </div>
                   {#if hasSurfaceSelection}
@@ -1615,6 +1696,18 @@
     onStatusChange={(s) => {
       applyUpdateStatus(s);
     }}
+  />
+  <PeekPanel
+    open={peekOpen}
+    title={peekEdge?.target.display_name ?? ''}
+    loading={peekLoading}
+    error={peekError}
+    row={peekRow}
+    multiple={peekMultiple}
+    columns={peekColumns}
+    onClose={closePeek}
+    onJump={peekJumpTarget ? handlePeekJump : undefined}
+    jumpLabel={`Open in ${peekEdge?.target.display_name ?? ''}`}
   />
 {/if}
 
