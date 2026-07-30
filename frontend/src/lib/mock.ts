@@ -6,6 +6,9 @@ import type {
   DisplayConfig,
   SettingsEntries,
   TableRelationships,
+  ReferenceEntry,
+  ReferencesResponse,
+  TableRowResponse,
   UpdateStatus,
   VersionInfo,
   ViewColumn,
@@ -512,6 +515,46 @@ export function mockFetchTableRelationships(
   return RELATIONSHIPS[table] ?? { outgoing: [], incoming: [] };
 }
 
+/**
+ * Capped counts of referencing rows, derived from the same generated mock
+ * rows `mockFetchRows` reads from. Covers users referenced by orders and
+ * tickets, matching the `RELATIONSHIPS.users.incoming` fixture.
+ */
+export function mockFetchTableReferences(
+  _schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): ReferencesResponse {
+  const relationships = RELATIONSHIPS[table];
+  if (!relationships) return { references: [] };
+
+  const references: ReferenceEntry[] = [];
+  for (const edge of relationships.incoming) {
+    const values = edge.columns.map((col) => exactFilters[col]);
+    if (values.some((value) => value == null)) continue;
+
+    const sourceTable = edge.source.table;
+    const info = TABLES.find((t) => t.name === sourceTable);
+    const totalRows = info?.row_count_estimate ?? 0;
+    const allRows = getRows(sourceTable, totalRows);
+    const count = allRows.filter((row) =>
+      edge.source.columns.every((col, i) => String(row[col] ?? '') === values[i]),
+    ).length;
+
+    references.push({
+      schema: edge.source.schema,
+      table: sourceTable,
+      display_name: edge.source.display_name,
+      columns: edge.source.columns,
+      count: Math.min(count, 1000),
+      capped: count > 1000,
+    });
+  }
+
+  references.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  return { references };
+}
+
 export function mockFetchRows(
   _schema: string,
   table: string,
@@ -656,6 +699,36 @@ export function mockFetchTransientViewRows(
     total_rows: baseResult.total_rows,
     page: baseResult.page,
     page_size: baseResult.page_size,
+  };
+}
+
+/**
+ * Mock counterpart of GET /tables/{schema}/{table}/row, used by the FK peek
+ * panel. Looks up the generated fixture rows for the table and returns the
+ * first exact match. Mock mode never generates a second colliding row, so
+ * `multiple` is always false here.
+ */
+export function mockFetchTableRow(
+  _schema: string,
+  table: string,
+  exactFilters: Record<string, string>,
+): TableRowResponse {
+  const info = TABLES.find((t) => t.name === table);
+  const totalRows = info?.row_count_estimate ?? 50;
+  const allRows = getRows(table, totalRows);
+  const entries = Object.entries(exactFilters);
+
+  const row =
+    entries.length === 0
+      ? null
+      : (allRows.find((candidate) =>
+          entries.every(([column, value]) => String(candidate[column] ?? '') === value),
+        ) ?? null);
+
+  return {
+    row,
+    multiple: false,
+    columns: COLUMNS[table] ?? [],
   };
 }
 

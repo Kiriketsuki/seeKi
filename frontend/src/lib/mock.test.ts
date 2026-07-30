@@ -3,8 +3,10 @@ import {
   mockFetchTables,
   mockFetchColumns,
   mockFetchRows,
+  mockFetchTableRow,
   mockFetchDisplayConfig,
   mockFetchTransientViewRows,
+  mockFetchTableReferences,
 } from './mock';
 
 describe('mockFetchTables', () => {
@@ -226,6 +228,28 @@ describe('mockFetchTransientViewRows', () => {
   });
 });
 
+describe('mockFetchTableRow', () => {
+  it('returns the first row matching every exact filter', () => {
+    const result = mockFetchTableRow('public', 'users', { id: '1' });
+    expect(result.row).not.toBeNull();
+    expect(String(result.row?.id)).toBe('1');
+    expect(result.multiple).toBe(false);
+    expect(result.columns.length).toBeGreaterThan(0);
+  });
+
+  it('returns null when nothing matches', () => {
+    const result = mockFetchTableRow('public', 'users', { id: '99999' });
+    expect(result.row).toBeNull();
+    expect(result.multiple).toBe(false);
+  });
+
+  it('returns null for an unknown table', () => {
+    const result = mockFetchTableRow('public', 'nonexistent', { id: '1' });
+    expect(result.row).toBeNull();
+    expect(result.columns).toEqual([]);
+  });
+});
+
 describe('mockFetchDisplayConfig', () => {
   it('returns branding and tables config', () => {
     const config = mockFetchDisplayConfig();
@@ -242,5 +266,31 @@ describe('mockFetchDisplayConfig', () => {
       expect(config.tables[key]).toBeDefined();
       expect(config.tables[key].display_name).toBe(table.display_name);
     }
+  });
+});
+
+describe('mockFetchTableReferences', () => {
+  it('counts orders and tickets referencing one user', () => {
+    const orders = mockFetchRows('public', 'orders', { page: 1, page_size: 1 });
+    const userId = orders.rows[0]?.user_id;
+    expect(userId).toBeDefined();
+
+    const result = mockFetchTableReferences('public', 'users', { id: String(userId) });
+    const tables = result.references.map((r) => r.table);
+    expect(tables).toContain('orders');
+    expect(tables).toContain('tickets');
+    for (const entry of result.references) {
+      expect(entry.count).toBeGreaterThan(0);
+      expect(entry.capped).toBe(false);
+    }
+  });
+
+  it('returns no references for a table with no incoming edges', () => {
+    expect(mockFetchTableReferences('public', 'orders', { id: '1' })).toEqual({ references: [] });
+  });
+
+  it('returns an empty list when the eq. params miss the referenced column', () => {
+    const result = mockFetchTableReferences('public', 'users', {});
+    expect(result.references).toEqual([]);
   });
 });

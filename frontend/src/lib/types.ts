@@ -183,6 +183,18 @@ export interface TableRelationships {
   incoming: IncomingRelationship[];
 }
 
+/** One incoming FK edge's capped row count, as returned by /references. */
+export interface ReferenceEntry {
+  schema: string;
+  table: string;
+  display_name: string;
+  /** FK columns on the source table, in constraint order. */
+  columns: string[];
+  count: number;
+  /** True when `count` is 1000 because the true count exceeds the cap. */
+  capped: boolean;
+}
+
 export interface SavedViewSummary {
   id: number;
   name: string;
@@ -251,8 +263,20 @@ export interface FkPathResponse {
   path: FkHop[];
 }
 
+export interface ReferencesResponse {
+  references: ReferenceEntry[];
+}
+
 export interface ColumnSamplesResponse {
   samples: string[];
+}
+
+/** Response of GET /tables/{schema}/{table}/row, used by the FK peek panel. */
+export interface TableRowResponse {
+  row: Record<string, unknown> | null;
+  /** True when the eq. filters matched more than one row; the peek panel shows only the first. */
+  multiple: boolean;
+  columns: ColumnInfo[];
 }
 
 export interface StatusResponse {

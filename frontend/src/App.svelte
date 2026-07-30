@@ -16,6 +16,8 @@
   import SetupWizard from './components/SetupWizard.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
   import RelatedColumnsPicker from './components/RelatedColumnsPicker.svelte';
+  import PeekPanel from './components/PeekPanel.svelte';
+  import { buildPeekTargetFilters } from './lib/fk-columns';
   import {
     buildViewCsvUrl,
     deleteView,
@@ -25,7 +27,9 @@
     fetchRows,
     fetchSettings,
     fetchStatus,
+    fetchTableReferences,
     fetchTableRelationships,
+    fetchTableRow,
     fetchTables,
     fetchTransientViewRows,
     fetchUpdateStatus,
@@ -45,9 +49,11 @@
     DisplayConfig,
     FilterState,
     PageSizePreference,
+    OutgoingRelationship,
     PaginationMode,
     PickedRelatedColumn,
     QueryResult,
+    ReferenceEntry,
     SavedViewDefinition,
     SavedViewSummary,
     SettingsEntries,
@@ -95,6 +101,7 @@
     resetState,
     type RowCapState,
   } from './lib/infinite-scroll';
+  import { buildJumpFilters, buildReferenceParams, hasRelatedRows } from './lib/related-rows';
 
   function setSidebarMode(mode: SidebarMode) {
     sidebarMode.set(mode);
@@ -184,6 +191,26 @@
   // Exact-match filters (`eq.` params). FK jump navigation creates them.
   // There is no manual creation UI, the chips above the grid remove them.
   let exactFilters: Record<string, string> = $state({});
+  // "Related information" popover: which row opened it, its loaded entries,
+  // and whether the /references request is still in flight.
+  let relatedRowsOpen: boolean = $state(false);
+  let relatedRowsLoading: boolean = $state(false);
+  let relatedRowsEntries: ReferenceEntry[] = $state([]);
+  let relatedRowsRow: Record<string, unknown> | null = $state(null);
+  let relatedRowsRequestId = 0;
+  // FK peek panel: previews the linked row a clicked FK cell points at, before
+  // committing to a full jump. peekTargetFilters holds the exact-match filters
+  // (keyed by target column) used both to fetch the preview and to jump.
+  let peekOpen: boolean = $state(false);
+  let peekEdge: OutgoingRelationship | null = $state(null);
+  let peekTargetFilters: Record<string, string> = $state({});
+  let peekLoading: boolean = $state(false);
+  let peekError: string | null = $state(null);
+  let peekRow: Record<string, unknown> | null = $state(null);
+  let peekMultiple: boolean = $state(false);
+  let peekColumns: ColumnInfo[] = $state([]);
+  // Guards against an older peek fetch resolving after a newer one.
+  let peekRequestId = 0;
   let searchTerm: string = $state('');
   let searchVisible: boolean = $state(false);
   let columnsOpen: boolean = $state(false);
@@ -486,6 +513,14 @@
       }
 
       if (event.key === 'Escape') {
+        // The peek panel sits above everything, so Escape closes it first and
+        // does not also clear the search or the filters behind it.
+        if (peekOpen) {
+          event.preventDefault();
+          closePeek();
+          return;
+        }
+
         if (columnsOpen) {
           event.preventDefault();
           columnsOpen = false;
@@ -797,7 +832,64 @@
     return info?.display_name ?? column;
   }
 
-  async function selectTable(table: TableInfo) {
+  async function handleFkPeek(edge: OutgoingRelationship, values: Record<string, string>) {
+    const targetFilters = buildPeekTargetFilters(edge, values);
+    // A constraint whose source and target column lists disagree cannot name a
+    // single target row. Do not open the panel on a partial key.
+    if (!targetFilters) return;
+
+    // Two quick clicks start two fetches. Only the newest may write the panel
+    // state, otherwise a slow first response overwrites the second preview.
+    const myRequest = ++peekRequestId;
+    peekEdge = edge;
+    peekTargetFilters = targetFilters;
+    peekOpen = true;
+    peekLoading = true;
+    peekError = null;
+    peekRow = null;
+    peekMultiple = false;
+    peekColumns = [];
+
+    try {
+      const result = await fetchTableRow(edge.target.schema, edge.target.table, targetFilters);
+      if (myRequest !== peekRequestId) return;
+      peekRow = result.row;
+      peekMultiple = result.multiple;
+      peekColumns = result.columns;
+    } catch (e) {
+      if (myRequest !== peekRequestId) return;
+      peekError = e instanceof Error ? e.message : 'Failed to load linked record';
+    } finally {
+      if (myRequest === peekRequestId) peekLoading = false;
+    }
+  }
+
+  function closePeek() {
+    // Bump the request id so an in-flight fetch cannot reopen stale content.
+    peekRequestId += 1;
+    peekOpen = false;
+    peekLoading = false;
+  }
+
+  // The target table for a jump when it is present in the current allowlisted
+  // table list. A hidden target (outside the connection allowlist) never
+  // appears here, so the jump button stays absent for it.
+  let peekJumpTarget = $derived(
+    peekEdge
+      ? (tables.find(
+          (t) => t.schema === peekEdge!.target.schema && t.name === peekEdge!.target.table,
+        ) ?? null)
+      : null,
+  );
+
+  function handlePeekJump() {
+    if (!peekJumpTarget) return;
+    const targetFilters = { ...peekTargetFilters };
+    closePeek();
+    void selectTable(peekJumpTarget, { exactFilters: targetFilters });
+  }
+
+  async function selectTable(table: TableInfo, opts?: { exactFilters?: Record<string, string> }) {
     const myRequest = ++navRequestId;
     tablesSurface = { kind: 'table' };
     selectedSchema = table.schema;
@@ -807,9 +899,10 @@
     tableLoading = true;
     currentPage = 1;
     filtersVisible = false;
-    exactFilters = {};
+    exactFilters = opts?.exactFilters ? { ...opts.exactFilters } : {};
     columnsOpen = false;
     relatedColumns = loadRelatedColumns(table.schema, table.name);
+    handleCloseRelatedRows();
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -834,12 +927,18 @@
       relationships = rels;
 
       if (lastUsed) {
-        initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
-          column: col,
-          direction: dir,
-        }));
-        initialFilters = lastUsed.filters;
-        initialSearch = lastUsed.search_term ?? '';
+        // A jump from the FK peek panel arrives with its own exact filters
+        // and wants a clean view. Fetching lastUsed still primes its cache
+        // for a later plain visit, but applying its sort/filters/search here
+        // would fight the jump target, so only that application is skipped.
+        if (!opts?.exactFilters) {
+          initialSortState = lastUsed.sort_columns.map(({ col, dir }) => ({
+            column: col,
+            direction: dir,
+          }));
+          initialFilters = lastUsed.filters;
+          initialSearch = lastUsed.search_term ?? '';
+        }
         if (lastUsed.page_size != null && isPageSizePreference(lastUsed.page_size)) {
           pageSize = lastUsed.page_size;
         } else {
@@ -896,6 +995,59 @@
     }
   }
 
+  function handleCloseRelatedRows() {
+    relatedRowsOpen = false;
+    relatedRowsLoading = false;
+    relatedRowsEntries = [];
+    relatedRowsRow = null;
+  }
+
+  // Loads the capped reference counts for one row's "Related information" popover.
+  // Omits the request entirely when the row carries no non-null referenced value,
+  // showing the empty state right away instead of a request that would 400.
+  async function handleRelatedRows(row: Record<string, unknown>) {
+    const myRequest = ++relatedRowsRequestId;
+    relatedRowsRow = row;
+    relatedRowsOpen = true;
+    relatedRowsEntries = [];
+
+    const params = buildReferenceParams(relationships, row);
+    if (Object.keys(params).length === 0) {
+      relatedRowsLoading = false;
+      return;
+    }
+
+    relatedRowsLoading = true;
+    try {
+      const result = await fetchTableReferences(selectedSchema, selectedTable, params);
+      if (myRequest !== relatedRowsRequestId) return;
+      relatedRowsEntries = result.references;
+    } catch {
+      if (myRequest !== relatedRowsRequestId) return;
+      relatedRowsEntries = [];
+    } finally {
+      if (myRequest === relatedRowsRequestId) relatedRowsLoading = false;
+    }
+  }
+
+  // Jumps to the source table of one related-rows entry, pre-filtered on the
+  // clicked row's referenced values so the destination shows only its matches.
+  function handleRelatedRowSelect(entry: ReferenceEntry) {
+    const sourceRow = relatedRowsRow;
+    handleCloseRelatedRows();
+    if (!sourceRow) return;
+
+    const jumpFilters = buildJumpFilters(relationships, sourceRow, entry);
+    if (!jumpFilters) return;
+
+    const sourceTable = tables.find(
+      (t) => t.schema === entry.schema && t.name === entry.table,
+    );
+    if (!sourceTable) return;
+
+    void selectTable(sourceTable, { exactFilters: jumpFilters });
+  }
+
   // Optimistically renames a table in the sidebar/header, persists via PUT, then
   // reconciles with the server-resolved name (UI override > seeki.toml > heuristic).
   // Reverts and surfaces an error through the existing tableError banner on failure.
@@ -932,6 +1084,7 @@
     exactFilters = {};
     relatedColumns = [];
     columnsOpen = false;
+    handleCloseRelatedRows();
     clearFilterDebounce();
     clearLastUsedSaveDebounce();
     resetSearchState();
@@ -1636,10 +1789,18 @@
                       {fetchingMore}
 
                       {resetSignal}
+                      hasIncoming={tablesSurface.kind === 'table' && hasRelatedRows(relationships)}
+                      {relatedRowsOpen}
+                      {relatedRowsLoading}
+                      {relatedRowsEntries}
                       onSortChange={handleSortChange}
                       onFilterChange={handleFilterChange}
                       onNearBottom={() => { if (paginationMode === 'infinite' && !appendError) void loadMoreRows(); }}
                       onRetryAppend={() => { appendError = false; void loadMoreRows(); }}
+                      onRelatedRows={handleRelatedRows}
+                      onRelatedRowSelect={handleRelatedRowSelect}
+                      onCloseRelatedRows={handleCloseRelatedRows}
+                      onFkPeek={(edge, values) => void handleFkPeek(edge, values)}
                     />
                   </div>
                   {#if hasSurfaceSelection}
@@ -1741,6 +1902,18 @@
     picked={relatedColumns}
     onSave={handleRelatedColumnsChange}
     onClose={() => (relatedColumnsPickerOpen = false)}
+  />
+  <PeekPanel
+    open={peekOpen}
+    title={peekEdge?.target.display_name ?? ''}
+    loading={peekLoading}
+    error={peekError}
+    row={peekRow}
+    multiple={peekMultiple}
+    columns={peekColumns}
+    onClose={closePeek}
+    onJump={peekJumpTarget ? handlePeekJump : undefined}
+    jumpLabel={`Open in ${peekEdge?.target.display_name ?? ''}`}
   />
 {/if}
 

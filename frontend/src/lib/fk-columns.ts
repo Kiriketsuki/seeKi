@@ -38,3 +38,47 @@ export function fkBadgeTarget(
   if (!edges || edges.length === 0) return null;
   return edges.find((edge) => edge.target.allowed) ?? edges[0];
 }
+
+/**
+ * Reads every source-column value the edge needs to peek at its target row.
+ * Returns null when any member of a composite FK is null or undefined on
+ * this row, since a partial key cannot identify a unique target row.
+ */
+export function fkCellValues(
+  edge: OutgoingRelationship,
+  row: Record<string, unknown>,
+): Record<string, string> | null {
+  const values: Record<string, string> = {};
+  for (const column of edge.columns) {
+    const value = row[column];
+    if (value === null || value === undefined) {
+      return null;
+    }
+    values[column] = String(value);
+  }
+  return values;
+}
+
+/**
+ * Pairs each source FK column with its target column, in constraint order, to
+ * build the exact-match filters that identify the linked row. Returns null when
+ * the two column lists disagree in length or a source value is missing, because
+ * a partial key would query the target table on fewer columns than the
+ * constraint spans and silently match the wrong row.
+ */
+export function buildPeekTargetFilters(
+  edge: OutgoingRelationship,
+  values: Record<string, string>,
+): Record<string, string> | null {
+  const targetColumns = edge.target.columns;
+  if (edge.columns.length === 0 || targetColumns.length !== edge.columns.length) {
+    return null;
+  }
+  const targetFilters: Record<string, string> = {};
+  for (const [index, sourceColumn] of edge.columns.entries()) {
+    const value = values[sourceColumn];
+    if (value === undefined) return null;
+    targetFilters[targetColumns[index]] = value;
+  }
+  return targetFilters;
+}
