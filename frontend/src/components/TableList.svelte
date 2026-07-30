@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ChevronRight, Layers, Pencil, Search } from 'lucide-svelte';
+  import { ChevronRight, Layers, Pencil, Search, Tags } from 'lucide-svelte';
+  import { SCHEMA_PREFIXES_KEY } from '../lib/constants';
   import type { TableInfo } from '../lib/types';
 
   const MAX_DISPLAY_NAME_LENGTH = 64;
@@ -42,6 +43,28 @@
     }
 
     return table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
+  }
+
+  // Schema prefixes collapse to tags by default. The full prefix mode stays
+  // available via the Tags toggle next to the search box.
+  let showSchemaPrefixes = $state(localStorage.getItem(SCHEMA_PREFIXES_KEY) === 'full');
+
+  function toggleSchemaPrefixes() {
+    showSchemaPrefixes = !showSchemaPrefixes;
+    localStorage.setItem(SCHEMA_PREFIXES_KEY, showSchemaPrefixes ? 'full' : 'tags');
+  }
+
+  function displayLabel(table: TableInfo): string {
+    return showSchemaPrefixes ? prettyLabel(table) : table.name;
+  }
+
+  // In tag mode the schema shows as a small tag. The tag stays hidden until
+  // the row is hovered, except on a name collision where it always shows.
+  function schemaTag(table: TableInfo): string | null {
+    if (showSchemaPrefixes || table.schema === 'public') {
+      return null;
+    }
+    return table.schema;
   }
 
   function tableKey(table: TableInfo): string {
@@ -170,18 +193,32 @@
     </div>
   {/if}
 
-  <label class="panel-search table-search" data-testid="table-list-search">
-    <Search size={14} />
-    <input
-      bind:value={search}
-      class="panel-search-input table-search-input"
-      type="search"
-      placeholder="Search tables"
-      aria-label="Search tables"
-      spellcheck="false"
-      data-testid="table-search-input"
-    />
-  </label>
+  <div class="search-row">
+    <label class="panel-search table-search" data-testid="table-list-search">
+      <Search size={14} />
+      <input
+        bind:value={search}
+        class="panel-search-input table-search-input"
+        type="search"
+        placeholder="Search tables"
+        aria-label="Search tables"
+        spellcheck="false"
+        data-testid="table-search-input"
+      />
+    </label>
+    <button
+      type="button"
+      class="schema-toggle"
+      class:active={showSchemaPrefixes}
+      aria-label={showSchemaPrefixes ? 'Collapse schema prefixes to tags' : 'Show full schema prefixes'}
+      aria-pressed={showSchemaPrefixes}
+      title={showSchemaPrefixes ? 'Collapse schema prefixes to tags' : 'Show full schema prefixes'}
+      onclick={toggleSchemaPrefixes}
+      data-testid="schema-prefix-toggle"
+    >
+      <Tags size={14} />
+    </button>
+  </div>
 
   <div class="list-items" data-testid="table-list-items">
     {#if filteredTables.length > 0}
@@ -231,7 +268,12 @@
                 : `${table.schema}.${table.name}`}
               data-testid={`table-item-${tableKey(table)}`}
             >
-              <span class="table-item-name">{prettyLabel(table)}</span>
+              <span class="table-item-name">{displayLabel(table)}</span>
+              {#if schemaTag(table)}
+                <span class="schema-tag" class:always={collidingNames.has(table.name)}>
+                  {schemaTag(table)}
+                </span>
+              {/if}
               {#if table.is_partitioned}
                 <span class="partition-badge" title="Partitioned table">
                   <Layers size={11} />
@@ -311,6 +353,72 @@
     margin-top: var(--sk-space-xs);
     font-size: var(--sk-font-size-sm);
     color: var(--sk-muted);
+  }
+
+  .search-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sk-space-xs);
+    padding-right: var(--sk-space-xs);
+  }
+
+  .search-row .panel-search {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Tags toggle: switches between full schema prefixes and tag mode */
+  .schema-toggle {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--sk-border-light);
+    border-radius: var(--sk-radius-md);
+    background: none;
+    color: var(--sk-muted);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+  }
+
+  .schema-toggle:hover {
+    background: var(--sk-active-tint-soft);
+    color: var(--sk-text);
+  }
+
+  .schema-toggle.active {
+    background: var(--sk-active-tint-soft);
+    color: var(--sk-ink-strong);
+  }
+
+  .schema-toggle:focus-visible {
+    outline: 2px solid var(--sk-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* schema tag: hidden until row hover, always shown on a name collision */
+  .schema-tag {
+    display: none;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--sk-font-size-xs);
+    color: var(--sk-muted);
+    background: rgba(var(--marble-vein-rgb), 0.07);
+    border-radius: var(--sk-radius-pill);
+    padding: 1px 6px;
+    max-width: 45%;
+  }
+
+  .table-row:hover .schema-tag,
+  .table-row:focus-within .schema-tag,
+  .table-row.active .schema-tag,
+  .schema-tag.always {
+    display: inline-block;
   }
 
   /* search bar — padded to align with rows */
