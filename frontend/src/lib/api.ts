@@ -285,6 +285,7 @@ export interface TransientViewQueryBody {
   sort?: string;
   search?: string;
   filters?: Record<string, string>;
+  exact_filters?: Record<string, string>;
 }
 
 /**

@@ -98,11 +98,37 @@ export function fkSourceId(schema: string, table: string): string {
 }
 
 /**
+ * Sanitize a generated identifier the same way the backend's
+ * sanitize_generated_identifier does: keep alphanumerics, underscore, hyphen
+ * and space, replace every other character, and fall back to "source" when
+ * nothing readable survives.
+ */
+export function sanitizeGeneratedIdentifier(value: string): string {
+  const sanitized = Array.from(value)
+    .map((ch) => (/[\p{L}\p{N}_\- ]/u.test(ch) ? ch : '_'))
+    .join('');
+  return sanitized.trim().length === 0 ? 'source' : sanitized;
+}
+
+/**
+ * Prefix the backend puts in front of a colliding column name. The backend's
+ * output_name_prefix_for_saved_column prefers the sanitized source_id and
+ * falls back to the source table, so a related column joined through source
+ * id `fk-public.users` resolves to `fk-public_users__name`, not
+ * `users__name`. The frontend must agree, since it maps output names back to
+ * their "from {table}" header label.
+ */
+function outputNamePrefix(column: ViewColumn): string {
+  const fromSourceId = column.source_id ? sanitizeGeneratedIdentifier(column.source_id) : '';
+  return fromSourceId.length > 0 ? fromSourceId : column.source_table;
+}
+
+/**
  * Resolve the output column name for each plain source column, the same way
  * the backend's resolve_saved_view_output_names does for the no-alias,
  * no-aggregate, no-derived case: a bare column name stays bare unless it
  * collides with another selected column, in which case it gets a
- * `{table}__{column}` prefix. buildRelatedShape never sets alias, aggregate,
+ * `{prefix}__{column}` prefix. buildRelatedShape never sets alias, aggregate,
  * or derived, so this covers every shape it produces.
  */
 export function resolveViewColumnOutputNames(columns: ViewColumn[]): string[] {
@@ -112,7 +138,7 @@ export function resolveViewColumnOutputNames(columns: ViewColumn[]): string[] {
   }
   return columns.map((column) =>
     (counts.get(column.column_name) ?? 0) > 1
-      ? `${column.source_table}__${column.column_name}`
+      ? `${outputNamePrefix(column)}__${column.column_name}`
       : column.column_name,
   );
 }

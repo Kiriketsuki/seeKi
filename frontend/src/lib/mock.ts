@@ -8,7 +8,9 @@ import type {
   TableRelationships,
   UpdateStatus,
   VersionInfo,
+  ViewColumn,
 } from './types';
+import { resolveViewColumnOutputNames } from './view-shape';
 
 const MOCK_ROW_COUNT = 200;
 
@@ -582,11 +584,7 @@ export function mockFetchRows(
   };
 }
 
-export interface MockTransientViewQueryColumn {
-  source_schema: string;
-  source_table: string;
-  column_name: string;
-}
+export type MockTransientViewQueryColumn = ViewColumn;
 
 export interface MockTransientViewQueryBody {
   base_schema: string;
@@ -597,26 +595,7 @@ export interface MockTransientViewQueryBody {
   sort?: string;
   search?: string;
   filters?: Record<string, string>;
-}
-
-/**
- * Resolve output column names the same way resolve_saved_view_output_names
- * does on the backend: a bare column name stays bare unless it collides with
- * another selected column, in which case it gets a `{table}__{column}`
- * prefix. Mock mode covers only the plain-source case (no alias, no
- * aggregate, no derived column), since that is all inline related columns
- * needs.
- */
-function resolveMockOutputNames(columns: MockTransientViewQueryColumn[]): string[] {
-  const counts = new Map<string, number>();
-  for (const column of columns) {
-    counts.set(column.column_name, (counts.get(column.column_name) ?? 0) + 1);
-  }
-  return columns.map((column) =>
-    (counts.get(column.column_name) ?? 0) > 1
-      ? `${column.source_table}__${column.column_name}`
-      : column.column_name,
-  );
+  exact_filters?: Record<string, string>;
 }
 
 /**
@@ -641,7 +620,9 @@ export function mockFetchTransientViewRows(
           .map((row) => [Number(row.id), row] as const))
       : new Map<number, Record<string, unknown>>();
 
-  const outputNames = resolveMockOutputNames(body.shape.columns);
+  // Mock mode shares the real output-name resolution, so a collision renames
+  // a column here exactly as the backend renames it.
+  const outputNames = resolveViewColumnOutputNames(body.shape.columns);
 
   const rows = baseResult.rows.map((row) => {
     const related = usersById.get(Number(row.user_id));

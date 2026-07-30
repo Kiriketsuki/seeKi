@@ -527,6 +527,9 @@ pub struct ViewRowsQueryParams<'a> {
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
+    /// Exact-match filters, the `eq.` namespace. Empty for callers that
+    /// expose substring filters only.
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]

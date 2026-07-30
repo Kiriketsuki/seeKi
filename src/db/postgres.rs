@@ -3474,6 +3474,7 @@ fn rows_to_json(rows: &[sqlx::postgres::PgRow], columns: &[ColumnInfo]) -> Vec<s
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn query_projected_rows(
     pool: &PgPool,
     plan: &PlannedViewQuery,
@@ -3482,12 +3483,13 @@ async fn query_projected_rows(
     sort: &[SortEntry],
     search: Option<&str>,
     filters: &HashMap<String, String>,
+    exact_filters: &HashMap<String, String>,
 ) -> anyhow::Result<QueryResult> {
     let qb = build_query_clauses(
         &plan.output_columns,
         search,
         filters,
-        &HashMap::new(),
+        exact_filters,
         sort,
         true,
         plan.bind_values.len() as u32 + 1,
@@ -3553,6 +3555,7 @@ pub async fn preview_view(
         &[],
         None,
         &HashMap::new(),
+        &HashMap::new(),
     )
     .await
 }
@@ -3570,6 +3573,7 @@ pub async fn query_view_rows(
         params.sort,
         params.search,
         params.filters,
+        params.exact_filters,
     )
     .await
 }
@@ -3600,6 +3604,7 @@ pub async fn preview_view_shape(
         &[],
         None,
         &HashMap::new(),
+        &HashMap::new(),
     )
     .await
 }
@@ -3615,9 +3620,20 @@ pub async fn query_view_shape_rows(
     sort: &[SortEntry],
     search: Option<&str>,
     filters: &HashMap<String, String>,
+    exact_filters: &HashMap<String, String>,
 ) -> anyhow::Result<QueryResult> {
     let plan = plan_view_shape_query(pool, base_schema, base_table, shape).await?;
-    query_projected_rows(pool, &plan, page, page_size, sort, search, filters).await
+    query_projected_rows(
+        pool,
+        &plan,
+        page,
+        page_size,
+        sort,
+        search,
+        filters,
+        exact_filters,
+    )
+    .await
 }
 
 pub async fn export_view_shape_rows_stream<'a>(

@@ -6,6 +6,7 @@ import {
   loadRelatedColumns,
   relatedColumnsStorageKey,
   resolveViewColumnOutputNames,
+  sanitizeGeneratedIdentifier,
   saveRelatedColumns,
 } from './view-shape';
 import type { ColumnInfo, PickedRelatedColumn } from './types';
@@ -279,5 +280,60 @@ describe('resolveViewColumnOutputNames', () => {
       { source_schema: 'public', source_table: 'users', column_name: 'status' },
     ]);
     expect(names).toEqual(['orders__status', 'users__status']);
+  });
+
+  it('prefixes a colliding column with its sanitized source id, as the backend does', () => {
+    // output_name_prefix_for_saved_column prefers source_id over source_table,
+    // and sanitize_generated_identifier turns "." into "_".
+    const names = resolveViewColumnOutputNames([
+      { source_schema: 'public', source_table: 'orders', column_name: 'name' },
+      {
+        source_id: 'fk-public.users',
+        source_schema: 'public',
+        source_table: 'users',
+        column_name: 'name',
+      },
+    ]);
+    expect(names).toEqual(['orders__name', 'fk-public_users__name']);
+  });
+
+  it('matches the output names of a shape buildRelatedShape produces', () => {
+    const shape = buildRelatedShape(
+      'public',
+      'orders',
+      [
+        { name: 'id', display_name: 'ID', data_type: 'integer', display_type: 'number', is_nullable: false, is_primary_key: true },
+        { name: 'name', display_name: 'Name', data_type: 'varchar', display_type: 'text', is_nullable: true, is_primary_key: false },
+      ],
+      [
+        {
+          schema: 'public',
+          table: 'users',
+          tableDisplayName: 'Users',
+          column: 'name',
+          columnDisplayName: 'Name',
+        },
+      ],
+    );
+    expect(resolveViewColumnOutputNames(shape.columns)).toEqual([
+      'id',
+      'orders__name',
+      'fk-public_users__name',
+    ]);
+  });
+});
+
+describe('sanitizeGeneratedIdentifier', () => {
+  it('keeps alphanumerics, underscore, hyphen and space', () => {
+    expect(sanitizeGeneratedIdentifier('fk-public users_1')).toBe('fk-public users_1');
+  });
+
+  it('replaces every other character', () => {
+    expect(sanitizeGeneratedIdentifier('fk-public.users')).toBe('fk-public_users');
+  });
+
+  it('falls back to "source" when nothing readable survives', () => {
+    expect(sanitizeGeneratedIdentifier('   ')).toBe('source');
+    expect(sanitizeGeneratedIdentifier('')).toBe('source');
   });
 });

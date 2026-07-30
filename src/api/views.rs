@@ -75,6 +75,11 @@ struct TransientViewQueryBody {
     search: Option<String>,
     #[serde(default)]
     filters: HashMap<String, String>,
+    /// Exact-match filters, the body equivalent of the `eq.` query-param
+    /// namespace. An FK jump carries these, so the transient path must apply
+    /// them instead of returning the whole table.
+    #[serde(default)]
+    exact_filters: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -478,6 +483,7 @@ async fn query_transient_view(
                     sort: &sort,
                     search: body.search.as_deref(),
                     filters: &body.filters,
+                    exact_filters: &body.exact_filters,
                 })
                 .await?
         }
@@ -497,6 +503,7 @@ async fn query_transient_view(
                 &sort,
                 body.search.as_deref(),
                 &body.filters,
+                &body.exact_filters,
             )
             .await?
         }
@@ -536,6 +543,9 @@ async fn get_saved_view_rows(
     super::reject_legacy_sort_params(&all_params)?;
     let sort = parse_sort_without_validation(params.sort.as_deref())?;
     let filters = super::parse_filters(&all_params);
+    // Saved-view rows keep the substring-filter-only contract they shipped
+    // with. The `eq.` namespace stays a table-surface feature.
+    let exact_filters: HashMap<String, String> = HashMap::new();
     let result = match planner_compatibility_for_shape(&view.shape)? {
         PlannerCompatibility::Legacy(legacy) => {
             state
@@ -552,6 +562,7 @@ async fn get_saved_view_rows(
                     sort: &sort,
                     search: params.search.as_deref(),
                     filters: &filters,
+                    exact_filters: &exact_filters,
                 })
                 .await?
         }
@@ -571,6 +582,7 @@ async fn get_saved_view_rows(
                 &sort,
                 params.search.as_deref(),
                 &filters,
+                &exact_filters,
             )
             .await?
         }
@@ -1096,6 +1108,44 @@ mod tests {
         assert_eq!(requested.clamp(1, super::super::MAX_PAGE_SIZE), 1000);
         let requested_zero: u32 = 0;
         assert_eq!(requested_zero.clamp(1, super::super::MAX_PAGE_SIZE), 1);
+    }
+
+    #[test]
+    fn transient_view_query_body_carries_both_filter_namespaces() {
+        // An FK jump sends exact filters. The transient body must keep them
+        // separate from substring filters instead of dropping them.
+        let body: super::TransientViewQueryBody = serde_json::from_str(
+            r#"{
+                "base_schema":"public",
+                "base_table":"orders",
+                "shape":{"columns":[{"source_schema":"public","source_table":"orders","column_name":"id"}],"filters":{}},
+                "filters":{"status":"ship"},
+                "exact_filters":{"user_id":"42"}
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(body.filters.get("status").map(String::as_str), Some("ship"));
+        assert_eq!(
+            body.exact_filters.get("user_id").map(String::as_str),
+            Some("42")
+        );
+        assert_eq!(body.page, 1);
+    }
+
+    #[test]
+    fn transient_view_query_body_defaults_exact_filters_to_empty() {
+        let body: super::TransientViewQueryBody = serde_json::from_str(
+            r#"{
+                "base_schema":"public",
+                "base_table":"orders",
+                "shape":{"columns":[{"source_schema":"public","source_table":"orders","column_name":"id"}],"filters":{}}
+            }"#,
+        )
+        .unwrap();
+
+        assert!(body.exact_filters.is_empty());
+        assert!(body.filters.is_empty());
     }
 
     #[tokio::test]

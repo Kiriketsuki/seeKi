@@ -184,6 +184,31 @@ describe('mockFetchTransientViewRows', () => {
     expect(result.columns.map((c) => c.name)).toEqual(['orders__status', 'users__status']);
   });
 
+  it('prefixes a colliding related column with its source id, as the backend does', () => {
+    const result = mockFetchTransientViewRows({
+      base_schema: 'public',
+      base_table: 'orders',
+      shape: {
+        columns: [
+          { source_schema: 'public', source_table: 'orders', column_name: 'status' },
+          {
+            source_id: 'fk-public.users',
+            source_schema: 'public',
+            source_table: 'users',
+            column_name: 'status',
+          },
+        ],
+      },
+      page: 1,
+      page_size: 5,
+    });
+
+    expect(result.columns.map((c) => c.name)).toEqual([
+      'orders__status',
+      'fk-public_users__status',
+    ]);
+  });
+
   it('respects page and page_size like plain rows', () => {
     const result = mockFetchTransientViewRows({
       base_schema: 'public',

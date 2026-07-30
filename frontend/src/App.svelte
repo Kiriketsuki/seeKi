@@ -705,21 +705,32 @@
   }
 
   // Toggling related columns on or off changes the output column set, so any
-  // stale sort reference must clear rather than point at a column that no
-  // longer exists in the result.
+  // stale sort or filter reference must clear rather than point at a column
+  // the next result no longer carries. A base column whose name collides with
+  // a picked related column comes back renamed, so a filter kept across the
+  // toggle would fail the backend's known-column check.
   function handleRelatedColumnsChange(next: PickedRelatedColumn[]) {
     relatedColumns = next;
     saveRelatedColumns(selectedSchema, selectedTable, next);
     sortState = [];
-    void resetAndLoadRows([], filters, searchTerm);
+    filters = {};
+    exactFilters = {};
+    // Dropping the last related column returns the grid to the plain table
+    // shape, and plain row fetches no longer overwrite `columns`. Restore the
+    // base column list here so no related column lingers as an empty column.
+    if (next.length === 0 && baseTableColumns.length > 0) {
+      columns = baseTableColumns;
+      columnVisibility = normalizeColumnVisibility(baseTableColumns, columnVisibility);
+    }
+    void resetAndLoadRows([], {}, searchTerm);
   }
 
   /**
    * Fetch rows for the table surface, routing through the transient
    * view-query endpoint when related columns are picked for this table, and
-   * through plain fetchRows otherwise. Exact-match (`eq.`) filters from FK
-   * jump navigation are not supported by the transient endpoint, so they are
-   * dropped from the request while related columns are active.
+   * through plain fetchRows otherwise. Both paths carry substring filters and
+   * exact-match (`eq.`) filters, so FK jump navigation stays filtered while
+   * related columns are active.
    */
   async function fetchTableSurfaceRows(
     schema: string,
@@ -737,6 +748,7 @@
         sort: params.sort,
         search: params.search,
         filters: params.filters,
+        exact_filters: params.exact_filters,
       });
     }
     return fetchRows(schema, table, params);
