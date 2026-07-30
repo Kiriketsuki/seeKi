@@ -34,6 +34,10 @@ pub fn router(mode: SharedAppMode, store: Store) -> Router {
             put(put_table_display_name),
         )
         .route("/tables/{schema}/{table}/columns", get(get_columns))
+        .route(
+            "/tables/{schema}/{table}/relationships",
+            get(get_relationships),
+        )
         .route("/tables/{schema}/{table}/samples", get(get_column_samples))
         .route("/tables/{schema}/{table}/rows", get(get_rows))
         .route("/config/display", get(get_display_config))
@@ -362,6 +366,82 @@ async fn get_columns(
         })
         .collect();
     Ok(Json(serde_json::json!({ "columns": columns })))
+}
+
+/// GET /api/tables/{schema}/{table}/relationships — FK edges touching one
+/// table. Non-allowed outgoing targets stay listed with `allowed: false` so
+/// the grid can still highlight the column without offering a hop.
+/// Non-allowed incoming sources are omitted entirely.
+async fn get_relationships(
+    Extension(mode): Extension<SharedAppMode>,
+    Extension(store): Extension<Store>,
+    Path((schema, table)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state = require_state(&mode).await?;
+    if !is_valid_identifier(&schema) || !is_valid_identifier(&table) {
+        return Err(AppError::bad_request("Invalid schema or table name"));
+    }
+    if !state.config.tables.allows(&schema, &table) {
+        return Err(AppError::not_found(format!(
+            "Table '{schema}.{table}' not found"
+        )));
+    }
+
+    let (outgoing, incoming) = state
+        .db
+        .table_relationships(&schema, &table)
+        .await
+        .map_err(|e| map_table_query_error(e, &table))?;
+
+    let overrides = display_names::list_display_names(store.pool()).await?;
+    let override_map: HashMap<(String, String), String> = overrides
+        .into_iter()
+        .map(|e| ((e.schema_name, e.table_name), e.display_name))
+        .collect();
+    let far_display_name = |far_schema: &str, far_table: &str| {
+        override_map
+            .get(&(far_schema.to_string(), far_table.to_string()))
+            .cloned()
+            .unwrap_or_else(|| display_name_table(far_schema, far_table, &state.config.display))
+    };
+
+    let outgoing: Vec<serde_json::Value> = outgoing
+        .iter()
+        .map(|edge| {
+            serde_json::json!({
+                "constraint": edge.constraint_name,
+                "columns": edge.columns,
+                "target": {
+                    "schema": edge.other_schema,
+                    "table": edge.other_table,
+                    "display_name": far_display_name(&edge.other_schema, &edge.other_table),
+                    "columns": edge.other_columns,
+                    "allowed": state.config.tables.allows(&edge.other_schema, &edge.other_table),
+                },
+            })
+        })
+        .collect();
+    let incoming: Vec<serde_json::Value> = incoming
+        .iter()
+        .filter(|edge| state.config.tables.allows(&edge.other_schema, &edge.other_table))
+        .map(|edge| {
+            serde_json::json!({
+                "constraint": edge.constraint_name,
+                "columns": edge.columns,
+                "source": {
+                    "schema": edge.other_schema,
+                    "table": edge.other_table,
+                    "display_name": far_display_name(&edge.other_schema, &edge.other_table),
+                    "columns": edge.other_columns,
+                    "allowed": true,
+                },
+            })
+        })
+        .collect();
+
+    Ok(Json(
+        serde_json::json!({ "outgoing": outgoing, "incoming": incoming }),
+    ))
 }
 
 #[derive(Deserialize)]
