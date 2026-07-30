@@ -678,6 +678,21 @@ impl DatabasePool {
         }
     }
 
+    /// Fetch at most one row matching an exact-filter set, used by the FK peek panel.
+    /// Returns the row (or `None`) plus whether more than one row matched.
+    pub async fn query_single_row(
+        &self,
+        schema: &str,
+        table: &str,
+        exact_filters: &HashMap<String, String>,
+    ) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
+        match self {
+            Self::Postgres(pool, _) => {
+                postgres::query_single_row(pool, schema, table, exact_filters).await
+            }
+        }
+    }
+
     pub async fn lookup_fk_path(
         &self,
         base_schema: &str,
