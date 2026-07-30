@@ -84,7 +84,10 @@ pub struct RowQueryParams<'a> {
     pub page_size: u32,
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
+    /// Substring filters from the `filter.` param namespace.
     pub filters: &'a HashMap<String, String>,
+    /// Exact-match filters from the `eq.` param namespace.
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 /// Parameters for CSV export (no pagination).
@@ -94,6 +97,7 @@ pub struct ExportQueryParams<'a> {
     pub sort: &'a [SortEntry],
     pub search: Option<&'a str>,
     pub filters: &'a HashMap<String, String>,
+    pub exact_filters: &'a HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

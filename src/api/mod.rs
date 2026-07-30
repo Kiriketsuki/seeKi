@@ -434,6 +434,16 @@ fn parse_filters(all_params: &HashMap<String, String>) -> HashMap<String, String
         .collect()
 }
 
+/// Extract exact-match filters from query params with the `eq.` prefix.
+/// e.g. `?eq.user_id=42` matches rows where user_id equals 42 exactly,
+/// unlike `filter.` params which match substrings.
+fn parse_exact_filters(all_params: &HashMap<String, String>) -> HashMap<String, String> {
+    all_params
+        .iter()
+        .filter_map(|(k, v)| k.strip_prefix("eq.").map(|col| (col.to_string(), v.clone())))
+        .collect()
+}
+
 /// Reject the pre-PR-#72 `sort_column` / `sort_direction` query params with a clear
 /// deprecation message so saved bookmarks fail loudly instead of silently returning
 /// unsorted data.
@@ -564,6 +574,7 @@ async fn get_rows(
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, MAX_PAGE_SIZE);
     let filters = parse_filters(&all_params);
+    let exact_filters = parse_exact_filters(&all_params);
     let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
     let result = state
         .db
@@ -575,6 +586,7 @@ async fn get_rows(
             sort: &sort,
             search: params.search.as_deref(),
             filters: &filters,
+            exact_filters: &exact_filters,
         })
         .await
         .map_err(|e| map_table_query_error(e, &table))?;
@@ -602,6 +614,7 @@ async fn export_csv(
 
     reject_legacy_sort_params(&all_params)?;
     let filters = parse_filters(&all_params);
+    let exact_filters = parse_exact_filters(&all_params);
     let columns = load_table_columns(&state, &schema, &table).await?;
     let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
 
@@ -666,6 +679,7 @@ async fn export_csv(
             sort: &sort_owned,
             search: search.as_deref(),
             filters: &filters,
+            exact_filters: &exact_filters,
         };
 
         let stream_result = crate::db::postgres::export_rows_stream(&pg_pool, &export_params).await;
@@ -1244,6 +1258,30 @@ mod tests {
 
         let filters = parse_filters(&params);
         assert_eq!(filters["name"], "Hello World");
+    }
+
+    #[test]
+    fn parse_exact_filters_extracts_eq_prefixed_params() {
+        let mut params = HashMap::new();
+        params.insert("eq.user_id".into(), "42".into());
+        params.insert("filter.name".into(), "Ali".into());
+        params.insert("page".into(), "1".into());
+
+        let exact = parse_exact_filters(&params);
+        assert_eq!(exact.len(), 1);
+        assert_eq!(exact["user_id"], "42");
+
+        // The two namespaces stay independent.
+        let filters = parse_filters(&params);
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters["name"], "Ali");
+    }
+
+    #[test]
+    fn parse_exact_filters_returns_empty_without_eq_params() {
+        let mut params = HashMap::new();
+        params.insert("page".into(), "1".into());
+        assert!(parse_exact_filters(&params).is_empty());
     }
 
     #[test]

@@ -1109,10 +1109,87 @@ fn build_order_clause(
     })
 }
 
+/// Lightweight UUID shape check so a malformed exact-filter value collapses
+/// to a no-match condition instead of a runtime cast error in PostgreSQL.
+fn is_plausible_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(i, b)| match i {
+        8 | 13 | 18 | 23 => *b == b'-',
+        _ => b.is_ascii_hexdigit(),
+    })
+}
+
+/// One exact-match condition: (condition SQL, bind value when the condition
+/// binds a parameter at `param_idx`). Values that cannot possibly match the
+/// column type collapse to FALSE, mirroring the boolean substring-filter
+/// precedent, so a malformed value returns zero rows instead of erroring.
+fn exact_filter_condition(
+    col_name: &str,
+    col_type: &str,
+    value: &str,
+    param_idx: u32,
+) -> (String, Option<String>) {
+    let no_match = ("FALSE".to_string(), None);
+    match col_type {
+        "boolean" => match normalize_boolean_filter(value) {
+            Some(b) => (
+                format!("\"{col_name}\" = {}", if b { "TRUE" } else { "FALSE" }),
+                None,
+            ),
+            None => no_match,
+        },
+        "smallint" | "integer" | "bigint" => {
+            if value.trim().parse::<i64>().is_err() {
+                return no_match;
+            }
+            (
+                format!("\"{col_name}\" = ${param_idx}::bigint"),
+                Some(value.trim().to_string()),
+            )
+        }
+        "real" | "double precision" | "numeric" => {
+            if value.trim().parse::<f64>().is_err() {
+                return no_match;
+            }
+            (
+                format!("\"{col_name}\" = ${param_idx}::numeric"),
+                Some(value.trim().to_string()),
+            )
+        }
+        "uuid" => {
+            if !is_plausible_uuid(value.trim()) {
+                return no_match;
+            }
+            (
+                format!("\"{col_name}\" = ${param_idx}::uuid"),
+                Some(value.trim().to_string()),
+            )
+        }
+        _ => match sql_cast_type(col_type) {
+            // Temporal and text types cast the parameter to the column's
+            // type so ISO input matches regardless of display format.
+            Some(cast) => (
+                format!("\"{col_name}\" = ${param_idx}::{cast}"),
+                Some(value.to_string()),
+            ),
+            // Exotic types (PostGIS geometry, arrays, …) compare on the
+            // text form. Exact, and never a cast error.
+            None => (
+                format!("\"{col_name}\"::text = ${param_idx}"),
+                Some(value.to_string()),
+            ),
+        },
+    }
+}
+
 fn build_query_clauses(
     columns: &[ColumnInfo],
     search: Option<&str>,
     filters: &std::collections::HashMap<String, String>,
+    exact_filters: &std::collections::HashMap<String, String>,
     sort: &[SortEntry],
     include_pk_tiebreakers: bool,
     start_param_idx: u32,
@@ -1121,7 +1198,7 @@ fn build_query_clauses(
     let valid_column_names: std::collections::HashSet<&str> =
         columns.iter().map(|c| c.name.as_str()).collect();
 
-    for col_name in filters.keys() {
+    for col_name in filters.keys().chain(exact_filters.keys()) {
         if !is_valid_identifier(col_name) {
             return Err(ValidationError(format!("Invalid filter column name: {col_name}")).into());
         }
@@ -1183,6 +1260,20 @@ fn build_query_clauses(
         } else {
             conditions.push(format!("\"{}\"::text ILIKE ${param_idx}", col_name));
             bind_values.push(format!("%{value}%"));
+            param_idx += 1;
+        }
+    }
+
+    // Exact-match conditions (AND-ed), from the `eq.` query-param namespace.
+    let mut exact_entries: Vec<_> = exact_filters.iter().collect();
+    exact_entries.sort_by_key(|(k, _)| k.as_str());
+
+    for (col_name, value) in &exact_entries {
+        let col_type = column_types.get(col_name.as_str()).copied().unwrap_or("");
+        let (condition, bind) = exact_filter_condition(col_name, col_type, value, param_idx);
+        conditions.push(condition);
+        if let Some(bind_value) = bind {
+            bind_values.push(bind_value);
             param_idx += 1;
         }
     }
@@ -3306,6 +3397,7 @@ async fn query_projected_rows(
         &plan.output_columns,
         search,
         filters,
+        &HashMap::new(),
         sort,
         true,
         plan.bind_values.len() as u32 + 1,
@@ -3455,6 +3547,7 @@ pub async fn export_view_shape_rows_stream<'a>(
         &plan.output_columns,
         search,
         filters,
+        &HashMap::new(),
         sort,
         false,
         plan.bind_values.len() as u32 + 1,
@@ -3496,6 +3589,7 @@ pub async fn export_view_rows_stream<'a>(
         &plan.output_columns,
         params.search,
         params.filters,
+        &HashMap::new(),
         params.sort,
         false,
         plan.bind_values.len() as u32 + 1,
@@ -3542,6 +3636,7 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
         &columns,
         params.search,
         params.filters,
+        params.exact_filters,
         params.sort,
         true,
         1,
@@ -3617,6 +3712,7 @@ pub async fn export_rows_stream<'a>(
         &columns,
         params.search,
         params.filters,
+        params.exact_filters,
         params.sort,
         false,
         1,
@@ -3895,6 +3991,88 @@ mod tests {
                 is_primary_key: false,
             },
         ]
+    }
+
+    #[test]
+    fn exact_filter_condition_binds_typed_equality() {
+        let (cond, bind) = exact_filter_condition("id", "bigint", "42", 3);
+        assert_eq!(cond, "\"id\" = $3::bigint");
+        assert_eq!(bind.as_deref(), Some("42"));
+
+        let (cond, bind) = exact_filter_condition("price", "numeric", "19.99", 1);
+        assert_eq!(cond, "\"price\" = $1::numeric");
+        assert_eq!(bind.as_deref(), Some("19.99"));
+
+        let (cond, bind) = exact_filter_condition(
+            "token",
+            "uuid",
+            "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+            1,
+        );
+        assert_eq!(cond, "\"token\" = $1::uuid");
+        assert!(bind.is_some());
+
+        let (cond, bind) = exact_filter_condition("name", "text", "Ann", 2);
+        assert_eq!(cond, "\"name\" = $2::text");
+        assert_eq!(bind.as_deref(), Some("Ann"));
+
+        let (cond, _) = exact_filter_condition("at", "timestamp with time zone", "2026-01-01", 1);
+        assert_eq!(cond, "\"at\" = $1::timestamptz");
+    }
+
+    #[test]
+    fn exact_filter_condition_collapses_malformed_values_to_false() {
+        assert_eq!(exact_filter_condition("id", "bigint", "42abc", 1).0, "FALSE");
+        assert_eq!(exact_filter_condition("price", "numeric", "cheap", 1).0, "FALSE");
+        assert_eq!(exact_filter_condition("token", "uuid", "not-a-uuid", 1).0, "FALSE");
+        assert_eq!(exact_filter_condition("ok", "boolean", "maybe", 1).0, "FALSE");
+    }
+
+    #[test]
+    fn exact_filter_condition_handles_boolean_and_unknown_types() {
+        let (cond, bind) = exact_filter_condition("ok", "boolean", "yes", 1);
+        assert_eq!(cond, "\"ok\" = TRUE");
+        assert!(bind.is_none());
+
+        // Types with no SQL cast compare on the text form instead of erroring.
+        let (cond, bind) = exact_filter_condition("geom", "USER-DEFINED", "POINT(0 0)", 4);
+        assert_eq!(cond, "\"geom\"::text = $4");
+        assert_eq!(bind.as_deref(), Some("POINT(0 0)"));
+    }
+
+    #[test]
+    fn build_query_clauses_combines_substring_and_exact_filters() {
+        let columns = test_columns();
+        let mut filters = HashMap::new();
+        filters.insert("vehicle_id".to_string(), "ADT".to_string());
+        let mut exact = HashMap::new();
+        exact.insert("id".to_string(), "7".to_string());
+
+        let qb = build_query_clauses(&columns, None, &filters, &exact, &[], false, 1).unwrap();
+        assert_eq!(
+            qb.where_clause,
+            "WHERE \"vehicle_id\"::text ILIKE $1 AND \"id\" = $2::bigint"
+        );
+        assert_eq!(qb.bind_values, vec!["%ADT%".to_string(), "7".to_string()]);
+    }
+
+    #[test]
+    fn build_query_clauses_rejects_unknown_exact_filter_column() {
+        let columns = test_columns();
+        let mut exact = HashMap::new();
+        exact.insert("nope".to_string(), "1".to_string());
+
+        let result = build_query_clauses(&columns, None, &HashMap::new(), &exact, &[], false, 1);
+        let err = result.err().expect("unknown column must be rejected");
+        assert!(err.to_string().contains("Unknown filter column"));
+    }
+
+    #[test]
+    fn plausible_uuid_validates_shape() {
+        assert!(is_plausible_uuid("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"));
+        assert!(!is_plausible_uuid("a0eebc99"));
+        assert!(!is_plausible_uuid("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a1z"));
+        assert!(!is_plausible_uuid("a0eebc99x9c0b-4ef8-bb6d-6bb9bd380a11"));
     }
 
     #[test]

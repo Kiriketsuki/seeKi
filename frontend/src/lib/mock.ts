@@ -436,6 +436,7 @@ export function mockFetchRows(
     sort?: string;
     search?: string;
     filters?: Record<string, string>;
+    exact_filters?: Record<string, string>;
   },
 ): QueryResult {
   const page = params?.page ?? 1;
@@ -464,6 +465,17 @@ export function mockFetchRows(
       rows = rows.filter((row) =>
         activeFilters.every(([column, value]) =>
           String(row[column] ?? '').toLowerCase().includes(value.toLowerCase()),
+        ),
+      );
+    }
+  }
+
+  if (params?.exact_filters) {
+    const exactEntries = Object.entries(params.exact_filters);
+    if (exactEntries.length > 0) {
+      rows = rows.filter((row) =>
+        exactEntries.every(
+          ([column, value]) => String(row[column] ?? '') === value,
         ),
       );
     }
