@@ -26,10 +26,12 @@ import type {
   ViewDraft,
   FkHop,
   ColumnSamplesResponse,
+  TableRelationships,
 } from './types';
 import {
   mockFetchTables,
   mockFetchColumns,
+  mockFetchTableRelationships,
   mockFetchRows,
   mockFetchConnectionStatus,
   mockFetchDisplayConfig,
@@ -233,6 +235,17 @@ export async function fetchColumns(
   const data = await apiFetch<ColumnsResponse>(path);
   assertShape(data, ['columns'], path);
   return data.columns;
+}
+
+export async function fetchTableRelationships(
+  schema: string,
+  table: string,
+): Promise<TableRelationships> {
+  if (USE_MOCK) return mockFetchTableRelationships(schema, table);
+  const path = `/api/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/relationships`;
+  const data = await apiFetch<TableRelationships>(path);
+  assertShape(data, ['outgoing', 'incoming'], path);
+  return data;
 }
 
 export interface FetchRowsParams {

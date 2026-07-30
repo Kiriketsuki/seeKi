@@ -129,6 +129,17 @@ pub struct ViewColumn {
     pub aggregate: Option<ViewAggregate>,
 }
 
+/// One FK edge as seen from a specific table. `columns` live on that table,
+/// `other_*` describe the far side of the constraint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RelationshipEdge {
+    pub constraint_name: String,
+    pub columns: Vec<String>,
+    pub other_schema: String,
+    pub other_table: String,
+    pub other_columns: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FkHop {
     pub from_schema: String,
@@ -563,6 +574,9 @@ impl DatabasePool {
                     .max_connections(config.max_connections)
                     .connect(&connect_url)
                     .await?;
+                // A new pool may point at a different database, so cached FK
+                // edges from the previous target must not survive.
+                postgres::clear_fk_edge_cache().await;
                 Ok(Self::Postgres(pool, tunnel))
             }
             DatabaseKind::Sqlite => {
@@ -587,6 +601,17 @@ impl DatabasePool {
     pub async fn get_columns(&self, schema: &str, table: &str) -> anyhow::Result<Vec<ColumnInfo>> {
         match self {
             Self::Postgres(pool, _) => postgres::get_columns(pool, schema, table).await,
+        }
+    }
+
+    /// FK edges touching one table: (outgoing, incoming).
+    pub async fn table_relationships(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> anyhow::Result<(Vec<RelationshipEdge>, Vec<RelationshipEdge>)> {
+        match self {
+            Self::Postgres(pool, _) => postgres::table_relationships(pool, schema, table).await,
         }
     }
 
