@@ -16,6 +16,20 @@ max_connections = 5
 include = ["vehicles_log", "drivers", "audit_log"]
 exclude = ["audit_log"]
 
+# Timezone every timestamp is interpreted and rendered in — an IANA name.
+# Defaults to "UTC" when omitted.
+#
+# This is one setting rather than a display-only preference because SQL-side
+# date math has to agree with what the grid shows: day/week bucketing in custom
+# views, weekday and year/month grouping, "age of timestamp", and date filters
+# are all evaluated in this zone. Set it to where your data was recorded, or a
+# row can render in one day and be counted in another.
+#
+# Changing it changes the output of existing saved views that bucket by
+# day/week. Must appear before the [display.*] subtables below.
+[display]
+timezone = "Asia/Singapore"
+
 # Optional sidebar display name overrides for tables.
 [display.tables]
 vehicles_log = "Fleet Log"
