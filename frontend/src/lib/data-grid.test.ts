@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   formatCellValue,
   columnWidth,
@@ -7,6 +7,8 @@ import {
   sortStateToConfig,
   getColumnDisplayName,
   buildSortableColumn,
+  setDisplayTimeZone,
+  getDisplayTimeZone,
 } from './data-grid';
 import type { ColumnInfo } from './types';
 
@@ -151,6 +153,86 @@ describe('formatCellValue', () => {
       const customCol = col({ data_type: 'text', display_type: 'datetime' });
       const result = formatCellValue(customCol, '2024-01-15T14:30:00');
       expect(result.kind).toBe('timestamp');
+    });
+  });
+
+  describe('display timezone', () => {
+    const tzCol = col({ data_type: 'timestamp with time zone' });
+    const naiveCol = col({ data_type: 'timestamp without time zone' });
+
+    // The 'YYYY-MM-DD' branch renders "<date> <time>" where <time> still comes
+    // from Intl with the ambient locale (so it may be "14:30" or "2:30 PM").
+    // Build the expectation the same way to assert on the zone arithmetic
+    // without pinning the test machine's locale.
+    function expected(date: string, hour: number, minute: number): string {
+      const time = new Intl.DateTimeFormat(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(2024, 0, 15, hour, minute));
+      return `${date} ${time}`;
+    }
+
+    afterEach(() => {
+      setDisplayTimeZone(undefined);
+    });
+
+    it('renders timestamptz in the configured zone, not the browser zone', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      // 06:30Z is 14:30 +08. The grid must agree with the offset the backend
+      // serialized rather than with wherever the viewer happens to be.
+      const result = formatCellValue(tzCol, '2024-01-15T06:30:00Z', 'YYYY-MM-DD');
+      expect(result.display).toBe(expected('2024-01-15', 14, 30));
+    });
+
+    it('keeps the calendar date of the configured zone across a day boundary', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      // 23:00Z on the 15th is 07:00 +08 on the 16th. Reading parts off the Date
+      // in the browser's zone would name the wrong day here.
+      const result = formatCellValue(tzCol, '2024-01-15T23:00:00Z', 'YYYY-MM-DD');
+      expect(result.display).toBe(expected('2024-01-16', 7, 0));
+    });
+
+    it('shows offset-less timestamps verbatim rather than shifting them', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      // A naive value is already wall-clock in the display zone, so it must not
+      // be converted — 14:30 stays 14:30 whatever the browser zone is.
+      const result = formatCellValue(naiveCol, '2024-01-15 14:30:00', 'YYYY-MM-DD');
+      expect(result.display).toBe(expected('2024-01-15', 14, 30));
+    });
+
+    it('respects an explicit +08:00 offset on the wire value', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      const result = formatCellValue(tzCol, '2024-01-15T14:30:00+08:00', 'YYYY-MM-DD');
+      expect(result.display).toBe(expected('2024-01-15', 14, 30));
+    });
+
+    it('preserves the raw wire value in the tooltip', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      const raw = '2024-01-15T14:30:00+08:00';
+      expect(formatCellValue(tzCol, raw).tooltip).toBe(raw);
+    });
+
+    it('does not read a bare date\'s day as an offset', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      // "2024-01-15" has no time component; treating the trailing "-15" as a
+      // -15:00 offset would shift the rendered day.
+      const result = formatCellValue(naiveCol, '2024-01-15', 'YYYY-MM-DD');
+      expect(result.display).toContain('2024-01-15');
+    });
+
+    it('ignores an unrecognised zone instead of throwing', () => {
+      setDisplayTimeZone('Mars/Olympus');
+      expect(getDisplayTimeZone()).toBeUndefined();
+      expect(formatCellValue(tzCol, '2024-01-15T06:30:00Z').kind).toBe('timestamp');
+    });
+
+    it('applies a changed zone to subsequent formatting', () => {
+      setDisplayTimeZone('Asia/Singapore');
+      const sgt = formatCellValue(tzCol, '2024-01-15T06:30:00Z', 'YYYY-MM-DD');
+      setDisplayTimeZone('UTC');
+      const utc = formatCellValue(tzCol, '2024-01-15T06:30:00Z', 'YYYY-MM-DD');
+      expect(sgt.display).toBe(expected('2024-01-15', 14, 30));
+      expect(utc.display).toBe(expected('2024-01-15', 6, 30));
     });
   });
 

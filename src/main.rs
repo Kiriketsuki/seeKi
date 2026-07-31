@@ -37,8 +37,12 @@ async fn main() -> anyhow::Result<()> {
             config.tables.warn_overlaps();
             let secrets = SecretsConfig::load_from_cwd();
             let ssh_pair = config.ssh.as_ref().map(|s| (s, &secrets));
+            // Validated during AppConfig::parse, so this cannot fail here.
+            let display_tz = config.display.resolved_timezone()?;
+            crate::db::timezone::set_display_timezone(display_tz);
+            tracing::info!(timezone = %display_tz.name(), "Display timezone");
             tracing::info!("Connecting to database...");
-            let db = DatabasePool::connect(&config.database, ssh_pair).await?;
+            let db = DatabasePool::connect(&config.database, ssh_pair, display_tz).await?;
             tracing::info!("Connected to database");
             initial_mode(Some(AppState { db, config }))
         }

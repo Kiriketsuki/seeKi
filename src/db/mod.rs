@@ -1,4 +1,5 @@
 pub mod postgres;
+pub mod timezone;
 
 use std::collections::HashMap;
 
@@ -545,9 +546,15 @@ pub enum DatabasePool {
 }
 
 impl DatabasePool {
+    /// `display_tz` pins each connection's session timezone so every SQL-side
+    /// date operation — `DATE_TRUNC` buckets, `EXTRACT`, `AGE`, and text→
+    /// `timestamptz` filter casts — is evaluated in the same zone the grid
+    /// renders in. Without it these inherited the server's `TimeZone` GUC, so
+    /// the same saved view produced different day buckets on different servers.
     pub async fn connect(
         config: &DatabaseConfig,
         ssh: Option<(&crate::config::SshConfig, &crate::config::SecretsConfig)>,
+        display_tz: chrono_tz::Tz,
     ) -> anyhow::Result<Self> {
         match config.kind {
             DatabaseKind::Postgres => {
@@ -577,8 +584,21 @@ impl DatabasePool {
                     (config.url.clone(), None)
                 };
 
+                // after_connect (not a one-off SET) so pool growth and
+                // reconnects land on the same zone as the first connection.
+                let tz_name = display_tz.name().to_string();
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(config.max_connections)
+                    .after_connect(move |conn, _meta| {
+                        let tz_name = tz_name.clone();
+                        Box::pin(async move {
+                            sqlx::query(timezone::session_timezone_sql())
+                                .bind(tz_name)
+                                .execute(&mut *conn)
+                                .await?;
+                            Ok(())
+                        })
+                    })
                     .connect(&connect_url)
                     .await?;
                 // A new pool may point at a different database, so cached FK

@@ -1917,6 +1917,10 @@ fn compile_value_expr(
                 .into());
             }
             Ok(CompiledExpr {
+                // For a naive `timestamp` input the ::timestamptz cast resolves
+                // against the session zone, which DatabasePool::connect pins to
+                // the configured display timezone. Unpinned this read naive
+                // wall-clock values as the server's zone and skewed every age.
                 sql: format!("AGE(CURRENT_TIMESTAMP, ({})::timestamptz)", value.sql),
                 info: ExpressionInfo {
                     data_type: "interval".to_string(),
@@ -1939,6 +1943,9 @@ fn compile_value_expr(
                 PlannerDateBucket::Week => "week",
             };
             Ok(CompiledExpr {
+                // DATE_TRUNC and the ::date cast both resolve against the
+                // session zone, pinned by DatabasePool::connect. Unpinned, a
+                // 07:00 +08 row bucketed into the previous UTC day.
                 sql: format!(
                     "DATE_TRUNC('{bucket_sql}', ({})::timestamptz)::date",
                     value.sql
@@ -1959,6 +1966,9 @@ fn compile_value_expr(
                 )
                 .into());
             }
+            // EXTRACT and TO_CHAR read the session zone, pinned by
+            // DatabasePool::connect. Unpinned, weekday grouping was misassigned
+            // for every row within the UTC offset of a day boundary.
             let (sql, data_type, display_type) = match part {
                 PlannerDatePart::Year => (
                     format!("EXTRACT(YEAR FROM ({})::timestamptz)::integer", value.sql),
@@ -4144,17 +4154,31 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .try_get::<chrono::NaiveDateTime, _>(col)
             .map(|v| Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string()))
             .unwrap_or(Value::Null),
+        // Rendered in the configured display timezone, carrying that zone's real
+        // offset. Emitting UTC here meant the grid showed local time while the
+        // value it came from — and the tooltip built off it — claimed +00:00.
         "timestamp with time zone" => row
             .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
-            .map(|v| Value::String(v.to_rfc3339()))
+            .map(|v| {
+                Value::String(super::timezone::format_timestamptz(
+                    v,
+                    super::timezone::display_timezone(),
+                ))
+            })
             .unwrap_or(Value::Null),
         "date" => row
             .try_get::<chrono::NaiveDate, _>(col)
             .map(|v| Value::String(v.format("%Y-%m-%d").to_string()))
             .unwrap_or(Value::Null),
-        "time without time zone" | "time with time zone" => row
+        "time without time zone" => row
             .try_get::<chrono::NaiveTime, _>(col)
             .map(|v| Value::String(v.format("%H:%M:%S").to_string()))
+            .unwrap_or(Value::Null),
+        // `timetz` carries an offset that a NaiveTime decode discarded, so
+        // 09:00+08 and 09:00+00 rendered identically. PgTimeTz keeps both parts.
+        "time with time zone" => row
+            .try_get::<PgTimeTzChrono, _>(col)
+            .map(|v| Value::String(format_timetz(v)))
             .unwrap_or(Value::Null),
         "uuid" => row
             .try_get::<uuid::Uuid, _>(col)
@@ -4176,6 +4200,27 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .map(Value::from)
             .unwrap_or(Value::Null),
     }
+}
+
+/// `timetz` as decoded with the `chrono` feature. The type params are spelled
+/// out rather than left to `PgTimeTz`'s defaults so this keeps compiling if the
+/// `time` feature is ever enabled alongside `chrono`.
+pub(crate) type PgTimeTzChrono =
+    sqlx::postgres::types::PgTimeTz<chrono::NaiveTime, chrono::FixedOffset>;
+
+/// Render a `timetz` as `HH:MM:SS±HH:MM`, keeping the offset the column stores.
+/// A whole-hour offset still prints its minutes so the value stays parseable by
+/// `Date`/`Intl` on the frontend.
+pub(crate) fn format_timetz(value: PgTimeTzChrono) -> String {
+    let total_minutes = value.offset.local_minus_utc() / 60;
+    let sign = if total_minutes < 0 { '-' } else { '+' };
+    let abs = total_minutes.abs();
+    format!(
+        "{}{sign}{:02}:{:02}",
+        value.time.format("%H:%M:%S"),
+        abs / 60,
+        abs % 60
+    )
 }
 
 /// Render a host address without the redundant /32 (v4) or /128 (v6) suffix;
@@ -4223,6 +4268,37 @@ fn is_text_type(data_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timetz_keeps_its_offset() {
+        let time = chrono::NaiveTime::from_hms_opt(9, 0, 0).expect("valid time");
+        let plus_eight = PgTimeTzChrono {
+            time,
+            offset: chrono::FixedOffset::east_opt(8 * 3600).expect("valid offset"),
+        };
+        let utc = PgTimeTzChrono {
+            time,
+            offset: chrono::FixedOffset::east_opt(0).expect("valid offset"),
+        };
+        // These two rendered identically before the offset was preserved.
+        assert_eq!(format_timetz(plus_eight), "09:00:00+08:00");
+        assert_eq!(format_timetz(utc), "09:00:00+00:00");
+    }
+
+    #[test]
+    fn timetz_renders_negative_and_half_hour_offsets() {
+        let time = chrono::NaiveTime::from_hms_opt(9, 0, 0).expect("valid time");
+        let west = PgTimeTzChrono {
+            time,
+            offset: chrono::FixedOffset::west_opt(5 * 3600 + 1800).expect("valid offset"),
+        };
+        let kolkata = PgTimeTzChrono {
+            time,
+            offset: chrono::FixedOffset::east_opt(5 * 3600 + 1800).expect("valid offset"),
+        };
+        assert_eq!(format_timetz(west), "09:00:00-05:30");
+        assert_eq!(format_timetz(kolkata), "09:00:00+05:30");
+    }
 
     fn expression_info(data_type: &str, display_type: &str) -> ExpressionInfo {
         ExpressionInfo {

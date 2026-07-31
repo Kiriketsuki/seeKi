@@ -42,6 +42,7 @@
     updateTableDisplayName,
   } from './lib/api';
   import type { FetchRowsParams } from './lib/api';
+  import { setDisplayTimeZone } from './lib/data-grid';
   import type {
     AppearanceSettings,
     BrandingSettings,
@@ -455,6 +456,9 @@
         tables = fetchedTables;
         savedViews = views;
         displayConfig = config;
+        // Pin the render zone before any grid formatting runs, so cells never
+        // flash in the viewer's local zone and then shift.
+        setDisplayTimeZone(config.timezone);
         appSettings = settings;
         const dataSettings = parseDataSettings(settings);
         pageSize = dataSettings.pageSize;

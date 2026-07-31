@@ -105,6 +105,26 @@ pub struct DisplayConfig {
     pub tables: HashMap<String, String>,
     #[serde(default)]
     pub columns: HashMap<String, HashMap<String, String>>,
+    /// IANA timezone every timestamp is interpreted and rendered in — the
+    /// Postgres session zone, the serialized offset, and the frontend's
+    /// formatting all follow it. Absent ⇒ UTC.
+    ///
+    /// This is deliberately one setting rather than a display-only preference:
+    /// SQL-side date math (`DATE_TRUNC` day/week buckets, `EXTRACT`, `AGE`, and
+    /// text→`timestamptz` filter casts) has to agree with what the grid shows,
+    /// or a row renders in one day and buckets into another.
+    #[serde(default)]
+    pub timezone: Option<String>,
+}
+
+impl DisplayConfig {
+    /// Resolve the configured timezone, defaulting to UTC when unset.
+    pub fn resolved_timezone(&self) -> anyhow::Result<chrono_tz::Tz> {
+        match &self.timezone {
+            Some(name) => crate::db::timezone::parse(name),
+            None => Ok(chrono_tz::Tz::UTC),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -349,6 +369,12 @@ impl AppConfig {
                 "database.schemas must not be empty — remove the key to default to [\"public\"]"
             );
         }
+        // Reject a bad timezone at load rather than falling back to UTC — a
+        // silent fallback would shift every timestamp and every date bucket
+        // without the operator noticing the typo.
+        self.display
+            .resolved_timezone()
+            .map_err(|e| anyhow::anyhow!("display.timezone is invalid: {e}"))?;
         Ok(())
     }
 
@@ -754,6 +780,7 @@ subtitle = "Fleet Telemetry"
         let config = DisplayConfig {
             tables,
             columns: std::collections::HashMap::new(),
+            ..DisplayConfig::default()
         };
 
         // Qualified key matches.
@@ -786,6 +813,12 @@ subtitle = "Fleet Telemetry"
                 .and_then(|c| c.get("posn_lat"))
                 .map(String::as_str),
             Some("Latitude")
+        );
+        // The documented [display] section must sit before the [display.*]
+        // subtables or TOML rejects it — this asserts the example stays valid.
+        assert_eq!(
+            config.display.timezone.as_deref(),
+            Some("Asia/Singapore")
         );
     }
 
@@ -1038,6 +1071,76 @@ schemas = []
             err.to_string().contains("schemas must not be empty"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn timezone_absent_defaults_to_utc() {
+        let config = AppConfig::parse(MINIMAL_CONFIG).expect("minimal should parse");
+        assert!(config.display.timezone.is_none());
+        assert_eq!(
+            config
+                .display
+                .resolved_timezone()
+                .expect("default should resolve"),
+            chrono_tz::Tz::UTC
+        );
+    }
+
+    #[test]
+    fn timezone_resolves_iana_name() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://u:p@localhost/db"
+[display]
+timezone = "Asia/Singapore"
+"#;
+        let config = AppConfig::parse(toml).expect("should parse");
+        assert_eq!(
+            config
+                .display
+                .resolved_timezone()
+                .expect("should resolve"),
+            chrono_tz::Tz::Asia__Singapore
+        );
+    }
+
+    #[test]
+    fn invalid_timezone_rejected_at_load() {
+        // A silent UTC fallback would shift every timestamp and every date
+        // bucket without the operator noticing the typo.
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://u:p@localhost/db"
+[display]
+timezone = "Asia/Singapor"
+"#;
+        let err = AppConfig::parse(toml).expect_err("typo must be rejected");
+        assert!(
+            err.to_string().contains("display.timezone is invalid"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn offset_shorthand_timezone_rejected() {
+        // "+08:00" carries no DST rules — accepting it would silently break
+        // zones that have them.
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://u:p@localhost/db"
+[display]
+timezone = "+08:00"
+"#;
+        AppConfig::parse(toml).expect_err("offset shorthand must be rejected");
     }
 
     #[test]

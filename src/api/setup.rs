@@ -359,7 +359,23 @@ pub async fn save_config(
     };
 
     let ssh_ref = app_config.ssh.as_ref().map(|s| (s, &secrets));
-    let db = match DatabasePool::connect(&app_config.database, ssh_ref).await {
+    // Validated by the parse above, so this is infallible in practice.
+    let requested_tz = app_config
+        .display
+        .resolved_timezone()
+        .unwrap_or(chrono_tz::Tz::UTC);
+    let display_tz = crate::db::timezone::set_display_timezone(requested_tz);
+    if display_tz != requested_tz {
+        // The zone is installed process-wide once. A second setup pass in the
+        // same process keeps the original, so flag the mismatch instead of
+        // rendering timestamps in a zone the new config does not name.
+        tracing::warn!(
+            requested = %requested_tz.name(),
+            in_effect = %display_tz.name(),
+            "display timezone already fixed for this process — restart to apply the new value"
+        );
+    }
+    let db = match DatabasePool::connect(&app_config.database, ssh_ref, display_tz).await {
         Ok(d) => d,
         Err(e) => {
             let _ = std::fs::remove_file("seeki.toml");

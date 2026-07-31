@@ -87,6 +87,10 @@ async fn require_state(mode: &SharedAppMode) -> Result<Arc<AppState>, AppError> 
 struct DisplayConfigResponse {
     branding: BrandingResponse,
     tables: HashMap<String, TableDisplayConfig>,
+    /// IANA name the frontend must format timestamps in, so the grid agrees with
+    /// the offset the backend serialized and with SQL-side date bucketing.
+    /// Without this the browser rendered in the viewer's own zone.
+    timezone: String,
 }
 
 #[derive(Serialize)]
@@ -185,6 +189,7 @@ async fn get_display_config(
             &settings,
         ),
         tables,
+        timezone: crate::db::timezone::display_timezone().name().to_string(),
     }))
 }
 
@@ -1085,17 +1090,25 @@ fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &st
             .try_get::<chrono::NaiveDateTime, _>(col)
             .map(|v| v.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_default(),
+        // Same zone the grid renders in — exporting UTC while showing local time
+        // meant the file disagreed with the screen it came from.
         "timestamp with time zone" => row
             .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
-            .map(|v| v.to_rfc3339())
+            .map(|v| {
+                crate::db::timezone::format_timestamptz(v, crate::db::timezone::display_timezone())
+            })
             .unwrap_or_default(),
         "date" => row
             .try_get::<chrono::NaiveDate, _>(col)
             .map(|v| v.format("%Y-%m-%d").to_string())
             .unwrap_or_default(),
-        "time without time zone" | "time with time zone" => row
+        "time without time zone" => row
             .try_get::<chrono::NaiveTime, _>(col)
             .map(|v| v.format("%H:%M:%S").to_string())
+            .unwrap_or_default(),
+        "time with time zone" => row
+            .try_get::<crate::db::postgres::PgTimeTzChrono, _>(col)
+            .map(crate::db::postgres::format_timetz)
             .unwrap_or_default(),
         "uuid" => row
             .try_get::<uuid::Uuid, _>(col)
@@ -1277,12 +1290,14 @@ mod tests {
                 subtitle: Some("Fleet Telemetry".into()),
             },
             tables: HashMap::new(),
+            timezone: "Asia/Singapore".into(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
         assert_eq!(json["branding"]["title"], "My Database");
         assert_eq!(json["branding"]["subtitle"], "Fleet Telemetry");
         assert!(json["tables"].as_object().unwrap().is_empty());
+        assert_eq!(json["timezone"], "Asia/Singapore");
     }
 
     #[test]
@@ -1293,6 +1308,7 @@ mod tests {
                 subtitle: None,
             },
             tables: HashMap::new(),
+            timezone: "UTC".into(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -1891,6 +1907,7 @@ mod tests {
         let config = DisplayConfig {
             tables: HashMap::new(),
             columns: columns_map,
+            ..DisplayConfig::default()
         };
 
         let sibling_names: Vec<&str> = columns.iter().map(|c| c.name.as_str()).collect();
@@ -1934,6 +1951,7 @@ mod tests {
         let config = DisplayConfig {
             tables,
             columns: HashMap::new(),
+            ..DisplayConfig::default()
         };
 
         let display = display_name_table("public", "vehicles_log", &config)

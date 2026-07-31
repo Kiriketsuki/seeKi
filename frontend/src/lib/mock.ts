@@ -825,6 +825,9 @@ export function mockFetchDisplayConfig(): DisplayConfig {
       title: 'SeeKi',
       subtitle: 'Database Viewer',
     },
+    // A non-UTC zone so mock mode exercises the offset path rather than the
+    // case where local, UTC and display zones happen to coincide.
+    timezone: 'Asia/Singapore',
     tables: Object.fromEntries(
       TABLES.map((t) => [
         `${t.schema}.${t.name}`,
