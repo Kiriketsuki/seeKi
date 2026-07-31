@@ -226,6 +226,10 @@ export interface DisplayConfig {
     title: string | null;
     subtitle: string | null;
   };
+  // IANA zone all timestamps are rendered in, matching the offset the backend
+  // serialized and the zone SQL-side date bucketing used. Formatting in the
+  // viewer's own zone instead made the same row read differently per user.
+  timezone: string;
   // Keyed by qualified "schema.table" (including "public.table").
   tables: Record<
     string,
