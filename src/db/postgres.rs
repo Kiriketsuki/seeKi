@@ -3589,12 +3589,16 @@ async fn plan_view_shape_query(
     compile_planner_view_query(&planner_draft, &catalog)
 }
 
-fn rows_to_json(rows: &[sqlx::postgres::PgRow], columns: &[ColumnInfo]) -> Vec<serde_json::Value> {
+fn rows_to_json(
+    rows: &[sqlx::postgres::PgRow],
+    columns: &[ColumnInfo],
+    tz: chrono_tz::Tz,
+) -> Vec<serde_json::Value> {
     rows.iter()
         .map(|row| {
             let mut map = serde_json::Map::new();
             for col in columns {
-                let val = pg_value_to_json(row, &col.name, &col.data_type);
+                let val = pg_value_to_json(row, &col.name, &col.data_type, tz);
                 map.insert(col.name.clone(), val);
             }
             serde_json::Value::Object(map)
@@ -3612,6 +3616,7 @@ async fn query_projected_rows(
     search: Option<&str>,
     filters: &HashMap<String, String>,
     exact_filters: &HashMap<String, String>,
+    tz: chrono_tz::Tz,
 ) -> anyhow::Result<QueryResult> {
     let qb = build_query_clauses(
         &plan.output_columns,
@@ -3652,7 +3657,7 @@ async fn query_projected_rows(
 
     Ok(QueryResult {
         columns: plan.output_columns.clone(),
-        rows: rows_to_json(&rows, &plan.output_columns),
+        rows: rows_to_json(&rows, &plan.output_columns, tz),
         total_rows,
         page,
         page_size,
@@ -3663,6 +3668,7 @@ pub async fn preview_view(
     pool: &PgPool,
     draft: &ViewDraft<'_>,
     page_size: u32,
+    tz: chrono_tz::Tz,
 ) -> anyhow::Result<QueryResult> {
     if draft.columns.is_empty() {
         return Ok(QueryResult {
@@ -3684,6 +3690,7 @@ pub async fn preview_view(
         None,
         &HashMap::new(),
         &HashMap::new(),
+        tz,
     )
     .await
 }
@@ -3691,6 +3698,7 @@ pub async fn preview_view(
 pub async fn query_view_rows(
     pool: &PgPool,
     params: &ViewRowsQueryParams<'_>,
+    tz: chrono_tz::Tz,
 ) -> anyhow::Result<QueryResult> {
     let plan = plan_view_query(pool, &params.draft).await?;
     query_projected_rows(
@@ -3702,6 +3710,7 @@ pub async fn query_view_rows(
         params.search,
         params.filters,
         params.exact_filters,
+        tz,
     )
     .await
 }
@@ -3712,6 +3721,7 @@ pub async fn preview_view_shape(
     base_table: &str,
     shape: &ViewDefinitionShape,
     page_size: u32,
+    tz: chrono_tz::Tz,
 ) -> anyhow::Result<QueryResult> {
     if shape.columns.is_empty() {
         return Ok(QueryResult {
@@ -3733,6 +3743,7 @@ pub async fn preview_view_shape(
         None,
         &HashMap::new(),
         &HashMap::new(),
+        tz,
     )
     .await
 }
@@ -3749,6 +3760,7 @@ pub async fn query_view_shape_rows(
     search: Option<&str>,
     filters: &HashMap<String, String>,
     exact_filters: &HashMap<String, String>,
+    tz: chrono_tz::Tz,
 ) -> anyhow::Result<QueryResult> {
     let plan = plan_view_shape_query(pool, base_schema, base_table, shape).await?;
     query_projected_rows(
@@ -3760,6 +3772,7 @@ pub async fn query_view_shape_rows(
         search,
         filters,
         exact_filters,
+        tz,
     )
     .await
 }
@@ -3854,7 +3867,11 @@ pub async fn export_view_rows_stream<'a>(
 }
 
 /// Query paginated rows from a table with optional sort, search, and per-column filters.
-pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
+pub async fn query_rows(
+    pool: &PgPool,
+    params: &RowQueryParams<'_>,
+    tz: chrono_tz::Tz,
+) -> anyhow::Result<QueryResult> {
     let schema = params.schema;
     let table = params.table;
 
@@ -3906,7 +3923,7 @@ pub async fn query_rows(pool: &PgPool, params: &RowQueryParams<'_>) -> anyhow::R
         .map(|row| {
             let mut map = serde_json::Map::new();
             for col in &columns {
-                let val = pg_value_to_json(row, &col.name, &col.data_type);
+                let val = pg_value_to_json(row, &col.name, &col.data_type, tz);
                 map.insert(col.name.clone(), val);
             }
             serde_json::Value::Object(map)
@@ -3931,6 +3948,7 @@ pub async fn query_single_row(
     schema: &str,
     table: &str,
     exact_filters: &HashMap<String, String>,
+    tz: chrono_tz::Tz,
 ) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
     if !is_valid_identifier(schema) {
         anyhow::bail!("Invalid schema name");
@@ -3960,7 +3978,7 @@ pub async fn query_single_row(
     let first_row = rows.first().map(|row| {
         let mut map = serde_json::Map::new();
         for col in &columns {
-            let val = pg_value_to_json(row, &col.name, &col.data_type);
+            let val = pg_value_to_json(row, &col.name, &col.data_type, tz);
             map.insert(col.name.clone(), val);
         }
         serde_json::Value::Object(map)
@@ -4092,7 +4110,25 @@ fn build_row_select_list(columns: &[ColumnInfo], spatial: &HashMap<String, Strin
 }
 
 /// Convert a PostgreSQL column value to a serde_json::Value.
-fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> serde_json::Value {
+/// Render a timestamptz in the configured display zone as RFC 3339. chrono-tz
+/// computes the offset for the given instant, so a DST change gives the correct
+/// offset per value.
+pub fn format_timestamptz(v: chrono::DateTime<chrono::Utc>, tz: chrono_tz::Tz) -> String {
+    v.with_timezone(&tz).to_rfc3339()
+}
+
+/// Render a timetz using the offset stored with the value. A timetz carries its
+/// own offset by definition, so the display zone does not apply here.
+pub fn format_timetz(time: chrono::NaiveTime, offset: chrono::FixedOffset) -> String {
+    format!("{}{}", time.format("%H:%M:%S"), offset)
+}
+
+fn pg_value_to_json(
+    row: &sqlx::postgres::PgRow,
+    col: &str,
+    data_type: &str,
+    tz: chrono_tz::Tz,
+) -> serde_json::Value {
     use serde_json::Value;
 
     match data_type {
@@ -4146,15 +4182,19 @@ fn pg_value_to_json(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> 
             .unwrap_or(Value::Null),
         "timestamp with time zone" => row
             .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
-            .map(|v| Value::String(v.to_rfc3339()))
+            .map(|v| Value::String(format_timestamptz(v, tz)))
             .unwrap_or(Value::Null),
         "date" => row
             .try_get::<chrono::NaiveDate, _>(col)
             .map(|v| Value::String(v.format("%Y-%m-%d").to_string()))
             .unwrap_or(Value::Null),
-        "time without time zone" | "time with time zone" => row
+        "time without time zone" => row
             .try_get::<chrono::NaiveTime, _>(col)
             .map(|v| Value::String(v.format("%H:%M:%S").to_string()))
+            .unwrap_or(Value::Null),
+        "time with time zone" => row
+            .try_get::<sqlx::postgres::types::PgTimeTz, _>(col)
+            .map(|v| Value::String(format_timetz(v.time, v.offset)))
             .unwrap_or(Value::Null),
         "uuid" => row
             .try_get::<uuid::Uuid, _>(col)
@@ -4223,6 +4263,82 @@ fn is_text_type(data_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn utc_at(text: &str) -> chrono::DateTime<chrono::Utc> {
+        text.parse::<chrono::DateTime<chrono::Utc>>()
+            .expect("test timestamp parses")
+    }
+
+    #[test]
+    fn timestamptz_follows_dst_in_the_display_zone() {
+        // New York sits at -05:00 before the 2024 spring change and at -04:00 after it.
+        assert_eq!(
+            format_timestamptz(utc_at("2024-03-09T12:00:00Z"), chrono_tz::America::New_York),
+            "2024-03-09T07:00:00-05:00"
+        );
+        assert_eq!(
+            format_timestamptz(utc_at("2024-03-11T12:00:00Z"), chrono_tz::America::New_York),
+            "2024-03-11T08:00:00-04:00"
+        );
+    }
+
+    #[test]
+    fn timestamptz_handles_half_hour_and_southern_zones() {
+        // Adelaide runs +10:30 in the southern summer and +09:30 in the winter.
+        assert_eq!(
+            format_timestamptz(
+                utc_at("2024-01-15T00:00:00Z"),
+                chrono_tz::Australia::Adelaide
+            ),
+            "2024-01-15T10:30:00+10:30"
+        );
+        assert_eq!(
+            format_timestamptz(
+                utc_at("2024-07-15T00:00:00Z"),
+                chrono_tz::Australia::Adelaide
+            ),
+            "2024-07-15T09:30:00+09:30"
+        );
+    }
+
+    #[test]
+    fn timestamptz_in_utc_keeps_the_instant() {
+        assert_eq!(
+            format_timestamptz(utc_at("2024-01-15T14:30:00Z"), chrono_tz::UTC),
+            "2024-01-15T14:30:00+00:00"
+        );
+    }
+
+    #[test]
+    fn timestamptz_in_singapore_shifts_the_wall_clock() {
+        assert_eq!(
+            format_timestamptz(utc_at("2024-01-15T14:30:00Z"), chrono_tz::Asia::Singapore),
+            "2024-01-15T22:30:00+08:00"
+        );
+    }
+
+    #[test]
+    fn timetz_uses_the_offset_stored_with_the_value() {
+        let time = |h, m, sec| chrono::NaiveTime::from_hms_opt(h, m, sec).unwrap();
+        assert_eq!(
+            format_timetz(
+                time(14, 30, 0),
+                chrono::FixedOffset::east_opt(8 * 3600).unwrap()
+            ),
+            "14:30:00+08:00"
+        );
+        assert_eq!(
+            format_timetz(
+                time(6, 15, 0),
+                chrono::FixedOffset::west_opt(5 * 3600).unwrap()
+            ),
+            "06:15:00-05:00"
+        );
+        assert_eq!(
+            format_timetz(time(0, 0, 0), chrono::FixedOffset::east_opt(0).unwrap()),
+            "00:00:00+00:00"
+        );
+    }
 
     fn expression_info(data_type: &str, display_type: &str) -> ExpressionInfo {
         ExpressionInfo {

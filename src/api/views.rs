@@ -328,6 +328,7 @@ async fn create_saved_view(
                         filters: &legacy.filters,
                     },
                     1,
+                    state.display_tz,
                 )
                 .await?;
         }
@@ -343,6 +344,7 @@ async fn create_saved_view(
                 &body.base_table,
                 &body.shape,
                 1,
+                state.display_tz,
             )
             .await?;
         }
@@ -431,6 +433,7 @@ async fn preview_saved_view(
                         filters: &legacy.filters,
                     },
                     100,
+                    state.display_tz,
                 )
                 .await?
         }
@@ -446,6 +449,7 @@ async fn preview_saved_view(
                 &body.base_table,
                 &body.shape,
                 100,
+                state.display_tz,
             )
             .await?
         }
@@ -478,20 +482,23 @@ async fn query_transient_view(
         PlannerCompatibility::Legacy(legacy) => {
             state
                 .db
-                .query_view_rows(&ViewRowsQueryParams {
-                    draft: ViewDraft {
-                        base_schema: &body.base_schema,
-                        base_table: &body.base_table,
-                        columns: &legacy.columns,
-                        filters: &legacy.filters,
+                .query_view_rows(
+                    &ViewRowsQueryParams {
+                        draft: ViewDraft {
+                            base_schema: &body.base_schema,
+                            base_table: &body.base_table,
+                            columns: &legacy.columns,
+                            filters: &legacy.filters,
+                        },
+                        page,
+                        page_size,
+                        sort: &sort,
+                        search: body.search.as_deref(),
+                        filters: &body.filters,
+                        exact_filters: &body.exact_filters,
                     },
-                    page,
-                    page_size,
-                    sort: &sort,
-                    search: body.search.as_deref(),
-                    filters: &body.filters,
-                    exact_filters: &body.exact_filters,
-                })
+                    state.display_tz,
+                )
                 .await?
         }
         PlannerCompatibility::RequiresPlannerV2(_) => {
@@ -511,6 +518,7 @@ async fn query_transient_view(
                 body.search.as_deref(),
                 &body.filters,
                 &body.exact_filters,
+                state.display_tz,
             )
             .await?
         }
@@ -606,20 +614,23 @@ async fn get_saved_view_rows(
         PlannerCompatibility::Legacy(legacy) => {
             state
                 .db
-                .query_view_rows(&ViewRowsQueryParams {
-                    draft: ViewDraft {
-                        base_schema: &view.base_schema,
-                        base_table: &view.base_table,
-                        columns: &legacy.columns,
-                        filters: &legacy.filters,
+                .query_view_rows(
+                    &ViewRowsQueryParams {
+                        draft: ViewDraft {
+                            base_schema: &view.base_schema,
+                            base_table: &view.base_table,
+                            columns: &legacy.columns,
+                            filters: &legacy.filters,
+                        },
+                        page: params.page.max(1),
+                        page_size: params.page_size.clamp(1, super::MAX_PAGE_SIZE),
+                        sort: &sort,
+                        search: params.search.as_deref(),
+                        filters: &filters,
+                        exact_filters: &exact_filters,
                     },
-                    page: params.page.max(1),
-                    page_size: params.page_size.clamp(1, super::MAX_PAGE_SIZE),
-                    sort: &sort,
-                    search: params.search.as_deref(),
-                    filters: &filters,
-                    exact_filters: &exact_filters,
-                })
+                    state.display_tz,
+                )
                 .await?
         }
         PlannerCompatibility::RequiresPlannerV2(_) => {
@@ -639,6 +650,7 @@ async fn get_saved_view_rows(
                 params.search.as_deref(),
                 &filters,
                 &exact_filters,
+                state.display_tz,
             )
             .await?
         }
@@ -697,6 +709,7 @@ async fn export_saved_view_csv(
     let sort_owned = sort;
     let search_owned = params.search.clone();
     let filters_owned = filters;
+    let display_tz = state.display_tz;
 
     tokio::spawn(async move {
         use futures::StreamExt;
@@ -775,7 +788,12 @@ async fn export_saved_view_csv(
                     let fields: Vec<String> = columns
                         .iter()
                         .map(|column| {
-                            super::pg_value_to_csv_string(&row, &column.name, &column.data_type)
+                            super::pg_value_to_csv_string(
+                                &row,
+                                &column.name,
+                                &column.data_type,
+                                display_tz,
+                            )
                         })
                         .collect();
                     if writer.write_record(&fields).is_err() {
@@ -877,6 +895,7 @@ mod tests {
             .unwrap();
         let mode = initial_mode(Some(crate::AppState {
             db: crate::db::DatabasePool::Postgres(pool, None),
+            display_tz: config.display.parsed_timezone(),
             config,
         }));
 
@@ -920,6 +939,7 @@ mod tests {
         let mode = initial_mode(Some(crate::AppState {
             db: crate::db::DatabasePool::Postgres(pool, None),
             config: test_app_config(),
+            display_tz: chrono_tz::UTC,
         }));
         let app = Router::new().nest("/api", crate::api::router(mode, store));
         (app, created.id, dir)

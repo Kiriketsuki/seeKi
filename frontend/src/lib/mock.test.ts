@@ -258,6 +258,11 @@ describe('mockFetchDisplayConfig', () => {
     expect(Object.keys(config.tables).length).toBeGreaterThan(0);
   });
 
+  it('returns UTC as the default display timezone', () => {
+    const config = mockFetchDisplayConfig();
+    expect(config.timezone).toBe('UTC');
+  });
+
   it('includes display names for all tables', () => {
     const tables = mockFetchTables();
     const config = mockFetchDisplayConfig();

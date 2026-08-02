@@ -99,12 +99,37 @@ impl TablesConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct DisplayConfig {
     #[serde(default)]
     pub tables: HashMap<String, String>,
     #[serde(default)]
     pub columns: HashMap<String, HashMap<String, String>>,
+    /// IANA time zone name used to render timestamps and to pin the database
+    /// session TimeZone. Config load rejects an invalid name, so every reader
+    /// can treat this value as parseable.
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
+}
+
+impl Default for DisplayConfig {
+    fn default() -> Self {
+        Self {
+            tables: HashMap::new(),
+            columns: HashMap::new(),
+            timezone: default_timezone(),
+        }
+    }
+}
+
+impl DisplayConfig {
+    /// Parse the configured zone. AppConfig::validate rejects an invalid name at
+    /// load time, so this call cannot fail on a loaded config.
+    pub fn parsed_timezone(&self) -> chrono_tz::Tz {
+        self.timezone
+            .parse::<chrono_tz::Tz>()
+            .unwrap_or(chrono_tz::UTC)
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -195,6 +220,10 @@ fn default_port() -> u16 {
 
 fn default_max_connections() -> u32 {
     5
+}
+
+fn default_timezone() -> String {
+    "UTC".to_string()
 }
 
 pub fn display_name_table(schema: &str, table: &str, config: &DisplayConfig) -> String {
@@ -347,6 +376,12 @@ impl AppConfig {
         {
             anyhow::bail!(
                 "database.schemas must not be empty — remove the key to default to [\"public\"]"
+            );
+        }
+        if self.display.timezone.parse::<chrono_tz::Tz>().is_err() {
+            anyhow::bail!(
+                "display.timezone \"{}\" is not a valid IANA time zone name. Use a name such as \"Asia/Singapore\" or \"UTC\".",
+                self.display.timezone
             );
         }
         Ok(())
@@ -754,6 +789,7 @@ subtitle = "Fleet Telemetry"
         let config = DisplayConfig {
             tables,
             columns: std::collections::HashMap::new(),
+            timezone: "UTC".to_string(),
         };
 
         // Qualified key matches.
@@ -776,6 +812,7 @@ subtitle = "Fleet Telemetry"
         assert!(config.tables.include.is_some());
         assert!(!config.display.tables.is_empty());
         assert!(!config.display.columns.is_empty());
+        assert_eq!(config.display.timezone, "UTC");
         assert_eq!(config.branding.title.as_deref(), Some("My Database"));
         assert_eq!(config.branding.subtitle.as_deref(), Some("Fleet Telemetry"));
         assert_eq!(
@@ -1020,6 +1057,54 @@ schemas = ["public", "reporting"]
         assert_eq!(
             config.database.effective_schemas(),
             vec!["public".to_string(), "reporting".to_string()]
+        );
+    }
+
+    #[test]
+    fn display_timezone_parses_and_round_trips() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://u:p@localhost/db"
+[display]
+timezone = "Asia/Singapore"
+"#;
+        let config = AppConfig::parse(toml).expect("config with a valid zone parses");
+        assert_eq!(config.display.timezone, "Asia/Singapore");
+        assert_eq!(config.display.parsed_timezone(), chrono_tz::Asia::Singapore);
+    }
+
+    #[test]
+    fn display_timezone_defaults_to_utc() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://u:p@localhost/db"
+"#;
+        let config = AppConfig::parse(toml).expect("config without a zone parses");
+        assert_eq!(config.display.timezone, "UTC");
+        assert_eq!(config.display.parsed_timezone(), chrono_tz::UTC);
+    }
+
+    #[test]
+    fn invalid_display_timezone_rejected_at_load() {
+        let toml = r#"
+[server]
+host = "127.0.0.1"
+port = 3141
+[database]
+url = "postgres://u:p@localhost/db"
+[display]
+timezone = "Mars/Olympus"
+"#;
+        let err = AppConfig::parse(toml).expect_err("an invalid zone should be rejected");
+        assert!(
+            err.to_string().contains("Mars/Olympus"),
+            "unexpected error: {err}"
         );
     }
 

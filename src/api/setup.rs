@@ -359,23 +359,28 @@ pub async fn save_config(
     };
 
     let ssh_ref = app_config.ssh.as_ref().map(|s| (s, &secrets));
-    let db = match DatabasePool::connect(&app_config.database, ssh_ref).await {
-        Ok(d) => d,
-        Err(e) => {
-            let _ = std::fs::remove_file("seeki.toml");
-            let _ = std::fs::remove_file(".seeki.secrets");
-            return Json(SaveConfigResponse {
-                success: false,
-                error: Some(format!("Failed to connect after saving config: {e}")),
-            })
-            .into_response();
-        }
-    };
+    let db =
+        match DatabasePool::connect(&app_config.database, ssh_ref, &app_config.display.timezone)
+            .await
+        {
+            Ok(d) => d,
+            Err(e) => {
+                let _ = std::fs::remove_file("seeki.toml");
+                let _ = std::fs::remove_file(".seeki.secrets");
+                return Json(SaveConfigResponse {
+                    success: false,
+                    error: Some(format!("Failed to connect after saving config: {e}")),
+                })
+                .into_response();
+            }
+        };
 
     // 9. Swap mode to Normal
+    let display_tz = app_config.display.parsed_timezone();
     let new_state = Arc::new(AppState {
         db,
         config: app_config,
+        display_tz,
     });
     *mode.write().await = AppMode::Normal(new_state);
 
@@ -1121,7 +1126,12 @@ mod tests {
              [database]\nkind = \"postgres\"\nurl = \"postgres://u:p@localhost/db\"\n",
         )
         .expect("minimal config should parse");
-        let state = Arc::new(crate::AppState { db, config });
+        let display_tz = config.display.parsed_timezone();
+        let state = Arc::new(crate::AppState {
+            db,
+            config,
+            display_tz,
+        });
         Arc::new(tokio::sync::RwLock::new(AppMode::Normal(state)))
     }
 

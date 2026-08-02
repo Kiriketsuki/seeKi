@@ -86,6 +86,9 @@ async fn require_state(mode: &SharedAppMode) -> Result<Arc<AppState>, AppError> 
 #[derive(Serialize)]
 struct DisplayConfigResponse {
     branding: BrandingResponse,
+    /// IANA zone name from config. The frontend passes it straight to
+    /// Intl.DateTimeFormat, because config load already validated it.
+    timezone: String,
     tables: HashMap<String, TableDisplayConfig>,
 }
 
@@ -184,6 +187,7 @@ async fn get_display_config(
             },
             &settings,
         ),
+        timezone: state.config.display.timezone.clone(),
         tables,
     }))
 }
@@ -791,16 +795,19 @@ async fn get_rows(
     let sort = parse_sort_param(params.sort.as_deref(), &columns)?;
     let result = state
         .db
-        .query_rows(&RowQueryParams {
-            schema: &schema,
-            table: &table,
-            page,
-            page_size,
-            sort: &sort,
-            search: params.search.as_deref(),
-            filters: &filters,
-            exact_filters: &exact_filters,
-        })
+        .query_rows(
+            &RowQueryParams {
+                schema: &schema,
+                table: &table,
+                page,
+                page_size,
+                sort: &sort,
+                search: params.search.as_deref(),
+                filters: &filters,
+                exact_filters: &exact_filters,
+            },
+            state.display_tz,
+        )
         .await
         .map_err(|e| map_table_query_error(e, &table))?;
     Ok(Json(serde_json::json!(result)))
@@ -841,7 +848,7 @@ async fn get_single_row(
 
     let (row, multiple) = state
         .db
-        .query_single_row(&schema, &table, &exact_filters)
+        .query_single_row(&schema, &table, &exact_filters, state.display_tz)
         .await
         .map_err(|e| map_table_query_error(e, &table))?;
 
@@ -932,6 +939,7 @@ async fn export_csv(
     let search = params.search.clone();
     let schema_owned = schema.clone();
     let sort_owned = sort;
+    let display_tz = state.display_tz;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(32);
 
@@ -982,7 +990,9 @@ async fn export_csv(
                 Ok(row) => {
                     let fields: Vec<String> = columns
                         .iter()
-                        .map(|col| pg_value_to_csv_string(&row, &col.name, &col.data_type))
+                        .map(|col| {
+                            pg_value_to_csv_string(&row, &col.name, &col.data_type, display_tz)
+                        })
                         .collect();
 
                     if wtr.write_record(&fields).is_err() {
@@ -1046,7 +1056,12 @@ async fn export_csv(
     ))
 }
 
-fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &str) -> String {
+fn pg_value_to_csv_string(
+    row: &sqlx::postgres::PgRow,
+    col: &str,
+    data_type: &str,
+    tz: chrono_tz::Tz,
+) -> String {
     use sqlx::Row;
     match data_type {
         "smallint" => row
@@ -1087,15 +1102,19 @@ fn pg_value_to_csv_string(row: &sqlx::postgres::PgRow, col: &str, data_type: &st
             .unwrap_or_default(),
         "timestamp with time zone" => row
             .try_get::<chrono::DateTime<chrono::Utc>, _>(col)
-            .map(|v| v.to_rfc3339())
+            .map(|v| crate::db::postgres::format_timestamptz(v, tz))
             .unwrap_or_default(),
         "date" => row
             .try_get::<chrono::NaiveDate, _>(col)
             .map(|v| v.format("%Y-%m-%d").to_string())
             .unwrap_or_default(),
-        "time without time zone" | "time with time zone" => row
+        "time without time zone" => row
             .try_get::<chrono::NaiveTime, _>(col)
             .map(|v| v.format("%H:%M:%S").to_string())
+            .unwrap_or_default(),
+        "time with time zone" => row
+            .try_get::<sqlx::postgres::types::PgTimeTz, _>(col)
+            .map(|v| crate::db::postgres::format_timetz(v.time, v.offset))
             .unwrap_or_default(),
         "uuid" => row
             .try_get::<uuid::Uuid, _>(col)
@@ -1238,6 +1257,7 @@ mod tests {
             .unwrap();
         let mode = initial_mode(Some(crate::AppState {
             db: crate::db::DatabasePool::Postgres(pool, None),
+            display_tz: config.display.parsed_timezone(),
             config,
         }));
         Router::new().nest("/api", router(mode, store))
@@ -1269,6 +1289,19 @@ mod tests {
         ]
     }
 
+    /// The CSV arm and the grid arm both call
+    /// `crate::db::postgres::format_timestamptz`, so both emit the same string.
+    /// This test pins the expected string on the API side, so a future edit that
+    /// gives CSV its own formatter fails here.
+    #[test]
+    fn csv_timestamptz_matches_the_grid_format() {
+        let instant = "2024-01-15T14:30:00Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .expect("test timestamp parses");
+        let rendered = crate::db::postgres::format_timestamptz(instant, chrono_tz::Asia::Singapore);
+        assert_eq!(rendered, "2024-01-15T22:30:00+08:00");
+    }
+
     #[test]
     fn display_config_response_serializes_with_branding() {
         let response = DisplayConfigResponse {
@@ -1277,6 +1310,7 @@ mod tests {
                 subtitle: Some("Fleet Telemetry".into()),
             },
             tables: HashMap::new(),
+            timezone: "UTC".to_string(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -1293,6 +1327,7 @@ mod tests {
                 subtitle: None,
             },
             tables: HashMap::new(),
+            timezone: "UTC".to_string(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -1331,6 +1366,7 @@ mod tests {
                 subtitle: None,
             },
             tables,
+            timezone: "UTC".to_string(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -1525,6 +1561,7 @@ mod tests {
         };
         let mode = initial_mode(Some(crate::AppState {
             db: crate::db::DatabasePool::Postgres(pool, None),
+            display_tz: config.display.parsed_timezone(),
             config,
         }));
         let app: Router = router(mode, store);
@@ -1891,6 +1928,7 @@ mod tests {
         let config = DisplayConfig {
             tables: HashMap::new(),
             columns: columns_map,
+            timezone: "UTC".to_string(),
         };
 
         let sibling_names: Vec<&str> = columns.iter().map(|c| c.name.as_str()).collect();
@@ -1934,6 +1972,7 @@ mod tests {
         let config = DisplayConfig {
             tables,
             columns: HashMap::new(),
+            timezone: "UTC".to_string(),
         };
 
         let display = display_name_table("public", "vehicles_log", &config)

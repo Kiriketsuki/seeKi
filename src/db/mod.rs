@@ -548,6 +548,7 @@ impl DatabasePool {
     pub async fn connect(
         config: &DatabaseConfig,
         ssh: Option<(&crate::config::SshConfig, &crate::config::SecretsConfig)>,
+        display_timezone: &str,
     ) -> anyhow::Result<Self> {
         match config.kind {
             DatabaseKind::Postgres => {
@@ -577,8 +578,24 @@ impl DatabasePool {
                     (config.url.clone(), None)
                 };
 
+                // Pin the session TimeZone on every pooled connection so date
+                // arithmetic and timestamptz rendering follow the configured
+                // display zone instead of the server default. is_local=false
+                // keeps the setting for the whole session, because a pooled
+                // connection outlives any single transaction.
+                let tz = display_timezone.to_string();
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(config.max_connections)
+                    .after_connect(move |conn, _meta| {
+                        let tz = tz.clone();
+                        Box::pin(async move {
+                            sqlx::query("SELECT set_config('TimeZone', $1, false)")
+                                .bind(tz)
+                                .execute(conn)
+                                .await?;
+                            Ok(())
+                        })
+                    })
                     .connect(&connect_url)
                     .await?;
                 // A new pool may point at a different database, so cached FK
@@ -691,9 +708,13 @@ impl DatabasePool {
         }
     }
 
-    pub async fn query_rows(&self, params: &RowQueryParams<'_>) -> anyhow::Result<QueryResult> {
+    pub async fn query_rows(
+        &self,
+        params: &RowQueryParams<'_>,
+        tz: chrono_tz::Tz,
+    ) -> anyhow::Result<QueryResult> {
         match self {
-            Self::Postgres(pool, _) => postgres::query_rows(pool, params).await,
+            Self::Postgres(pool, _) => postgres::query_rows(pool, params, tz).await,
         }
     }
 
@@ -704,10 +725,11 @@ impl DatabasePool {
         schema: &str,
         table: &str,
         exact_filters: &HashMap<String, String>,
+        tz: chrono_tz::Tz,
     ) -> anyhow::Result<(Option<serde_json::Value>, bool)> {
         match self {
             Self::Postgres(pool, _) => {
-                postgres::query_single_row(pool, schema, table, exact_filters).await
+                postgres::query_single_row(pool, schema, table, exact_filters, tz).await
             }
         }
     }
@@ -745,18 +767,20 @@ impl DatabasePool {
         &self,
         draft: &ViewDraft<'_>,
         page_size: u32,
+        tz: chrono_tz::Tz,
     ) -> anyhow::Result<QueryResult> {
         match self {
-            Self::Postgres(pool, _) => postgres::preview_view(pool, draft, page_size).await,
+            Self::Postgres(pool, _) => postgres::preview_view(pool, draft, page_size, tz).await,
         }
     }
 
     pub async fn query_view_rows(
         &self,
         params: &ViewRowsQueryParams<'_>,
+        tz: chrono_tz::Tz,
     ) -> anyhow::Result<QueryResult> {
         match self {
-            Self::Postgres(pool, _) => postgres::query_view_rows(pool, params).await,
+            Self::Postgres(pool, _) => postgres::query_view_rows(pool, params, tz).await,
         }
     }
 

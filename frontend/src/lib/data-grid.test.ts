@@ -154,6 +154,83 @@ describe('formatCellValue', () => {
     });
   });
 
+  describe('timezone handling', () => {
+    const tzCol = col({ data_type: 'timestamp with time zone' });
+    const naiveCol = col({ data_type: 'timestamp without time zone' });
+
+    it('renders timestamptz in the display zone, not the runner zone', () => {
+      const result = formatCellValue(
+        tzCol,
+        '2024-01-15T22:30:00+08:00',
+        'YYYY-MM-DD',
+        'Asia/Singapore',
+      );
+      expect(result.display).toContain('2024-01-15');
+      expect(result.display).toMatch(/22:30|10:30/);
+      expect(result.tooltip).toBe('2024-01-15T22:30:00+08:00');
+    });
+
+    it('renders the same instant in UTC when the display zone is UTC', () => {
+      const result = formatCellValue(
+        tzCol,
+        '2024-01-15T22:30:00+08:00',
+        'YYYY-MM-DD',
+        'UTC',
+      );
+      expect(result.display).toContain('2024-01-15');
+      expect(result.display).toMatch(/14:30|2:30/);
+    });
+
+    it('applies daylight saving for America/New_York', () => {
+      const winter = formatCellValue(
+        tzCol,
+        '2024-03-09T12:00:00Z',
+        'YYYY-MM-DD',
+        'America/New_York',
+      );
+      const summer = formatCellValue(
+        tzCol,
+        '2024-03-11T12:00:00Z',
+        'YYYY-MM-DD',
+        'America/New_York',
+      );
+      expect(winter.display).toMatch(/07:00|7:00/);
+      expect(summer.display).toMatch(/08:00|8:00/);
+    });
+
+    it('renders a naive timestamp verbatim, whatever the display zone', () => {
+      const result = formatCellValue(
+        naiveCol,
+        '2024-01-15 14:30:00',
+        'YYYY-MM-DD',
+        'Pacific/Kiritimati',
+      );
+      expect(result.display).toContain('2024-01-15');
+      expect(result.display).toMatch(/14:30|2:30/);
+      expect(result.tooltip).toBe('2024-01-15 14:30:00');
+    });
+
+    it('ignores the display zone for a date-only value', () => {
+      const dateCol = col({ data_type: 'date' });
+      const utc = formatCellValue(dateCol, '2024-06-15', 'YYYY-MM-DD', 'UTC');
+      const kiritimati = formatCellValue(
+        dateCol,
+        '2024-06-15',
+        'YYYY-MM-DD',
+        'Pacific/Kiritimati',
+      );
+      expect(utc.display).toBe('2024-06-15');
+      expect(kiritimati.display).toBe('2024-06-15');
+    });
+
+    it('renders a timetz value as text, offset suffix intact', () => {
+      const timetzCol = col({ data_type: 'time with time zone' });
+      const result = formatCellValue(timetzCol, '14:30:00+08:00');
+      expect(result.kind).toBe('text');
+      expect(result.display).toBe('14:30:00+08:00');
+    });
+  });
+
   describe('numeric (precision-safe)', () => {
     const numericCol = col({ data_type: 'numeric' });
 

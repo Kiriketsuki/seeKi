@@ -340,10 +340,12 @@ function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// Emits "YYYY-MM-DD HH:MM:SS", the naive form the backend sends for a timestamp column.
+// An ISO string with a "Z" suffix would name an instant, which the naive columns never do.
 function randomTimestamp(daysBack: number): string {
   const now = Date.now();
   const offset = Math.floor(Math.random() * daysBack * 86400000);
-  return new Date(now - offset).toISOString();
+  return new Date(now - offset).toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function randomIp(): string {
@@ -825,6 +827,7 @@ export function mockFetchDisplayConfig(): DisplayConfig {
       title: 'SeeKi',
       subtitle: 'Database Viewer',
     },
+    timezone: 'UTC',
     tables: Object.fromEntries(
       TABLES.map((t) => [
         `${t.schema}.${t.name}`,

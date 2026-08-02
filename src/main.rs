@@ -24,6 +24,9 @@ use crate::db::DatabasePool;
 pub struct AppState {
     pub db: DatabasePool,
     pub config: AppConfig,
+    /// Display time zone, parsed once at startup. Handlers pass it into the
+    /// database layer so every timestamp renders in the same zone.
+    pub display_tz: chrono_tz::Tz,
 }
 
 #[tokio::main]
@@ -38,9 +41,15 @@ async fn main() -> anyhow::Result<()> {
             let secrets = SecretsConfig::load_from_cwd();
             let ssh_pair = config.ssh.as_ref().map(|s| (s, &secrets));
             tracing::info!("Connecting to database...");
-            let db = DatabasePool::connect(&config.database, ssh_pair).await?;
+            let db =
+                DatabasePool::connect(&config.database, ssh_pair, &config.display.timezone).await?;
             tracing::info!("Connected to database");
-            initial_mode(Some(AppState { db, config }))
+            let display_tz = config.display.parsed_timezone();
+            initial_mode(Some(AppState {
+                db,
+                config,
+                display_tz,
+            }))
         }
         Err(ConfigLoadError::NotFound) => {
             tracing::info!("No config file found — starting in setup mode");

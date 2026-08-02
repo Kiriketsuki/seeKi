@@ -10,6 +10,11 @@ import type { ColumnInfo, SettingsSection, SidebarMode } from './types';
 export const sidebarMode = writable<SidebarMode>('tables');
 export const activeSettingsSection = writable<SettingsSection>('updates');
 
+// IANA zone the backend reports through /api/config/display. Every timestamptz cell
+// renders in this zone, so all viewers see the same wall clock. "UTC" is the default
+// until App.svelte loads the display config.
+export const displayTimezone = writable<string>('UTC');
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 function getBrowserStorage(): StorageLike | null {

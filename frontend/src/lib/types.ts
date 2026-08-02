@@ -301,6 +301,9 @@ export interface DisplayConfig {
     title: string | null;
     subtitle: string | null;
   };
+  // IANA zone name, for example "Asia/Singapore". The backend rejects an invalid name at
+  // config load, so the frontend passes this string straight to Intl.DateTimeFormat.
+  timezone: string;
   // Keyed by qualified "schema.table" (including "public.table").
   tables: Record<
     string,

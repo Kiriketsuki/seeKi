@@ -16,6 +16,13 @@ max_connections = 5
 include = ["vehicles_log", "drivers", "audit_log"]
 exclude = ["audit_log"]
 
+# Display settings.
+# `timezone` is an IANA time zone name. SeeKi renders every timestamp in this
+# zone and pins the database session TimeZone to it. Default "UTC".
+# Example: timezone = "Asia/Singapore"
+[display]
+timezone = "UTC"
+
 # Optional sidebar display name overrides for tables.
 [display.tables]
 vehicles_log = "Fleet Log"
