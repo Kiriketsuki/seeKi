@@ -29,6 +29,7 @@
   } from '../lib/data-grid';
   import { isSensitiveColumn } from '../lib/sensitive-columns';
   import { SKELETON_ROW_MARKER } from '../lib/infinite-scroll';
+  import { displayTimezone } from '../lib/stores';
 
   let {
     columns = [],
@@ -390,7 +391,12 @@
       );
     }
 
-    const formatted = formatCellValue(info, props.value, dateFormat);
+    const formatted = formatCellValue(
+      info,
+      props.value,
+      dateFormat,
+      $displayTimezone,
+    );
 
     // Determine column-level alignment from data type so every cell in the column
     // (including nulls) lines up consistently regardless of the individual value.

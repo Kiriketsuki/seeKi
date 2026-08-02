@@ -80,6 +80,7 @@
   import { COLUMN_VISIBILITY_KEY_PREFIX, SIDEBAR_COLLAPSED_KEY } from './lib/constants';
   import {
     createGridRefreshController,
+    displayTimezone,
     sidebarMode,
     type GridRefreshSnapshot,
   } from './lib/stores';
@@ -174,6 +175,12 @@
   let relatedColumnsPickerOpen: boolean = $state(false);
   let queryResult: QueryResult | null = $state(null);
   let displayConfig: DisplayConfig | null = $state(null);
+
+  // Publish the configured zone so every grid and panel formats timestamps the same way.
+  $effect(() => {
+    displayTimezone.set(displayConfig?.timezone ?? 'UTC');
+  });
+
   let appSettings: SettingsEntries = $state({});
   let sidebarCollapsed: boolean = $state(
     typeof localStorage !== 'undefined' &&

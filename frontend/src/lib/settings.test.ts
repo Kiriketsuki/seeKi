@@ -14,6 +14,7 @@ const displayConfig: DisplayConfig = {
     title: 'SeeKi',
     subtitle: 'Database Viewer',
   },
+  timezone: 'UTC',
   tables: {},
 };
 

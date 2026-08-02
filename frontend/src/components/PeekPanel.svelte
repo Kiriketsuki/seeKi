@@ -4,6 +4,7 @@
   import { formatCellValue, getColumnDisplayName } from '../lib/data-grid';
   import { isSensitiveColumn } from '../lib/sensitive-columns';
   import { peekCanJump, peekPanelState } from '../lib/peek-panel';
+  import { displayTimezone } from '../lib/stores';
 
   let {
     open = false,
@@ -81,7 +82,7 @@
           {@const fields = row ?? {}}
           <dl class="peek-panel__fields">
             {#each columns as column (column.name)}
-              {@const formatted = formatCellValue(column, fields[column.name])}
+              {@const formatted = formatCellValue(column, fields[column.name], 'system', $displayTimezone)}
               <div class="peek-panel__field">
                 <dt>{getColumnDisplayName(column)}</dt>
                 <dd class:is-null={formatted.kind === 'null'}>

@@ -359,7 +359,7 @@ export async function fetchTableRow(
 export async function fetchDisplayConfig(): Promise<DisplayConfig> {
   if (USE_MOCK) return mockFetchDisplayConfig();
   const data = await apiFetch<DisplayConfig>('/api/config/display');
-  assertShape(data, ['branding', 'tables'], '/api/config/display');
+  assertShape(data, ['branding', 'timezone', 'tables'], '/api/config/display');
   return data;
 }
 
